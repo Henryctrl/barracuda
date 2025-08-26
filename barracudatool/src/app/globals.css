@@ -3,7 +3,6 @@
 @import 'tailwindcss/utilities';
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
-
 @layer base {
   body {
     @apply bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700;
@@ -28,4 +27,9 @@
 @keyframes glow {
   from { text-shadow: 0 0 10px currentColor; }
   to { text-shadow: 0 0 20px currentColor, 0 0 30px currentColor; }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
 }
