@@ -1,0 +1,31 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700;
+    @apply text-text-primary font-body;
+    @apply min-h-screen;
+  }
+}
+
+@layer components {
+  .neon-glow {
+    filter: drop-shadow(0 0 10px currentColor);
+  }
+  
+  .retro-border {
+    border: 2px solid currentColor;
+    box-shadow: 
+      inset 0 0 10px rgba(255, 255, 255, 0.1),
+      0 0 20px currentColor;
+  }
+}
+
+@keyframes glow {
+  from { text-shadow: 0 0 10px currentColor; }
+  to { text-shadow: 0 0 20px currentColor, 0 0 30px currentColor; }
+}
