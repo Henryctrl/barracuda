@@ -1,13 +1,28 @@
 {
     "cSpell.words": [
         "Appartement",
+        "bati",
+        "batiments",
         "bbox",
+        "CADASTRALPARCELS",
+        "cadastre",
         "datemut",
+        "Demandes",
+        "fonciere",
+        "Foncières",
+        "landuse",
         "maplibregl",
+        "maxzoom",
         "moveend",
         "movestart",
+        "PARCELLAIRE",
+        "parcelles",
         "Postaux",
+        "reelle",
         "resultats",
-        "rgba"
+        "rgba",
+        "tileset",
+        "valeur",
+        "Valeurs"
     ]
 }

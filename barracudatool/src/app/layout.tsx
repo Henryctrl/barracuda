@@ -1,10 +1,12 @@
 import './globals.css'
 import { Inter } from 'next/font/google'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'French Real Estate Map - Retro Edition',
+  title: 'Barracuda - Property Tool',
   description: 'Discover French real estate with retro arcade style',
 }
 
@@ -15,10 +17,21 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <div className="min-h-screen bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700">
-          {children}
-        </div>
+      <body>
+        {children}
+        {/* Toast notifications container */}
+        <ToastContainer
+          position="top-right"
+          autoClose={5000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="dark"
+        />
       </body>
     </html>
   )

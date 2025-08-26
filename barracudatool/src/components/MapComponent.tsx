@@ -10,6 +10,7 @@ interface PropertyInfo {
   zone: string
   commune?: string
   department?: string
+  population?: number
   lastSaleDate?: string
   lastSalePrice?: number
   pricePerSqm?: number
@@ -41,21 +42,21 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const map = useRef<maptilersdk.Map | null>(null)
   const initialized = useRef(false)
   const [loading, setLoading] = useState(false)
-  const [clickMarker, setClickMarker] = useState<any>(null)
+  const [currentZoom, setCurrentZoom] = useState(12)
 
   useEffect(() => {
     if (initialized.current || !mapContainer.current) return
 
-    console.log('🗺️ INITIALIZING REAL FRENCH CADASTRAL MAP')
+    console.log('🗺️ INITIALIZING REAL FRENCH CADASTRAL PARCELS')
     
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!
 
     const mapInstance = new maptilersdk.Map({
       container: mapContainer.current,
       style: `https://api.maptiler.com/maps/basic-v2/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
-      center: [2.3522, 48.8566], // Paris
-      zoom: 12, // Zoom out to see more of France
-      maxBounds: [[-5, 42], [10, 52]], // France bounds
+      center: [2.3522, 48.8566],
+      zoom: 12,
+      maxBounds: [[-5, 42], [10, 52]],
       renderWorldCopies: false,
       interactive: true,
       scrollZoom: true,
@@ -71,31 +72,129 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current = mapInstance
 
     mapInstance.on('load', () => {
-      console.log('✅ Map loaded - READY FOR REAL FRENCH DATA')
+      console.log('✅ Map loaded - ADDING REAL FRENCH CADASTRAL PARCELS')
       
-      // Add source for clicked locations
-      mapInstance.addSource('clicked-points', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: []
+      // ✅ REAL FRENCH CADASTRAL PARCELS from MapTiler
+      mapInstance.addSource('french-cadastral-parcels', {
+        type: 'vector',
+        // MapTiler's official French cadastral tileset
+        tiles: [`https://api.maptiler.com/tiles/fr-cadastre/{z}/{x}/{y}.pbf?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`],
+        minzoom: 10,
+        maxzoom: 20,
+        attribution: '© DGFiP - French Cadastre'
+      })
+
+      // REAL CADASTRAL PARCEL BOUNDARIES
+      mapInstance.addLayer({
+        id: 'cadastral-parcel-lines',
+        type: 'line',
+        source: 'french-cadastral-parcels',
+        'source-layer': 'parcelles', // ✅ CORRECT: This is the parcel layer
+        minzoom: 15, // Only show at high zoom levels
+        paint: {
+          'line-color': '#00ffff',
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15, 1,
+            18, 3
+          ],
+          'line-opacity': 0.8
         }
       })
 
-      // Add layer for clicked markers
+      // CADASTRAL PARCEL FILLS (semi-transparent)
+      mapInstance.addLayer({
+        id: 'cadastral-parcel-fills',
+        type: 'fill',
+        source: 'french-cadastral-parcels',
+        'source-layer': 'parcelles', // ✅ CORRECT: Parcel polygons
+        minzoom: 16,
+        paint: {
+          'fill-color': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            '#ff00ff', // Pink when hovered
+            '#00ffff'  // Cyan default
+          ],
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            0.4,
+            0.1
+          ]
+        }
+      })
+
+      // CADASTRAL PARCEL LABELS (showing parcel numbers)
+      mapInstance.addLayer({
+        id: 'cadastral-parcel-labels',
+        type: 'symbol',
+        source: 'french-cadastral-parcels',
+        'source-layer': 'parcelles',
+        minzoom: 17,
+        layout: {
+          'text-field': [
+            'case',
+            ['has', 'numero'], ['get', 'numero'],
+            ['has', 'id'], ['get', 'id'],
+            'N/A'
+          ],
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': 10,
+          'text-anchor': 'center'
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#000000',
+          'text-halo-width': 1
+        }
+      })
+
+      // OPTIONAL: Add buildings within parcels
+      mapInstance.addLayer({
+        id: 'cadastral-buildings',
+        type: 'fill',
+        source: 'french-cadastral-parcels',
+        'source-layer': 'batiments', // ✅ Buildings layer
+        minzoom: 17,
+        paint: {
+          'fill-color': '#ff8000',
+          'fill-opacity': 0.6
+        }
+      })
+
+      mapInstance.addLayer({
+        id: 'cadastral-building-lines',
+        type: 'line',
+        source: 'french-cadastral-parcels',
+        'source-layer': 'batiments',
+        minzoom: 17,
+        paint: {
+          'line-color': '#ff4000',
+          'line-width': 1
+        }
+      })
+
+      // Clicked markers
+      mapInstance.addSource('clicked-points', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      })
+
       mapInstance.addLayer({
         id: 'clicked-markers',
         type: 'circle',
         source: 'clicked-points',
         paint: {
-          'circle-radius': 8,
+          'circle-radius': 10,
           'circle-color': '#ff00ff',
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 3,
           'circle-stroke-color': '#ffffff'
         }
       })
 
-      // Add labels for clicked points
       mapInstance.addLayer({
         id: 'clicked-labels',
         type: 'symbol',
@@ -104,8 +203,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
           'text-field': ['get', 'label'],
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           'text-size': 11,
-          'text-anchor': 'top',
-          'text-offset': [0, 1.2]
+          'text-anchor': 'bottom',
+          'text-offset': [0, -1.5]
         },
         paint: {
           'text-color': '#ffffff',
@@ -113,32 +212,64 @@ const MapComponent: React.FC<MapComponentProps> = ({
           'text-halo-width': 2
         }
       })
+
+      // Track zoom
+      mapInstance.on('zoom', () => {
+        setCurrentZoom(mapInstance.getZoom())
+      })
+
+      // Hover effects for PARCELS (not buildings)
+      mapInstance.on('mouseenter', 'cadastral-parcel-fills', (e) => {
+        mapInstance.getCanvas().style.cursor = 'pointer'
+        if (e.features && e.features.length > 0) {
+          mapInstance.setFeatureState(
+            { source: 'french-cadastral-parcels', sourceLayer: 'parcelles', id: e.features[0].id },
+            { hover: true }
+          )
+        }
+      })
+
+      mapInstance.on('mouseleave', 'cadastral-parcel-fills', () => {
+        mapInstance.getCanvas().style.cursor = ''
+        mapInstance.removeFeatureState({
+          source: 'french-cadastral-parcels',
+          sourceLayer: 'parcelles'
+        })
+      })
+
+      // Click on parcels (not buildings)
+      mapInstance.on('click', 'cadastral-parcel-fills', (e) => {
+        if (e.features && e.features.length > 0) {
+          console.log('🏘️ Clicked on cadastral parcel:', e.features[0].properties)
+        }
+      })
     })
 
-    // REAL CLICK HANDLER - Fetch data for any clicked coordinates
+    // REAL DATA CLICK HANDLER (general map click)
     mapInstance.on('click', async (e) => {
       const { lng, lat } = e.lngLat
       
-      console.log(`🎯 Clicked coordinates: ${lng}, ${lat}`)
+      console.log(`🎯 Fetching REAL DATA for: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
       setLoading(true)
 
       try {
-        // Fetch REAL French cadastral data
+        // ✅ REAL API CALLS to French government
         const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat)
         
         if (propertyData && propertyData.parcel) {
           const { parcel, latest_sale, dpe } = propertyData
           
-          // Create property info object
           const propertyInfo: PropertyInfo = {
             cadastralId: parcel.cadastral_id,
             size: parcel.surface_area,
             zone: parcel.zone_type,
             commune: parcel.commune_name,
             department: `Dept. ${parcel.department}`,
+            population: parcel.population,
             lastSaleDate: latest_sale?.sale_date,
             lastSalePrice: latest_sale?.sale_price,
-            pricePerSqm: latest_sale ? Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
+            pricePerSqm: latest_sale && latest_sale.surface_area ? 
+              Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
             dpeRating: dpe ? {
               energy: dpe.energy_class,
               ghg: dpe.ghg_class,
@@ -147,7 +278,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
             } : undefined
           }
 
-          // Add marker to map at clicked location
+          // Add marker with real data
           const clickedPoint = {
             type: 'Feature' as const,
             geometry: {
@@ -155,42 +286,27 @@ const MapComponent: React.FC<MapComponentProps> = ({
               coordinates: [lng, lat]
             },
             properties: {
-              label: `${parcel.commune_name}\n${parcel.zone_type}`
+              label: `${parcel.commune_name}\nPop: ${parcel.population?.toLocaleString()}\nDPE: ${dpe.energy_class}\n€${latest_sale?.sale_price?.toLocaleString() || 'N/A'}`
             }
           }
 
-          // Update map source with new point
           const source = mapInstance.getSource('clicked-points') as any
           source.setData({
             type: 'FeatureCollection',
             features: [clickedPoint]
           })
 
-          // Callback to parent with property data
           if (onPropertySelect) {
             onPropertySelect(propertyInfo)
           }
 
-          console.log('🏠 Real French property data loaded:', propertyInfo)
-        } else {
-          console.log('❌ No property data found for these coordinates')
-          if (onPropertySelect) {
-            onPropertySelect(null)
-          }
+          console.log('🏠 REAL French data loaded:', propertyInfo)
         }
       } catch (error) {
-        console.error('💥 Error fetching property data:', error)
-        if (onPropertySelect) {
-          onPropertySelect(null)
-        }
+        console.error('💥 Error fetching real data:', error)
       } finally {
         setLoading(false)
       }
-    })
-
-    // Cursor changes
-    mapInstance.on('mouseenter', () => {
-      mapInstance.getCanvas().style.cursor = 'crosshair'
     })
 
     return () => {}
@@ -200,18 +316,23 @@ const MapComponent: React.FC<MapComponentProps> = ({
     <div className="map-wrapper">
       <div className="absolute top-4 left-4 z-10 bg-surface/90 border-2 border-neon-green p-2 rounded">
         <div className="text-neon-green font-retro text-xs">
-          {loading ? '🔄 FETCHING REAL FRENCH DATA...' : '🇫🇷 CLICK ANYWHERE FOR REAL INFO'}
+          {loading ? '🔄 LOADING REAL FRENCH DATA...' : '🇫🇷 REAL CADASTRAL PARCELS'}
+        </div>
+        <div className="text-neon-cyan font-retro text-xs mt-1">
+          Zoom: {currentZoom.toFixed(1)} • {currentZoom >= 15 ? 'PARCELS VISIBLE' : 'ZOOM IN FOR PARCELS'}
         </div>
       </div>
 
       <div className="absolute bottom-4 left-4 z-10 bg-surface/90 border-2 border-neon-yellow p-3 rounded">
-        <div className="text-neon-yellow font-retro text-xs mb-2">REAL-TIME DATA</div>
+        <div className="text-neon-yellow font-retro text-xs mb-2">REAL CADASTRAL DATA</div>
         <div className="space-y-1 text-xs text-white">
-          <div>🎯 Click anywhere on France</div>
-          <div>🏛️ Get real commune info</div>
-          <div>💰 Live transaction estimates</div>
-          <div>⚡ DPE energy ratings</div>
-          <div>📋 Official cadastral IDs</div>
+          <div>✅ geo.api.gouv.fr - Communes</div>
+          <div>✅ DVF Etalab API - Sales</div>
+          <div>✅ French Cadastre - Parcels</div>
+          <div>🏘️ DGFiP Official Data</div>
+          <div className="text-neon-cyan mt-2">
+            {currentZoom >= 15 ? '📋 Cadastral parcels visible!' : '🔍 Zoom in for parcel boundaries'}
+          </div>
         </div>
       </div>
       
@@ -220,8 +341,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         style={{ 
           width: '100%', 
           height: '100%',
-          borderRadius: '8px',
-          cursor: loading ? 'wait' : 'crosshair'
+          borderRadius: '8px'
         }}
       />
     </div>
