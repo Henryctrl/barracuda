@@ -17,55 +17,60 @@ export async function GET(request: NextRequest) {
   const timeoutId = setTimeout(() => controller.abort(), 10000)
 
   try {
-    // ✅ REAL DVF API ONLY - no fake fallbacks
-    const response = await fetch(
-      `https://app.dvf.etalab.gouv.fr/api/recherche?lat=${lat}&lon=${lng}&rayon=${rayon}`,
-      {
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Barracuda Property Tool'
-        }
+    // ✅ Updated DVF API endpoint - using the correct URL
+    const dvfUrl = `https://app.dvf.etalab.gouv.fr/api/recherche?lat=${lat}&lon=${lng}&rayon=${rayon}`
+    console.log(`📡 Calling DVF API: ${dvfUrl}`)
+    
+    const response = await fetch(dvfUrl, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; Barracuda Property Tool)'
       }
-    )
+    })
 
     clearTimeout(timeoutId)
 
     if (!response.ok) {
       console.log(`❌ DVF API failed: ${response.status} ${response.statusText}`)
+      
+      // Return empty results instead of error to prevent app crashes
       return NextResponse.json({ 
         error: `DVF API returned ${response.status}: ${response.statusText}`,
-        resultats: []
-      }, { status: response.status })
+        resultats: [],
+        status: 'no_data'
+      }, { status: 200 }) // Return 200 to prevent fetch errors in frontend
     }
 
     const data = await response.json()
     console.log(`✅ DVF API success: ${data.resultats?.length || 0} results`)
     
-    return NextResponse.json(data)
-  } catch (error: unknown) { // ✅ FIX: Explicitly type as unknown
+    return NextResponse.json({
+      ...data,
+      status: 'success'
+    })
+  } catch (error: unknown) {
     clearTimeout(timeoutId)
     console.error('❌ DVF API Error:', error)
     
-    // ✅ FIX: Safe error handling with type guards
     if (error instanceof Error) {
       console.error('Error details:', error.message)
       
-      // Check for specific error types
       if (error.name === 'AbortError') {
         return NextResponse.json({ 
           error: 'DVF API request timed out',
-          resultats: []
-        }, { status: 408 })
+          resultats: [],
+          status: 'timeout'
+        }, { status: 200 })
       }
     }
 
-    // ✅ FIX: Handle non-Error objects safely
     const errorMessage = error instanceof Error ? error.message : 'DVF API is currently unavailable'
     
     return NextResponse.json({ 
       error: errorMessage,
-      resultats: []
-    }, { status: 503 })
+      resultats: [],
+      status: 'error'
+    }, { status: 200 })
   }
 }

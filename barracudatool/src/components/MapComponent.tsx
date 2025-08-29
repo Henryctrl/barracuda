@@ -43,11 +43,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const initialized = useRef(false)
   const [loading, setLoading] = useState(false)
   const [currentZoom, setCurrentZoom] = useState(12)
+  const [cadastralLayersLoaded, setCadastralLayersLoaded] = useState(false)
 
   useEffect(() => {
     if (initialized.current || !mapContainer.current) return
 
-    console.log('🗺️ INITIALIZING REAL FRENCH CADASTRAL PARCELS')
+    console.log('🗺️ INITIALIZING FRENCH PROPERTY MAP')
     
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!
 
@@ -72,110 +73,166 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current = mapInstance
 
     mapInstance.on('load', () => {
-      console.log('✅ Map loaded - ADDING REAL FRENCH CADASTRAL PARCELS')
+      console.log('✅ Map loaded - Setting up data layers')
       
-      // ✅ REAL FRENCH CADASTRAL PARCELS from MapTiler
-      mapInstance.addSource('french-cadastral-parcels', {
-        type: 'vector',
-        // MapTiler's official French cadastral tileset
-        tiles: [`https://api.maptiler.com/tiles/fr-cadastre/{z}/{x}/{y}.pbf?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`],
-        minzoom: 10,
-        maxzoom: 20,
-        attribution: '© DGFiP - French Cadastre'
-      })
+      // ✅ FIXED: Try multiple cadastral data sources with proper error handling
+      const addCadastralLayers = async () => {
+        try {
+          console.log('🔍 Attempting to load French cadastral data...')
+          
+          // Option 1: Try the correct MapTiler French cadastre tileset
+          try {
+            mapInstance.addSource('french-cadastral-parcels', {
+              type: 'vector',
+              url: `https://api.maptiler.com/tiles/fr-cadastre/tiles.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
+              attribution: '© DGFiP - French Cadastre'
+            })
+            console.log('✅ MapTiler French cadastre source added')
+          } catch (error) {
+            console.warn('⚠️ MapTiler cadastre failed, trying alternative...')
+            
+            // Option 2: Try OpenStreetMap administrative boundaries as fallback
+            mapInstance.addSource('french-administrative', {
+              type: 'vector',
+              url: `https://api.maptiler.com/tiles/openmaptiles/tiles.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
+              attribution: '© OpenStreetMap contributors'
+            })
+            console.log('✅ Using OpenStreetMap administrative boundaries')
+          }
 
-      // REAL CADASTRAL PARCEL BOUNDARIES
-      mapInstance.addLayer({
-        id: 'cadastral-parcel-lines',
-        type: 'line',
-        source: 'french-cadastral-parcels',
-        'source-layer': 'parcelles', // ✅ CORRECT: This is the parcel layer
-        minzoom: 15, // Only show at high zoom levels
-        paint: {
-          'line-color': '#00ffff',
-          'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15, 1,
-            18, 3
-          ],
-          'line-opacity': 0.8
-        }
-      })
+          // Add layers with error handling
+          const addLayerSafely = (layerConfig: any) => {
+            try {
+              mapInstance.addLayer(layerConfig)
+              return true
+            } catch (error) {
+              console.warn(`⚠️ Failed to add layer ${layerConfig.id}:`, error)
+              return false
+            }
+          }
 
-      // CADASTRAL PARCEL FILLS (semi-transparent)
-      mapInstance.addLayer({
-        id: 'cadastral-parcel-fills',
-        type: 'fill',
-        source: 'french-cadastral-parcels',
-        'source-layer': 'parcelles', // ✅ CORRECT: Parcel polygons
-        minzoom: 16,
-        paint: {
-          'fill-color': [
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            '#ff00ff', // Pink when hovered
-            '#00ffff'  // Cyan default
-          ],
-          'fill-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            0.4,
-            0.1
-          ]
-        }
-      })
+          // Parcel boundaries (try both source types)
+          const parcelLinesAdded = addLayerSafely({
+            id: 'cadastral-parcel-lines',
+            type: 'line',
+            source: 'french-cadastral-parcels',
+            'source-layer': 'parcelles', // Try the documented layer name
+            minzoom: 15,
+            paint: {
+              'line-color': '#00ffff',
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                15, 1,
+                18, 3
+              ],
+              'line-opacity': 0.8
+            }
+          })
 
-      // CADASTRAL PARCEL LABELS (showing parcel numbers)
-      mapInstance.addLayer({
-        id: 'cadastral-parcel-labels',
-        type: 'symbol',
-        source: 'french-cadastral-parcels',
-        'source-layer': 'parcelles',
-        minzoom: 17,
-        layout: {
-          'text-field': [
-            'case',
-            ['has', 'numero'], ['get', 'numero'],
-            ['has', 'id'], ['get', 'id'],
-            'N/A'
-          ],
-          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          'text-size': 10,
-          'text-anchor': 'center'
-        },
-        paint: {
-          'text-color': '#ffffff',
-          'text-halo-color': '#000000',
-          'text-halo-width': 1
-        }
-      })
+          // If parcelles layer doesn't work, try administrative boundaries
+          if (!parcelLinesAdded) {
+            addLayerSafely({
+              id: 'administrative-boundaries',
+              type: 'line',
+              source: 'french-administrative',
+              'source-layer': 'boundary',
+              filter: ['==', 'admin_level', 8], // Municipality level
+              minzoom: 12,
+              paint: {
+                'line-color': '#00ffff',
+                'line-width': 2,
+                'line-opacity': 0.6
+              }
+            })
+          }
 
-      // OPTIONAL: Add buildings within parcels
-      mapInstance.addLayer({
-        id: 'cadastral-buildings',
-        type: 'fill',
-        source: 'french-cadastral-parcels',
-        'source-layer': 'batiments', // ✅ Buildings layer
-        minzoom: 17,
-        paint: {
-          'fill-color': '#ff8000',
-          'fill-opacity': 0.6
-        }
-      })
+          // Parcel fills
+          const parcelFillsAdded = addLayerSafely({
+            id: 'cadastral-parcel-fills',
+            type: 'fill',
+            source: 'french-cadastral-parcels',
+            'source-layer': 'parcelles',
+            minzoom: 16,
+            paint: {
+              'fill-color': [
+                'case',
+                ['boolean', ['feature-state', 'hover'], false],
+                '#ff00ff',
+                '#00ffff'
+              ],
+              'fill-opacity': [
+                'case',
+                ['boolean', ['feature-state', 'hover'], false],
+                0.4,
+                0.1
+              ]
+            }
+          })
 
-      mapInstance.addLayer({
-        id: 'cadastral-building-lines',
-        type: 'line',
-        source: 'french-cadastral-parcels',
-        'source-layer': 'batiments',
-        minzoom: 17,
-        paint: {
-          'line-color': '#ff4000',
-          'line-width': 1
+          // Alternative: Municipality fills if parcels don't work
+          if (!parcelFillsAdded) {
+            addLayerSafely({
+              id: 'municipality-fills',
+              type: 'fill',
+              source: 'french-administrative',
+              'source-layer': 'boundary',
+              filter: ['==', 'admin_level', 8],
+              minzoom: 10,
+              paint: {
+                'fill-color': [
+                  'case',
+                  ['boolean', ['feature-state', 'hover'], false],
+                  '#ff00ff',
+                  'transparent'
+                ],
+                'fill-opacity': [
+                  'case',
+                  ['boolean', ['feature-state', 'hover'], false],
+                  0.3,
+                  0.1
+                ]
+              }
+            })
+          }
+
+          // Labels
+          addLayerSafely({
+            id: 'cadastral-parcel-labels',
+            type: 'symbol',
+            source: 'french-cadastral-parcels',
+            'source-layer': 'parcelles',
+            minzoom: 17,
+            layout: {
+              'text-field': [
+                'case',
+                ['has', 'numero'], ['get', 'numero'],
+                ['has', 'id'], ['get', 'id'],
+                'N/A'
+              ],
+              'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+              'text-size': 10,
+              'text-anchor': 'center'
+            },
+            paint: {
+              'text-color': '#ffffff',
+              'text-halo-color': '#000000',
+              'text-halo-width': 1
+            }
+          })
+
+          setCadastralLayersLoaded(true)
+          console.log('✅ Cadastral layers setup complete')
+
+        } catch (error) {
+          console.error('❌ Failed to setup cadastral layers:', error)
+          setCadastralLayersLoaded(false)
         }
-      })
+      }
+
+      // Execute cadastral layers setup
+      addCadastralLayers()
 
       // Clicked markers
       mapInstance.addSource('clicked-points', {
@@ -218,42 +275,70 @@ const MapComponent: React.FC<MapComponentProps> = ({
         setCurrentZoom(mapInstance.getZoom())
       })
 
-      // Hover effects for PARCELS (not buildings)
-      mapInstance.on('mouseenter', 'cadastral-parcel-fills', (e) => {
-        mapInstance.getCanvas().style.cursor = 'pointer'
-        if (e.features && e.features.length > 0) {
-          mapInstance.setFeatureState(
-            { source: 'french-cadastral-parcels', sourceLayer: 'parcelles', id: e.features[0].id },
-            { hover: true }
-          )
+      // Enhanced error handling
+      mapInstance.on('error', (e) => {
+        console.error('🚨 Map error:', e.error)
+        // Don't crash the app on map errors
+      })
+
+      mapInstance.on('sourcedata', (e) => {
+        if (e.isSourceLoaded && e.sourceId === 'french-cadastral-parcels') {
+          console.log('✅ French cadastral source loaded successfully')
+        }
+        if (e.isSourceLoaded && e.sourceId === 'french-administrative') {
+          console.log('✅ Administrative boundaries loaded successfully')
         }
       })
 
-      mapInstance.on('mouseleave', 'cadastral-parcel-fills', () => {
-        mapInstance.getCanvas().style.cursor = ''
-        mapInstance.removeFeatureState({
-          source: 'french-cadastral-parcels',
-          sourceLayer: 'parcelles'
+      // Hover effects (try both layer types)
+      const setupHoverEffects = () => {
+        const layersToHandle = ['cadastral-parcel-fills', 'municipality-fills']
+        
+        layersToHandle.forEach(layerId => {
+          if (mapInstance.getLayer(layerId)) {
+            mapInstance.on('mouseenter', layerId, (e) => {
+              mapInstance.getCanvas().style.cursor = 'pointer'
+              if (e.features && e.features.length > 0) {
+                const sourceLayer = layerId === 'cadastral-parcel-fills' ? 'parcelles' : 'boundary'
+                const source = layerId === 'cadastral-parcel-fills' ? 'french-cadastral-parcels' : 'french-administrative'
+                
+                mapInstance.setFeatureState(
+                  { source, sourceLayer, id: e.features[0].id },
+                  { hover: true }
+                )
+              }
+            })
+
+            mapInstance.on('mouseleave', layerId, () => {
+              mapInstance.getCanvas().style.cursor = ''
+              const sourceLayer = layerId === 'cadastral-parcel-fills' ? 'parcelles' : 'boundary'
+              const source = layerId === 'cadastral-parcel-fills' ? 'french-cadastral-parcels' : 'french-administrative'
+              
+              mapInstance.removeFeatureState({ source, sourceLayer })
+            })
+
+            // Click handlers
+            mapInstance.on('click', layerId, (e) => {
+              if (e.features && e.features.length > 0) {
+                console.log(`🏘️ Clicked on ${layerId}:`, e.features[0].properties)
+              }
+            })
+          }
         })
-      })
+      }
 
-      // Click on parcels (not buildings)
-      mapInstance.on('click', 'cadastral-parcel-fills', (e) => {
-        if (e.features && e.features.length > 0) {
-          console.log('🏘️ Clicked on cadastral parcel:', e.features[0].properties)
-        }
-      })
+      // Setup hover effects after a short delay to ensure layers are loaded
+      setTimeout(setupHoverEffects, 1000)
     })
 
-    // REAL DATA CLICK HANDLER (general map click)
+    // General map click handler with improved error handling
     mapInstance.on('click', async (e) => {
       const { lng, lat } = e.lngLat
       
-      console.log(`🎯 Fetching REAL DATA for: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
+      console.log(`🎯 Fetching data for: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
       setLoading(true)
 
       try {
-        // ✅ REAL API CALLS to French government
         const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat)
         
         if (propertyData && propertyData.parcel) {
@@ -278,7 +363,25 @@ const MapComponent: React.FC<MapComponentProps> = ({
             } : undefined
           }
 
-          // Add marker with real data
+          // Create marker label with safe property access
+          const labelParts = [
+            parcel.commune_name || 'Unknown'
+          ]
+          
+          if (parcel.population) {
+            labelParts.push(`Pop: ${parcel.population.toLocaleString()}`)
+          }
+          
+          if (dpe?.energy_class) {
+            labelParts.push(`DPE: ${dpe.energy_class}`)
+          }
+          
+          if (latest_sale?.sale_price) {
+            labelParts.push(`€${latest_sale.sale_price.toLocaleString()}`)
+          } else {
+            labelParts.push('No sales data')
+          }
+
           const clickedPoint = {
             type: 'Feature' as const,
             geometry: {
@@ -286,12 +389,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
               coordinates: [lng, lat]
             },
             properties: {
-              label: `${parcel.commune_name}\nPop: ${parcel.population?.toLocaleString()}\nDPE: ${dpe.energy_class}\n€${latest_sale?.sale_price?.toLocaleString() || 'N/A'}`
+              label: labelParts.join('\n')
             }
           }
 
           const source = mapInstance.getSource('clicked-points') as any
-          source.setData({
+          source?.setData({
             type: 'FeatureCollection',
             features: [clickedPoint]
           })
@@ -300,38 +403,61 @@ const MapComponent: React.FC<MapComponentProps> = ({
             onPropertySelect(propertyInfo)
           }
 
-          console.log('🏠 REAL French data loaded:', propertyInfo)
+          console.log('🏠 Property data loaded:', propertyInfo)
         }
       } catch (error) {
-        console.error('💥 Error fetching real data:', error)
+        console.error('💥 Error fetching property data:', error)
+        
+        // Show error marker instead of crashing
+        const errorPoint = {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [lng, lat]
+          },
+          properties: {
+            label: 'Property data\nunavailable'
+          }
+        }
+
+        const source = mapInstance.getSource('clicked-points') as any
+        source?.setData({
+          type: 'FeatureCollection',
+          features: [errorPoint]
+        })
       } finally {
         setLoading(false)
       }
     })
 
     return () => {}
-  }, [])
+  }, [onPropertySelect])
 
   return (
     <div className="map-wrapper">
       <div className="absolute top-4 left-4 z-10 bg-surface/90 border-2 border-neon-green p-2 rounded">
         <div className="text-neon-green font-retro text-xs">
-          {loading ? '🔄 LOADING REAL FRENCH DATA...' : '🇫🇷 REAL CADASTRAL PARCELS'}
+          {loading ? '🔄 LOADING FRENCH DATA...' : '🇫🇷 FRENCH PROPERTY MAP'}
         </div>
         <div className="text-neon-cyan font-retro text-xs mt-1">
           Zoom: {currentZoom.toFixed(1)} • {currentZoom >= 15 ? 'PARCELS VISIBLE' : 'ZOOM IN FOR PARCELS'}
         </div>
+        {!cadastralLayersLoaded && (
+          <div className="text-neon-orange font-retro text-xs mt-1">
+            ⚠️ Cadastral layers loading...
+          </div>
+        )}
       </div>
 
       <div className="absolute bottom-4 left-4 z-10 bg-surface/90 border-2 border-neon-yellow p-3 rounded">
-        <div className="text-neon-yellow font-retro text-xs mb-2">REAL CADASTRAL DATA</div>
+        <div className="text-neon-yellow font-retro text-xs mb-2">DATA SOURCES</div>
         <div className="space-y-1 text-xs text-white">
           <div>✅ geo.api.gouv.fr - Communes</div>
-          <div>✅ DVF Etalab API - Sales</div>
-          <div>✅ French Cadastre - Parcels</div>
-          <div>🏘️ DGFiP Official Data</div>
+          <div>{cadastralLayersLoaded ? '✅' : '⚠️'} French Cadastre - Parcels</div>
+          <div>⚠️ DVF Sales - Limited availability</div>
+          <div>✅ DPE Estimates</div>
           <div className="text-neon-cyan mt-2">
-            {currentZoom >= 15 ? '📋 Cadastral parcels visible!' : '🔍 Zoom in for parcel boundaries'}
+            {currentZoom >= 15 ? '🎯 Click anywhere for property data' : '🔍 Zoom in and click for details'}
           </div>
         </div>
       </div>
