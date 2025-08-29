@@ -1,10 +1,12 @@
+// barracudatool/src/app/page.tsx
+
 'use client'
 import { useState } from 'react'
 import MapComponent from '../components/MapComponent'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 
-// ✅ Updated PropertyInfo interface
+// ✅ Updated PropertyInfo interface - added transactions array for full DVF data
 interface PropertyInfo {
   cadastralId: string | null
   size: number | null
@@ -24,6 +26,14 @@ interface PropertyInfo {
     date: string
     consumption?: number
   }
+  transactions?: Array<{
+    sale_date: string
+    sale_price: number
+    property_type: string
+    surface_area: number
+    municipality: string
+    postal_code: string
+  }>
 }
 
 interface DataLayers {
@@ -40,6 +50,7 @@ export default function Home() {
     dvf: true,
     dpe: false
   })
+  const [isDvfModalOpen, setIsDvfModalOpen] = useState(false)
 
   const handlePropertySelect = (property: PropertyInfo | null) => {
     setSelectedProperty(property)
@@ -189,6 +200,16 @@ export default function Home() {
                   </div>
                 )}
 
+                {/* Button to open DVF modal */}
+                <Button 
+                  neonColor="orange" 
+                  size="sm"
+                  className="w-full mt-2"
+                  onClick={() => setIsDvfModalOpen(true)}
+                >
+                  💰 View DVF Sales Data
+                </Button>
+
                 {/* DPE Rating - only if real data exists */}
                 {selectedProperty.dpeRating && (
                   <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
@@ -294,6 +315,67 @@ export default function Home() {
           </div>
         </Card>
       </div>
+
+      {isDvfModalOpen && selectedProperty && (
+  <div 
+    style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 50,
+      fontFamily: 'Orbitron, monospace'
+    }}
+    onClick={() => setIsDvfModalOpen(false)}  // Close on backdrop click
+  >
+    <div  // Wrapper div to handle stopPropagation with explicit typing
+      onClick={(e: React.MouseEvent) => e.stopPropagation()}  // Prevent closing when clicking inside
+      style={{ maxWidth: '400px' }}  // Optional styling for the inner container
+    >
+      <Card neonColor="orange" className="backdrop-blur-md w-96 max-h-[80vh] overflow-y-auto">
+        <div className="text-center mb-4">
+          <h3 className="font-retro text-lg font-bold text-neon-orange uppercase tracking-wider">
+            💰 DVF Sales Data (REAL)
+          </h3>
+        </div>
+        <div className="space-y-4 p-4">
+          {selectedProperty.transactions && selectedProperty.transactions.length > 0 ? (
+            selectedProperty.transactions.map((tx, index) => (
+              <div key={index} className="bg-surface/50 p-3 rounded border border-neon-orange/30">
+                <div className="text-white text-xs space-y-1">
+                  <div>Date: <span className="text-neon-cyan">{tx.sale_date}</span></div>
+                  <div>Price: <span className="text-neon-yellow">€{tx.sale_price.toLocaleString()}</span></div>
+                  <div>Type: <span className="text-white">{tx.property_type}</span></div>
+                  <div>Surface: <span className="text-neon-yellow">{tx.surface_area} m²</span></div>
+                  <div>Municipality: <span className="text-neon-cyan">{tx.municipality}</span></div>
+                  <div>Postal Code: <span className="text-neon-orange">{tx.postal_code}</span></div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center text-neon-orange text-sm font-retro">
+              No DVF sale data available for this parcel.
+            </div>
+          )}
+        </div>
+        <Button 
+          neonColor="cyan" 
+          size="sm"
+          variant="secondary"
+          className="w-full mt-4"
+          onClick={() => setIsDvfModalOpen(false)}
+        >
+          Close
+        </Button>
+      </Card>
     </div>
-  )
+  </div>
+)}
+</div>
+)
 }

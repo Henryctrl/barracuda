@@ -1,10 +1,12 @@
+// barracudatool/src/components/MapComponent.tsx
+
 'use client'
 import React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import * as maptilersdk from '@maptiler/sdk'
 import { FrenchCadastralAPI } from '../lib/french-apis'
 
-// ✅ Use the same interface as in page.tsx
+// ✅ Updated interface to include transactions for DVF modal
 interface PropertyInfo {
   cadastralId: string | null
   size: number | null
@@ -24,8 +26,15 @@ interface PropertyInfo {
     date: string
     consumption?: number
   }
+  transactions?: Array<{
+    sale_date: string
+    sale_price: number
+    property_type: string
+    surface_area: number
+    municipality: string
+    postal_code: string
+  }>
 }
-
 
 interface DataLayers {
   cadastral: boolean
@@ -381,7 +390,7 @@ mapInstance.on('click', async (e) => {
       throw new Error('No real parcel data available');
     }
 
-    const { parcel, latest_sale } = propertyData
+    const { parcel, latest_sale, transactions } = propertyData
     
     const propertyInfo: PropertyInfo = {
       cadastralId: parcel.cadastral_id,
@@ -396,9 +405,9 @@ mapInstance.on('click', async (e) => {
       lastSalePrice: latest_sale?.sale_price,
       pricePerSqm: latest_sale && latest_sale.surface_area ? 
         Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
-      dataSource: 'real_cadastral'  // ✅ Now required
+      dataSource: 'real_cadastral',  // ✅ Now required
+      transactions: transactions || []  // ✅ Include full transactions for DVF modal
     }
-    
 
     // ✅ Create marker with REAL data only
     const labelParts = [
@@ -458,7 +467,6 @@ mapInstance.on('click', async (e) => {
     setLoading(false)
   }
 })
-
 
     return () => {}
   }, [onPropertySelect])

@@ -1,3 +1,5 @@
+// barracudatool/src/lib/french-apis.ts
+
 export class FrenchCadastralAPI {
   private static cache = new Map<string, any>();
 
