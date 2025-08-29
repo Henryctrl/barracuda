@@ -6,7 +6,6 @@ import MapComponent from '../components/MapComponent'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 
-// ✅ Updated PropertyInfo interface - added transactions array for full DVF data
 interface PropertyInfo {
   cadastralId: string | null
   size: number | null
@@ -34,6 +33,8 @@ interface PropertyInfo {
     municipality: string
     postal_code: string
   }>
+  hasSales?: boolean
+  salesCount?: number
 }
 
 interface DataLayers {
@@ -89,11 +90,11 @@ export default function Home() {
               BARRACUDA
             </h1>
             <p className="text-neon-cyan text-sm font-retro uppercase tracking-wider">
-              Property Prospection Tool - REAL DATA ONLY
+              100% REAL DATA - NO ESTIMATES
             </p>
             <div className="flex justify-center items-center mt-3 text-xs">
               <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse mr-2"></div>
-              <span className="text-neon-green font-retro">PRECISION MODE ACTIVE</span>
+              <span className="text-neon-green font-retro">EXACT PLOT MODE ACTIVE</span>
             </div>
           </div>
         </Card>
@@ -164,16 +165,57 @@ export default function Home() {
         <Card neonColor="green" className="backdrop-blur-md flex-1 min-h-0">
           <div className="text-center mb-4">
             <h3 className="font-retro text-lg font-bold text-neon-green uppercase tracking-wider">
-              🏠 Property Info
+              🏠 Exact Plot Info
             </h3>
           </div>
           
           <div className="overflow-y-auto">
             {selectedProperty ? (
               <div className="space-y-4">
+                {/* PROMINENT SALE STATUS */}
+                <div className={`bg-surface/50 p-3 rounded border-2 ${
+                  selectedProperty.hasSales 
+                    ? 'border-neon-green/70 bg-green-900/20' 
+                    : 'border-neon-orange/70 bg-red-900/20'
+                }`}>
+                  <h4 className={`font-retro text-sm mb-3 ${
+                    selectedProperty.hasSales ? 'text-neon-green' : 'text-neon-orange'
+                  }`}>
+                    📊 EXACT PLOT SALE STATUS
+                  </h4>
+                  <div className="text-white text-xs space-y-2">
+                    {selectedProperty.hasSales ? (
+                      <>
+                        <div className="text-neon-green font-bold text-sm">
+                          ✅ THIS EXACT PLOT HAS BEEN SOLD
+                        </div>
+                        <div>Last Sale: <span className="text-neon-cyan">{selectedProperty.lastSaleDate}</span></div>
+                        <div>Sale Price: <span className="text-neon-yellow">€{selectedProperty.lastSalePrice?.toLocaleString()}</span></div>
+                        {selectedProperty.pricePerSqm && (
+                          <div>Price/m²: <span className="text-neon-orange">€{selectedProperty.pricePerSqm}/m²</span></div>
+                        )}
+                        {selectedProperty.salesCount && selectedProperty.salesCount > 1 && (
+                          <div className="text-neon-purple">
+                            Total Sales: <span className="font-bold">{selectedProperty.salesCount}</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-neon-orange font-bold text-sm">
+                          ❌ NO SALES RECORDED FOR THIS EXACT PLOT
+                        </div>
+                        <div className="text-text-secondary">
+                          This exact plot has no recorded sales in the DVF database since 2014
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
                 {/* Cadastral Info */}
                 <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
-                  <h4 className="text-neon-green font-retro text-sm mb-2">📋 CADASTRAL</h4>
+                  <h4 className="text-neon-green font-retro text-sm mb-2">📋 EXACT CADASTRAL DATA</h4>
                   <div className="text-white text-xs space-y-1">
                     <div>Plot ID: <span className="text-neon-cyan">{selectedProperty.cadastralId || 'N/A'}</span></div>
                     <div>Size: <span className="text-neon-yellow">{selectedProperty.size ? `${selectedProperty.size} m²` : 'N/A'}</span>
@@ -185,49 +227,38 @@ export default function Home() {
                     {selectedProperty.section && selectedProperty.numero && (
                       <div>Section: <span className="text-neon-cyan">{selectedProperty.section}{selectedProperty.numero}</span></div>
                     )}
+                    <div>Commune: <span className="text-neon-cyan">{selectedProperty.commune || 'N/A'}</span></div>
+                    <div>Department: <span className="text-white">{selectedProperty.department || 'N/A'}</span></div>
                   </div>
                 </div>
 
-                {/* Transaction History */}
-                {selectedProperty.lastSaleDate && (
-                  <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
-                    <h4 className="text-neon-green font-retro text-sm mb-2">💰 LAST SALE (REAL)</h4>
-                    <div className="text-white text-xs space-y-1">
-                      <div>Date: <span className="text-neon-cyan">{selectedProperty.lastSaleDate}</span></div>
-                      <div>Price: <span className="text-neon-yellow">€{selectedProperty.lastSalePrice?.toLocaleString()}</span></div>
-                      <div>Price/m²: <span className="text-neon-orange">€{selectedProperty.pricePerSqm}</span></div>
-                    </div>
-                  </div>
+                {/* DVF Sales Button - ONLY show if there are REAL sales */}
+                {selectedProperty.hasSales && selectedProperty.transactions && selectedProperty.transactions.length > 0 && (
+                  <Button 
+                    neonColor="green"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={() => setIsDvfModalOpen(true)}
+                  >
+                    💰 View Real Sales ({selectedProperty.salesCount || 1})
+                  </Button>
                 )}
 
-                {/* Button to open DVF modal */}
-                <Button 
-                  neonColor="orange" 
-                  size="sm"
-                  className="w-full mt-2"
-                  onClick={() => setIsDvfModalOpen(true)}
-                >
-                  💰 View DVF Sales Data
-                </Button>
-
-                {/* DPE Rating - only if real data exists */}
-                {selectedProperty.dpeRating && (
-                  <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
-                    <h4 className="text-neon-green font-retro text-sm mb-2">⚡ DPE RATING (REAL)</h4>
-                    <div className="text-white text-xs space-y-1">
-                      <div>Energy: <span className="text-neon-yellow">{selectedProperty.dpeRating.energy}</span></div>
-                      <div>GHG: <span className="text-neon-orange">{selectedProperty.dpeRating.ghg}</span></div>
-                      <div>Date: <span className="text-neon-cyan">{selectedProperty.dpeRating.date}</span></div>
-                    </div>
+                {/* Location Info */}
+                <div className="bg-surface/50 p-3 rounded border border-neon-purple/30">
+                  <h4 className="text-neon-purple font-retro text-sm mb-2">📍 LOCATION</h4>
+                  <div className="text-white text-xs space-y-1">
+                    <div>Commune: <span className="text-neon-cyan">{selectedProperty.commune}</span></div>
+                    <div>Population: <span className="text-neon-yellow">{selectedProperty.population?.toLocaleString()}</span></div>
                   </div>
-                )}
+                </div>
               </div>
             ) : (
               <div className="text-center text-text-secondary text-sm">
                 <div className="text-4xl mb-4">🎯</div>
-                <p className="font-retro">Click on a cadastral parcel to view REAL property data</p>
+                <p className="font-retro">Click on a cadastral parcel to check if that exact plot has been sold</p>
                 <div className="text-neon-orange text-xs mt-2 font-retro">
-                  NO ESTIMATES - REAL DATA ONLY
+                  100% REAL DATA - NO ESTIMATES
                 </div>
               </div>
             )}
@@ -243,7 +274,7 @@ export default function Home() {
               className="w-full"
               onClick={() => console.log('Export property list')}
             >
-              📋 Export List
+              📋 Export Results
             </Button>
             <Button 
               neonColor="cyan" 
@@ -291,17 +322,21 @@ export default function Home() {
           <div className="flex justify-between items-center text-sm font-retro">
             <div className="flex items-center space-x-6">
               <div className="flex items-center">
-                <span className="text-neon-purple">DATA:</span>
-                <span className="text-neon-green ml-2">REAL ONLY</span>
+                <span className="text-neon-purple">MODE:</span>
+                <span className="text-neon-green ml-2">REAL DATA ONLY</span>
               </div>
               <div className="flex items-center">
-                <span className="text-neon-yellow">MODE:</span>
+                <span className="text-neon-yellow">VIEW:</span>
                 <span className="text-white ml-2">{viewMode.toUpperCase()}</span>
               </div>
               {selectedProperty && (
                 <div className="flex items-center">
-                  <span className="text-neon-green">SELECTED:</span>
-                  <span className="text-white ml-2">{selectedProperty.cadastralId || 'N/A'}</span>
+                  <span className={selectedProperty.hasSales ? "text-neon-green" : "text-neon-orange"}>
+                    STATUS:
+                  </span>
+                  <span className="text-white ml-2">
+                    {selectedProperty.hasSales ? "SOLD" : "NO SALES"}
+                  </span>
                 </div>
               )}
             </div>
@@ -309,73 +344,84 @@ export default function Home() {
               <span className="text-text-secondary">French Government Data Only</span>
               <div className="flex items-center">
                 <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse mr-2"></div>
-                <span className="text-neon-green">PRECISION MODE</span>
+                <span className="text-neon-green">100% REAL DATA</span>
               </div>
             </div>
           </div>
         </Card>
       </div>
 
-      {isDvfModalOpen && selectedProperty && (
-  <div 
-    style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      width: '100vw',
-      height: '100vh',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 50,
-      fontFamily: 'Orbitron, monospace'
-    }}
-    onClick={() => setIsDvfModalOpen(false)}  // Close on backdrop click
-  >
-    <div  // Wrapper div to handle stopPropagation with explicit typing
-      onClick={(e: React.MouseEvent) => e.stopPropagation()}  // Prevent closing when clicking inside
-      style={{ maxWidth: '400px' }}  // Optional styling for the inner container
-    >
-      <Card neonColor="orange" className="backdrop-blur-md w-96 max-h-[80vh] overflow-y-auto">
-        <div className="text-center mb-4">
-          <h3 className="font-retro text-lg font-bold text-neon-orange uppercase tracking-wider">
-            💰 DVF Sales Data (REAL)
-          </h3>
-        </div>
-        <div className="space-y-4 p-4">
-          {selectedProperty.transactions && selectedProperty.transactions.length > 0 ? (
-            selectedProperty.transactions.map((tx, index) => (
-              <div key={index} className="bg-surface/50 p-3 rounded border border-neon-orange/30">
-                <div className="text-white text-xs space-y-1">
-                  <div>Date: <span className="text-neon-cyan">{tx.sale_date}</span></div>
-                  <div>Price: <span className="text-neon-yellow">€{tx.sale_price.toLocaleString()}</span></div>
-                  <div>Type: <span className="text-white">{tx.property_type}</span></div>
-                  <div>Surface: <span className="text-neon-yellow">{tx.surface_area} m²</span></div>
-                  <div>Municipality: <span className="text-neon-cyan">{tx.municipality}</span></div>
-                  <div>Postal Code: <span className="text-neon-orange">{tx.postal_code}</span></div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-center text-neon-orange text-sm font-retro">
-              No DVF sale data available for this parcel.
-            </div>
-          )}
-        </div>
-        <Button 
-          neonColor="cyan" 
-          size="sm"
-          variant="secondary"
-          className="w-full mt-4"
+      {/* REAL DATA ONLY DVF Modal */}
+      {isDvfModalOpen && selectedProperty && selectedProperty.hasSales && selectedProperty.transactions && selectedProperty.transactions.length > 0 && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            fontFamily: 'Orbitron, monospace'
+          }}
           onClick={() => setIsDvfModalOpen(false)}
         >
-          Close
-        </Button>
-      </Card>
+          <div
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            style={{ maxWidth: '500px' }}
+          >
+            <Card neonColor="green" className="backdrop-blur-md w-96 max-h-[80vh] overflow-y-auto">
+              <div className="text-center mb-4">
+                <h3 className="font-retro text-lg font-bold uppercase tracking-wider text-neon-green">
+                  💰 REAL DVF Sales Data
+                </h3>
+                <div className="text-xs text-white mt-2">
+                  Plot: {selectedProperty.cadastralId} • {selectedProperty.commune}
+                </div>
+                <div className="text-xs text-neon-green mt-1">
+                  100% VERIFIED GOVERNMENT DATA
+                </div>
+              </div>
+              <div className="space-y-4 p-4">
+                <div className="text-center text-neon-green font-retro text-sm mb-4">
+                  ✅ {selectedProperty.transactions.length} REAL Sale{selectedProperty.transactions.length > 1 ? 's' : ''} Found for This Exact Plot
+                </div>
+                {selectedProperty.transactions.map((tx, index) => (
+                  <div key={index} className={`bg-surface/50 p-3 rounded border ${
+                    index === 0 ? 'border-neon-green/50' : 'border-neon-cyan/30'
+                  }`}>
+                    <div className="text-white text-xs space-y-1">
+                      {index === 0 && (
+                        <div className="text-neon-green font-bold text-xs mb-1">MOST RECENT SALE</div>
+                      )}
+                      <div>Date: <span className="text-neon-cyan">{tx.sale_date}</span></div>
+                      <div>Price: <span className="text-neon-yellow">€{tx.sale_price.toLocaleString()}</span></div>
+                      <div>Type: <span className="text-white">{tx.property_type}</span></div>
+                      {tx.surface_area > 0 && (
+                        <div>Surface: <span className="text-neon-yellow">{tx.surface_area} m²</span></div>
+                      )}
+                      <div>Municipality: <span className="text-neon-cyan">{tx.municipality}</span></div>
+                      <div>Postal Code: <span className="text-neon-orange">{tx.postal_code}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button 
+                neonColor="cyan" 
+                size="sm"
+                variant="secondary"
+                className="w-full mt-4"
+                onClick={() => setIsDvfModalOpen(false)}
+              >
+                Close
+              </Button>
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-)}
-</div>
-)
+  )
 }

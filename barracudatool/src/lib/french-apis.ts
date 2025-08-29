@@ -7,7 +7,89 @@ export class FrenchCadastralAPI {
     return `${Math.round(lng * 10000) / 10000},${Math.round(lat * 10000) / 10000}`;
   }
 
-  // ✅ REAL French commune data only - no fallbacks
+  // NEW: Get real parcel coordinates from cadastral geometry
+  static async getParcelCentroid(cadastralId: string): Promise<{lat: number, lng: number} | null> {
+    try {
+      const commune = cadastralId.slice(0, 5);
+      const section = cadastralId.slice(8, 10);
+      const numero = cadastralId.slice(10);
+      
+      console.log(`🗺️ Fetching real coordinates for parcel ${cadastralId} (commune: ${commune}, section: ${section}, numero: ${numero})`);
+      
+      // Try multiple cadastral APIs
+      const apis = [
+        `https://apicarto.ign.fr/api/cadastre/parcelle?code_insee=${commune}&section=${section}&numero=${numero}`,
+        `https://geo.api.gouv.fr/cadastre?code_insee=${commune}&section=${section}&numero=${numero}`
+      ];
+      
+      for (const apiUrl of apis) {
+        try {
+          const response = await fetch(apiUrl);
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.features && data.features.length > 0) {
+              const geometry = data.features[0].geometry;
+              if (geometry && geometry.coordinates) {
+                let centroidLng: number, centroidLat: number;
+                
+                if (geometry.type === 'Polygon') {
+                  const coordinates = geometry.coordinates[0];
+                  centroidLng = coordinates.reduce((sum: number, coord: number[]) => sum + coord[0], 0) / coordinates.length;
+                  centroidLat = coordinates.reduce((sum: number, coord: number[]) => sum + coord[1], 0) / coordinates.length;
+                } else if (geometry.type === 'Point') {
+                  centroidLng = geometry.coordinates[0];
+                  centroidLat = geometry.coordinates[1];
+                } else {
+                  continue;
+                }
+                
+                console.log(`✅ Found REAL parcel centroid for ${cadastralId}: lat=${centroidLat}, lng=${centroidLng}`);
+                return { lat: centroidLat, lng: centroidLng };
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ API ${apiUrl} failed:`, error);
+        }
+      }
+      
+      console.warn(`⚠️ Could not get centroid for parcel ${cadastralId} from any API`);
+      return null;
+    } catch (error) {
+      console.error(`❌ Error getting parcel centroid:`, error);
+      return null;
+    }
+  }
+
+  // Extract proper cadastral ID from feature
+  static extractCadastralId(feature: any): string | null {
+    if (!feature || !feature.properties) {
+      return null;
+    }
+
+    const props = feature.properties;
+    
+    if (props.id) {
+      console.log('✅ Using feature ID as cadastral ID:', props.id);
+      return props.id;
+    }
+    
+    const commune = props.commune || '';
+    const section = props.section || '';
+    const numero = props.numero || '';
+    const prefixe = props.prefixe || '000';
+    
+    if (commune && section && numero) {
+      const cadastralId = `${commune}${prefixe}${section}${numero.padStart(4, '0')}`;
+      console.log('✅ Built cadastral ID from components:', cadastralId);
+      return cadastralId;
+    }
+    
+    console.log('❌ Could not extract cadastral ID from feature:', Object.keys(props));
+    return null;
+  }
+
   static async getParcelByCoordinates(lng: number, lat: number) {
     const cacheKey = this.getCacheKey(lng, lat);
     
@@ -32,14 +114,14 @@ export class FrenchCadastralAPI {
       const commune = communes[0];
       
       const parcelData = {
-        cadastral_id: null, // Will be filled by real cadastral data only
+        cadastral_id: null,
         commune_name: commune.nom,
         commune_code: commune.code,
         department: commune.codeDepartement,
         region: commune.codeRegion,
         postal_code: commune.codesPostaux[0] || null,
-        surface_area: null, // ✅ NO ESTIMATES - real data only
-        zone_type: null, // ✅ NO ESTIMATES - real data only
+        surface_area: null,
+        zone_type: null,
         coordinates: [lng, lat],
         population: commune.population,
         commune_surface: commune.surface,
@@ -54,7 +136,6 @@ export class FrenchCadastralAPI {
     }
   }
 
-  // ✅ EXTRACT REAL CADASTRAL DATA ONLY
   static extractCadastralDataFromFeature(feature: any) {
     if (!feature || !feature.properties) {
       console.log('❌ No cadastral feature found');
@@ -64,7 +145,6 @@ export class FrenchCadastralAPI {
     const props = feature.properties;
     console.log('🔍 Extracting REAL cadastral data:', props);
     
-    // ✅ Try multiple property names for surface area
     let surfaceArea = null;
     const possibleSurfaceKeys = ['contenance', 'surface', 'superficie', 'area', 'surface_area'];
     
@@ -81,11 +161,11 @@ export class FrenchCadastralAPI {
     
     if (!surfaceArea) {
       console.log('❌ No real surface area found. Available properties:', Object.keys(props));
-      return null; // ✅ NO ESTIMATES - return null if no real data
+      return null;
     }
     
     return {
-      real_cadastral_id: props.id || null,
+      real_cadastral_id: this.extractCadastralId(feature),
       commune_code: props.commune || null,
       section: props.section || null,
       numero: props.numero || null,
@@ -97,34 +177,48 @@ export class FrenchCadastralAPI {
     };
   }
 
-  // ✅ UPDATED DVF API - Use alternative endpoint (DVF+ from Cerema)
-  // barracudatool/src/lib/french-apis.ts
+  // FIXED: DVF API with REAL parcel coordinates
+  // barracudatool/src/lib/french-apis.ts (updated getDVFTransactions method)
 
-static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) {
-  const cacheKey = `dvf_${this.getCacheKey(lng, lat)}_${cadastralId || 'noId'}`;
+static async getDVFTransactions(userLng: number, userLat: number, exactCadastralId?: string | null) {
+  const cacheKey = `dvf_etalab_${this.getCacheKey(userLng, userLat)}_${exactCadastralId || 'noId'}`;
   
   if (this.cache.has(cacheKey)) {
     return this.cache.get(cacheKey);
   }
 
   try {
-    console.log(`📡 Calling DVF+ API for exact plot: ${lat}, ${lng}${cadastralId ? `, ID: ${cadastralId}` : ''}`);
+    let searchLat = userLat;
+    let searchLng = userLng;
     
-    // Use smaller radius (500m) for exact plot matching
+    // Try to get real parcel coordinates (optional)
+    if (exactCadastralId) {
+      console.log(`🗺️ Getting REAL coordinates for parcel ${exactCadastralId}...`);
+      const realCoords = await this.getParcelCentroid(exactCadastralId);
+      
+      if (realCoords) {
+        searchLat = realCoords.lat;
+        searchLng = realCoords.lng;
+        console.log(`✅ Using REAL parcel coordinates: lat=${searchLat}, lng=${searchLng}`);
+      } else {
+        console.log(`⚠️ Using click coordinates as fallback: lat=${searchLat}, lng=${searchLng}`);
+      }
+    }
+    
     const params = new URLSearchParams({
-      lat: lat.toString(),
-      lng: lng.toString(),
-      rayon: '500' // Much smaller radius for exact plot
+      lat: searchLat.toString(),
+      lng: searchLng.toString(),
+      rayon: '1000' // Start with 1km radius for Etalab
     });
     
-    if (cadastralId) {
-      params.append('cadastralId', cadastralId);
+    if (exactCadastralId) {
+      params.append('cadastralId', exactCadastralId);
     }
     
     const response = await fetch(`/api/dvf-plus?${params}`);
     
     if (!response.ok) {
-      console.warn(`⚠️ DVF+ API returned ${response.status}, no sales data available`);
+      console.warn(`⚠️ Etalab DVF API returned ${response.status}, no sales data available`);
       this.cache.set(cacheKey, []);
       return [];
     }
@@ -132,7 +226,7 @@ static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) 
     const data = await response.json();
     
     if (data.error) {
-      console.warn(`⚠️ DVF+ API issue: ${data.error}, no sales data available`);
+      console.warn(`⚠️ Etalab DVF API issue: ${data.error}, no sales data available`);
       this.cache.set(cacheKey, []);
       return [];
     }
@@ -140,48 +234,47 @@ static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) 
     const transactions = data.resultats || [];
     
     if (transactions.length === 0) {
-      console.log('ℹ️ No sales found for this exact plot');
+      console.log(`ℹ️ No Etalab sales found for exact plot ${exactCadastralId || 'at coordinates'}`);
       this.cache.set(cacheKey, []);
       return [];
     }
     
-    // Sort by date (most recent first) and process
-    const processedTransactions = transactions
-      .filter((t: any) => t.date_mutation && t.valeur_fonciere) // Only valid transactions
-      .sort((a: any, b: any) => new Date(b.date_mutation).getTime() - new Date(a.date_mutation).getTime())
-      .map((t: any) => ({
-        sale_date: t.date_mutation,
-        sale_price: t.valeur_fonciere,
-        property_type: t.type_local || 'Unknown',
-        surface_area: t.surface_reelle_bati || t.surface_terrain || 0,
-        municipality: t.nom_commune || 'Unknown',
-        postal_code: t.code_postal || 'Unknown',
-        cadastral_ref: t.cadastral_ref,
-        data_source: 'real_dvf_exact'
-      }));
+    // Process Etalab transactions
+    const processedTransactions = transactions.map((t: any) => ({
+      sale_date: t.date_mutation || 'Unknown',
+      sale_price: t.valeur_fonciere || 0,
+      property_type: t.type_local || 'Unknown',
+      surface_area: t.surface_reelle_bati || t.surface_terrain || 0,
+      municipality: t.nom_commune || 'Unknown',
+      postal_code: t.code_postal || 'Unknown',
+      parcel_id: t.code_parcelle || null,
+      data_source: 'etalab_official'
+    }));
 
-    console.log(`✅ DVF+ exact plot success: ${processedTransactions.length} transactions found`);
+    console.log(`✅ ETALAB SUCCESS: ${processedTransactions.length} transactions found for parcel ${exactCadastralId}`);
+    
     this.cache.set(cacheKey, processedTransactions);
     return processedTransactions;
   } catch (error) {
-    console.warn('⚠️ DVF+ exact plot API failed:', error);
+    console.warn('⚠️ Etalab DVF API failed:', error);
     this.cache.set(cacheKey, []);
     return [];
   }
 }
 
-
-  // ✅ REMOVED - NO DPE ESTIMATES ALLOWED
-  // DPE data will only be shown if available from real government sources
-
-  // ✅ REAL DATA ASSEMBLY - NO ESTIMATES
-  static async getCompleteParcelData(lng: number, lat: number, cadastralFeature?: any) {
+  static async getCompleteParcelData(userLng: number, userLat: number, cadastralFeature?: any) {
     try {
-      console.log(`🔍 Fetching REAL parcel data for: ${lng}, ${lat}`);
+      console.log(`🔍 Fetching REAL parcel data for: lng=${userLng}, lat=${userLat}`);
+      
+      let exactCadastralId: string | null = null;
+      if (cadastralFeature) {
+        exactCadastralId = this.extractCadastralId(cadastralFeature);
+        console.log(`🏠 Extracted exact cadastral ID: ${exactCadastralId}`);
+      }
       
       const [parcelResult, transactionsResult] = await Promise.allSettled([
-        this.getParcelByCoordinates(lng, lat),
-        this.getDVFTransactions(lng, lat)
+        this.getParcelByCoordinates(userLng, userLat),
+        this.getDVFTransactions(userLng, userLat, exactCadastralId)
       ]);
 
       if (parcelResult.status === 'rejected') {
@@ -193,7 +286,6 @@ static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) 
 
       let parcelData = parcelResult.value;
 
-      // ✅ MERGE REAL CADASTRAL DATA if available from map click
       if (cadastralFeature) {
         const realCadastralData = this.extractCadastralDataFromFeature(cadastralFeature);
         if (realCadastralData) {
@@ -201,8 +293,8 @@ static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) 
           
           parcelData = {
             ...parcelData,
-            cadastral_id: realCadastralData.real_cadastral_id,
-            surface_area: realCadastralData.surface_area, // ✅ REAL surface area only
+            cadastral_id: realCadastralData.real_cadastral_id || exactCadastralId,
+            surface_area: realCadastralData.surface_area,
             zone_type: realCadastralData.zone_type,
             section: realCadastralData.section,
             numero: realCadastralData.numero,
@@ -212,7 +304,6 @@ static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) 
           };
         } else {
           console.log('❌ No real cadastral data available for this parcel');
-          // ✅ Don't return partial data - user must click on a real parcel
           return null;
         }
       } else {
@@ -223,11 +314,14 @@ static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) 
       const result = {
         parcel: parcelData,
         transactions: safeTransactions,
-        dpe: null, // ✅ NO DPE ESTIMATES
-        latest_sale: latestSale
+        dpe: null,
+        latest_sale: latestSale,
+        has_sales: safeTransactions.length > 0,
+        sales_count: safeTransactions.length,
+        exact_cadastral_id: exactCadastralId
       };
 
-      console.log('✅ REAL parcel data assembled successfully');
+      console.log(`✅ EXACT parcel analysis complete: ${safeTransactions.length > 0 ? `${safeTransactions.length} REAL SALES FOUND` : 'NO SALES FOR THIS EXACT PLOT'}`);
       return result;
     } catch (error) {
       console.error('❌ Failed to fetch real parcel data:', error);

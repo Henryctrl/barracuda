@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react'
 import * as maptilersdk from '@maptiler/sdk'
 import { FrenchCadastralAPI } from '../lib/french-apis'
 
-// ✅ Updated interface to include transactions for DVF modal
 interface PropertyInfo {
   cadastralId: string | null
   size: number | null
@@ -34,6 +33,8 @@ interface PropertyInfo {
     municipality: string
     postal_code: string
   }>
+  hasSales?: boolean
+  salesCount?: number
 }
 
 interface DataLayers {
@@ -62,7 +63,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   useEffect(() => {
     if (initialized.current || !mapContainer.current) return
 
-    console.log('🗺️ INITIALIZING FRENCH PROPERTY MAP')
+    console.log('🗺️ INITIALIZING FRENCH PROPERTY MAP WITH EXACT PLOT DETECTION')
     
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!
 
@@ -87,14 +88,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current = mapInstance
 
     mapInstance.on('load', () => {
-      console.log('✅ Map loaded - Setting up data layers')
+      console.log('✅ Map loaded - Setting up exact plot detection layers')
       
-      // ✅ FIXED: Try multiple cadastral data sources with proper error handling
       const addCadastralLayers = async () => {
         try {
-          console.log('🔍 Attempting to load French cadastral data...')
+          console.log('🔍 Attempting to load French cadastral data for exact plot matching...')
           
-          // Option 1: Try the correct MapTiler French cadastre tileset
           try {
             mapInstance.addSource('french-cadastral-parcels', {
               type: 'vector',
@@ -105,7 +104,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
           } catch (error) {
             console.warn('⚠️ MapTiler cadastre failed, trying alternative...')
             
-            // Option 2: Try OpenStreetMap administrative boundaries as fallback
             mapInstance.addSource('french-administrative', {
               type: 'vector',
               url: `https://api.maptiler.com/tiles/openmaptiles/tiles.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`,
@@ -114,7 +112,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
             console.log('✅ Using OpenStreetMap administrative boundaries')
           }
 
-          // Add layers with error handling
           const addLayerSafely = (layerConfig: any) => {
             try {
               mapInstance.addLayer(layerConfig)
@@ -125,12 +122,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
             }
           }
 
-          // Parcel boundaries (try both source types)
+          // Parcel boundaries for exact plot detection
           const parcelLinesAdded = addLayerSafely({
             id: 'cadastral-parcel-lines',
             type: 'line',
             source: 'french-cadastral-parcels',
-            'source-layer': 'parcelles', // Try the documented layer name
+            'source-layer': 'parcelles',
             minzoom: 15,
             paint: {
               'line-color': '#00ffff',
@@ -145,14 +142,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
             }
           })
 
-          // If parcelles layer doesn't work, try administrative boundaries
           if (!parcelLinesAdded) {
             addLayerSafely({
               id: 'administrative-boundaries',
               type: 'line',
               source: 'french-administrative',
               'source-layer': 'boundary',
-              filter: ['==', 'admin_level', 8], // Municipality level
+              filter: ['==', 'admin_level', 8],
               minzoom: 12,
               paint: {
                 'line-color': '#00ffff',
@@ -162,7 +158,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
             })
           }
 
-          // Parcel fills
+          // Parcel fills for exact clicking
           const parcelFillsAdded = addLayerSafely({
             id: 'cadastral-parcel-fills',
             type: 'fill',
@@ -185,7 +181,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
             }
           })
 
-          // Alternative: Municipality fills if parcels don't work
           if (!parcelFillsAdded) {
             addLayerSafely({
               id: 'municipality-fills',
@@ -211,7 +206,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
             })
           }
 
-          // Labels
+          // Labels for parcel identification
           addLayerSafely({
             id: 'cadastral-parcel-labels',
             type: 'symbol',
@@ -237,7 +232,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
           })
 
           setCadastralLayersLoaded(true)
-          console.log('✅ Cadastral layers setup complete')
+          console.log('✅ Cadastral layers for exact plot detection setup complete')
 
         } catch (error) {
           console.error('❌ Failed to setup cadastral layers:', error)
@@ -245,7 +240,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
       }
 
-      // Execute cadastral layers setup
       addCadastralLayers()
 
       // Clicked markers
@@ -289,10 +283,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
         setCurrentZoom(mapInstance.getZoom())
       })
 
-      // Enhanced error handling
       mapInstance.on('error', (e) => {
         console.error('🚨 Map error:', e.error)
-        // Don't crash the app on map errors
       })
 
       mapInstance.on('sourcedata', (e) => {
@@ -304,7 +296,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
       })
 
-      // Hover effects (try both layer types)
+      // Hover effects
       const setupHoverEffects = () => {
         const layersToHandle = ['cadastral-parcel-fills', 'municipality-fills']
         
@@ -331,7 +323,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
               mapInstance.removeFeatureState({ source, sourceLayer })
             })
 
-            // Click handlers
             mapInstance.on('click', layerId, (e) => {
               if (e.features && e.features.length > 0) {
                 console.log(`🏘️ Clicked on ${layerId}:`, e.features[0].properties)
@@ -341,132 +332,144 @@ const MapComponent: React.FC<MapComponentProps> = ({
         })
       }
 
-      // Setup hover effects after a short delay to ensure layers are loaded
       setTimeout(setupHoverEffects, 1000)
     })
 
-   // In MapComponent.tsx - updated click handler
-mapInstance.on('click', async (e) => {
-  const { lng, lat } = e.lngLat
-  
-  console.log(`🎯 Fetching REAL data for: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
-  setLoading(true)
+    // UPDATED: Exact plot click handler with sale detection
+    mapInstance.on('click', async (e) => {
+      const { lng, lat } = e.lngLat
+      
+      console.log(`🎯 Checking exact plot for sales: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
+      setLoading(true)
 
-  // ✅ MUST click on a cadastral parcel for real data
-  const features = mapInstance.queryRenderedFeatures(e.point, {
-    layers: ['cadastral-parcel-fills']
-  });
-  
-  const cadastralFeature = features.find(f => f.source === 'french-cadastral-parcels');
-  
-  if (!cadastralFeature) {
-    console.log('❌ No cadastral parcel clicked - showing error message');
-    
-    const errorPoint = {
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [lng, lat]
-      },
-      properties: {
-        label: 'Click on a\ncadastral parcel\nfor real data'
+      // Must click on a cadastral parcel for exact plot data
+      const features = mapInstance.queryRenderedFeatures(e.point, {
+        layers: ['cadastral-parcel-fills']
+      });
+      
+      const cadastralFeature = features.find(f => f.source === 'french-cadastral-parcels');
+      
+      if (!cadastralFeature) {
+        console.log('❌ No cadastral parcel clicked - showing error message');
+        
+        const errorPoint = {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [lng, lat]
+          },
+          properties: {
+            label: '❌ Click on a\ncadastral parcel\nfor exact plot data'
+          }
+        }
+
+        const source = mapInstance.getSource('clicked-points') as any
+        source?.setData({
+          type: 'FeatureCollection',
+          features: [errorPoint]
+        })
+        
+        setLoading(false)
+        return;
       }
-    }
 
-    const source = mapInstance.getSource('clicked-points') as any
-    source?.setData({
-      type: 'FeatureCollection',
-      features: [errorPoint]
-    })
-    
-    setLoading(false)
-    return;
-  }
+      try {
+        // Extract cadastral ID from clicked feature
+        const cadastralId = cadastralFeature.properties?.id || 
+                           cadastralFeature.properties?.cadastral_id || 
+                           `${cadastralFeature.properties?.section || ''}${cadastralFeature.properties?.numero || ''}`;
+        
+        console.log(`🏠 Clicked on exact parcel: ${cadastralId}`);
+        
+        const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat, cadastralFeature)
+        
+        if (!propertyData || !propertyData.parcel || !propertyData.parcel.surface_area) {
+          throw new Error('No real parcel data available');
+        }
 
-  try {
-    const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat, cadastralFeature)
-    
-    if (!propertyData || !propertyData.parcel || !propertyData.parcel.surface_area) {
-      throw new Error('No real parcel data available');
-    }
+        const { parcel, latest_sale, transactions, has_sales, sales_count } = propertyData
+        
+        const propertyInfo: PropertyInfo = {
+          cadastralId: parcel.cadastral_id || cadastralId,
+          size: parcel.surface_area,
+          zone: parcel.zone_type,
+          commune: parcel.commune_name,
+          department: `Dept. ${parcel.department}`,
+          population: parcel.population,
+          section: parcel.section,
+          numero: parcel.numero,
+          lastSaleDate: latest_sale?.sale_date,
+          lastSalePrice: latest_sale?.sale_price,
+          pricePerSqm: latest_sale && latest_sale.surface_area ? 
+            Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
+          dataSource: 'real_cadastral',
+          transactions: transactions || [],
+          hasSales: has_sales,
+          salesCount: sales_count
+        }
 
-    const { parcel, latest_sale, transactions } = propertyData
-    
-    const propertyInfo: PropertyInfo = {
-      cadastralId: parcel.cadastral_id,
-      size: parcel.surface_area,
-      zone: parcel.zone_type,
-      commune: parcel.commune_name,
-      department: `Dept. ${parcel.department}`,
-      population: parcel.population,
-      section: parcel.section,  // ✅ Now included in interface
-      numero: parcel.numero,    // ✅ Now included in interface
-      lastSaleDate: latest_sale?.sale_date,
-      lastSalePrice: latest_sale?.sale_price,
-      pricePerSqm: latest_sale && latest_sale.surface_area ? 
-        Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
-      dataSource: 'real_cadastral',  // ✅ Now required
-      transactions: transactions || []  // ✅ Include full transactions for DVF modal
-    }
+        // Create marker with exact sale status
+        const labelParts = [
+          parcel.commune_name || 'Unknown',
+          `${parcel.section || ''}${parcel.numero || ''}`,
+          `${parcel.surface_area} m² (REAL)`,
+        ]
+        
+        if (has_sales && latest_sale) {
+          labelParts.push(`✅ SOLD: €${latest_sale.sale_price.toLocaleString()}`);
+          labelParts.push(`Date: ${latest_sale.sale_date}`);
+          if (sales_count && sales_count > 1) {
+            labelParts.push(`(${sales_count} sales total)`);
+          }
+        } else {
+          labelParts.push('❌ NO SALES RECORDED');
+        }
 
-    // ✅ Create marker with REAL data only
-    const labelParts = [
-      parcel.commune_name || 'Unknown',
-      `${parcel.section}${parcel.numero}`,
-      `${parcel.surface_area} m² (REAL)`,
-    ]
-    
-    if (latest_sale?.sale_price) {
-      labelParts.push(`€${latest_sale.sale_price.toLocaleString()}`)
-    } else {
-      labelParts.push('No sales data')
-    }
+        const clickedPoint = {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [lng, lat]
+          },
+          properties: {
+            label: labelParts.join('\n')
+          }
+        }
 
-    const clickedPoint = {
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [lng, lat]
-      },
-      properties: {
-        label: labelParts.join('\n')
+        const source = mapInstance.getSource('clicked-points') as any
+        source?.setData({
+          type: 'FeatureCollection',
+          features: [clickedPoint]
+        })
+
+        if (onPropertySelect) {
+          onPropertySelect(propertyInfo)
+        }
+
+        console.log(`✅ ${has_sales ? 'PLOT SOLD' : 'NO SALES'} - Exact plot data:`, propertyInfo)
+      } catch (error) {
+        console.error('❌ Error checking exact plot sales:', error)
+        
+        const errorPoint = {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [lng, lat]
+          },
+          properties: {
+            label: '❌ No real data\navailable for\nthis exact plot'
+          }
+        }
+
+        const source = mapInstance.getSource('clicked-points') as any
+        source?.setData({
+          type: 'FeatureCollection',
+          features: [errorPoint]
+        })
+      } finally {
+        setLoading(false)
       }
-    }
-
-    const source = mapInstance.getSource('clicked-points') as any
-    source?.setData({
-      type: 'FeatureCollection',
-      features: [clickedPoint]
     })
-
-    if (onPropertySelect) {
-      onPropertySelect(propertyInfo)
-    }
-
-    console.log('✅ REAL property data loaded:', propertyInfo)
-  } catch (error) {
-    console.error('❌ Error fetching REAL data:', error)
-    
-    const errorPoint = {
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [lng, lat]
-      },
-      properties: {
-        label: 'No real data\navailable for\nthis parcel'
-      }
-    }
-
-    const source = mapInstance.getSource('clicked-points') as any
-    source?.setData({
-      type: 'FeatureCollection',
-      features: [errorPoint]
-    })
-  } finally {
-    setLoading(false)
-  }
-})
 
     return () => {}
   }, [onPropertySelect])
@@ -475,27 +478,26 @@ mapInstance.on('click', async (e) => {
     <div className="map-wrapper">
       <div className="absolute top-4 left-4 z-10 bg-surface/90 border-2 border-neon-green p-2 rounded">
         <div className="text-neon-green font-retro text-xs">
-          {loading ? '🔄 LOADING FRENCH DATA...' : '🇫🇷 FRENCH PROPERTY MAP'}
+          {loading ? '🔄 CHECKING EXACT PLOT SALES...' : '🇫🇷 EXACT PLOT SALE DETECTOR'}
         </div>
         <div className="text-neon-cyan font-retro text-xs mt-1">
           Zoom: {currentZoom.toFixed(1)} • {currentZoom >= 15 ? 'PARCELS VISIBLE' : 'ZOOM IN FOR PARCELS'}
         </div>
         {!cadastralLayersLoaded && (
           <div className="text-neon-orange font-retro text-xs mt-1">
-            ⚠️ Cadastral layers loading...
+            ⚠️ Loading exact plot detection...
           </div>
         )}
       </div>
 
       <div className="absolute bottom-4 left-4 z-10 bg-surface/90 border-2 border-neon-yellow p-3 rounded">
-        <div className="text-neon-yellow font-retro text-xs mb-2">DATA SOURCES</div>
+        <div className="text-neon-yellow font-retro text-xs mb-2">EXACT PLOT DETECTION</div>
         <div className="space-y-1 text-xs text-white">
           <div>✅ geo.api.gouv.fr - Communes</div>
-          <div>{cadastralLayersLoaded ? '✅' : '⚠️'} French Cadastre - Parcels</div>
-          <div>⚠️ DVF Sales - Limited availability</div>
-          <div>✅ DPE Estimates</div>
+          <div>{cadastralLayersLoaded ? '✅' : '⚠️'} French Cadastre - Exact Plots</div>
+          <div>✅ DVF+ Sales - Exact Plot Matching</div>
           <div className="text-neon-cyan mt-2">
-            {currentZoom >= 15 ? '🎯 Click anywhere for property data' : '🔍 Zoom in and click for details'}
+            {currentZoom >= 15 ? '🎯 Click exact plot for sale status' : '🔍 Zoom in and click for exact plot data'}
           </div>
         </div>
       </div>
