@@ -98,60 +98,78 @@ export class FrenchCadastralAPI {
   }
 
   // ✅ UPDATED DVF API - Use alternative endpoint (DVF+ from Cerema)
-  static async getDVFTransactions(lng: number, lat: number) {
-    const cacheKey = `dvf_${this.getCacheKey(lng, lat)}`;
+  // barracudatool/src/lib/french-apis.ts
+
+static async getDVFTransactions(lng: number, lat: number, cadastralId?: string) {
+  const cacheKey = `dvf_${this.getCacheKey(lng, lat)}_${cadastralId || 'noId'}`;
+  
+  if (this.cache.has(cacheKey)) {
+    return this.cache.get(cacheKey);
+  }
+
+  try {
+    console.log(`📡 Calling DVF+ API for exact plot: ${lat}, ${lng}${cadastralId ? `, ID: ${cadastralId}` : ''}`);
     
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey);
+    // Use smaller radius (500m) for exact plot matching
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lng: lng.toString(),
+      rayon: '500' // Much smaller radius for exact plot
+    });
+    
+    if (cadastralId) {
+      params.append('cadastralId', cadastralId);
     }
-
-    try {
-      console.log(`📡 Calling DVF+ API for coordinates: ${lat}, ${lng}`);
-      
-      // ✅ Use DVF+ from Cerema (more reliable as of 2025)
-      const response = await fetch(`/api/dvf-plus?lat=${lat}&lng=${lng}&rayon=2000`);
-      
-      if (!response.ok) {
-        console.warn(`⚠️ DVF+ API returned ${response.status}, no sales data available`);
-        this.cache.set(cacheKey, []);
-        return [];
-      }
-      
-      const data = await response.json();
-      
-      if (data.error) {
-        console.warn(`⚠️ DVF+ API issue: ${data.error}, no sales data available`);
-        this.cache.set(cacheKey, []);
-        return [];
-      }
-
-      const transactions = data.resultats || [];
-      
-      if (transactions.length === 0) {
-        console.log('ℹ️ No real transactions found for this location');
-        this.cache.set(cacheKey, []);
-        return [];
-      }
-      
-      const processedTransactions = transactions.slice(0, 5).map((t: any) => ({
-        sale_date: t.date_mutation,
-        sale_price: t.valeur_fonciere,
-        property_type: t.type_local,
-        surface_area: t.surface_reelle_bati || t.surface_terrain,
-        municipality: t.nom_commune,
-        postal_code: t.code_postal,
-        data_source: 'real_dvf'
-      }));
-
-      console.log(`✅ DVF+ API success: ${processedTransactions.length} REAL transactions found`);
-      this.cache.set(cacheKey, processedTransactions);
-      return processedTransactions;
-    } catch (error) {
-      console.warn('⚠️ DVF+ API call failed, no sales data available:', error);
+    
+    const response = await fetch(`/api/dvf-plus?${params}`);
+    
+    if (!response.ok) {
+      console.warn(`⚠️ DVF+ API returned ${response.status}, no sales data available`);
       this.cache.set(cacheKey, []);
       return [];
     }
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      console.warn(`⚠️ DVF+ API issue: ${data.error}, no sales data available`);
+      this.cache.set(cacheKey, []);
+      return [];
+    }
+
+    const transactions = data.resultats || [];
+    
+    if (transactions.length === 0) {
+      console.log('ℹ️ No sales found for this exact plot');
+      this.cache.set(cacheKey, []);
+      return [];
+    }
+    
+    // Sort by date (most recent first) and process
+    const processedTransactions = transactions
+      .filter((t: any) => t.date_mutation && t.valeur_fonciere) // Only valid transactions
+      .sort((a: any, b: any) => new Date(b.date_mutation).getTime() - new Date(a.date_mutation).getTime())
+      .map((t: any) => ({
+        sale_date: t.date_mutation,
+        sale_price: t.valeur_fonciere,
+        property_type: t.type_local || 'Unknown',
+        surface_area: t.surface_reelle_bati || t.surface_terrain || 0,
+        municipality: t.nom_commune || 'Unknown',
+        postal_code: t.code_postal || 'Unknown',
+        cadastral_ref: t.cadastral_ref,
+        data_source: 'real_dvf_exact'
+      }));
+
+    console.log(`✅ DVF+ exact plot success: ${processedTransactions.length} transactions found`);
+    this.cache.set(cacheKey, processedTransactions);
+    return processedTransactions;
+  } catch (error) {
+    console.warn('⚠️ DVF+ exact plot API failed:', error);
+    this.cache.set(cacheKey, []);
+    return [];
   }
+}
+
 
   // ✅ REMOVED - NO DPE ESTIMATES ALLOWED
   // DPE data will only be shown if available from real government sources

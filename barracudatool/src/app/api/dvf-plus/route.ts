@@ -1,37 +1,31 @@
 // barracudatool/src/app/api/dvf-plus/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
-function metersToDegreeDeltas(latDeg: number, radiusMeters: number) {
-  const metersPerDegLat = 111320;
-  const latRad = (latDeg * Math.PI) / 180;
-  const metersPerDegLon = 111320 * Math.cos(latRad) || 1e-6;
-  return { dLat: radiusMeters / metersPerDegLat, dLon: radiusMeters / metersPerDegLon };
-}
+// Add your existing helper functions...
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const latStr = searchParams.get('lat');
   const lngStr = searchParams.get('lng');
-  const rayonStr = searchParams.get('rayon') || '2000';
-
+  const rayonStr = searchParams.get('rayon') || '500'; // Smaller radius for exact plot
+  const cadastralId = searchParams.get('cadastralId'); // NEW: Accept cadastral ID
+  
   if (!latStr || !lngStr) {
     return NextResponse.json({ error: 'Missing lat/lng parameters', resultats: [] }, { status: 400 });
   }
 
   const lat = Number(latStr), lng = Number(lngStr), rayon = Number(rayonStr);
   
-  // Use geofilter.distance for OpenDataSoft
+  // Use very small radius for exact plot matching
   const API_URL = 'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/buildingref-france-demande-de-valeurs-foncieres-par-mutation-millesime/records';
   
-  // Build URL with proper parameters - NO ORDER_BY since field doesn't exist
   const params = new URLSearchParams({
     'geofilter.distance': `${lat},${lng},${rayon}`,
-    'limit': '50'
-    // Remove order_by since date_mutation field doesn't exist
+    'limit': '20' // Fewer results for exact matching
   });
   
   const dvfUrl = `${API_URL}?${params}`;
-  console.log(`📡 DVF+ request -> ${dvfUrl}`);
+  console.log(`📡 DVF+ exact plot request -> ${dvfUrl}`);
 
   try {
     const resp = await fetch(dvfUrl, {
@@ -44,7 +38,6 @@ export async function GET(request: NextRequest) {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.warn('OpenDataSoft API error:', resp.status, text.slice(0, 300));
       return NextResponse.json({
         error: `API returned ${resp.status}: ${resp.statusText}`,
         resultats: [],
@@ -53,26 +46,22 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = await resp.json();
-    console.log('API Response structure:', Object.keys(payload));
-    
     const rows = payload?.results || [];
 
     const resultats = rows.map((record: any) => {
-      // Handle different possible field structures
       const data = record.fields || record;
-      console.log('Sample record fields:', Object.keys(data));
-      
       return {
-        // Try different possible field names for date
-        date_mutation: data.date_mutation || data.datemut || data.date_mut || data.mutation_date || null,
-        valeur_fonciere: data.valeur_fonciere || data.valeurfonc || data.prix || null,
-        type_local: data.type_local || data.typelocal || null,
-        surface_reelle_bati: data.surface_reelle_bati || data.sbati || null,
-        surface_terrain: data.surface_terrain || data.sterr || null,
-        nom_commune: data.nom_commune || data.commune || null,
-        code_postal: data.code_postal || data.codpost || null,
-        latitude: data.latitude || data.lat || null,
-        longitude: data.longitude || data.lon || null,
+        id_mutation: data.idopendata || null,
+        date_mutation: data.datemut || null,
+        valeur_fonciere: data.valeurfonc || null,
+        type_local: data.libtypbien || null,
+        surface_reelle_bati: data.sbati || null,
+        surface_terrain: data.sterr || null,
+        nom_commune: data.dep_name || null,
+        code_postal: data.dep_code || null,
+        // ADD: Cadastral reference fields for exact matching
+        cadastral_ref: data.l_idpar ? data.l_idpar[0] : null,
+        section: data.l_section ? data.l_section[0] : null,
         raw: data,
       };
     });
@@ -81,8 +70,9 @@ export async function GET(request: NextRequest) {
       status: 'success', 
       resultats,
       total: resultats.length,
-      source: 'OpenDataSoft DVF+ (no sorting)',
-      sample_fields: rows.length > 0 ? Object.keys(rows[0].fields || rows[0]) : []
+      source: 'OpenDataSoft DVF+ (exact plot)',
+      query_cadastral_id: cadastralId,
+      coordinates: `${lat}, ${lng}`
     });
 
   } catch (e: any) {
