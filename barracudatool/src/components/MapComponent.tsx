@@ -4,23 +4,28 @@ import { useEffect, useRef, useState } from 'react'
 import * as maptilersdk from '@maptiler/sdk'
 import { FrenchCadastralAPI } from '../lib/french-apis'
 
+// ✅ Use the same interface as in page.tsx
 interface PropertyInfo {
-  cadastralId: string
-  size: number
-  zone: string
+  cadastralId: string | null
+  size: number | null
+  zone: string | null
   commune?: string
   department?: string
   population?: number
   lastSaleDate?: string
   lastSalePrice?: number
   pricePerSqm?: number
+  section?: string
+  numero?: string
+  dataSource: 'real_cadastral' | 'no_data'
   dpeRating?: {
     energy: string
     ghg: string
     date: string
-    consumption: number
+    consumption?: number
   }
 }
+
 
 interface DataLayers {
   cadastral: boolean
@@ -331,104 +336,129 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setTimeout(setupHoverEffects, 1000)
     })
 
-    // General map click handler with improved error handling
-    mapInstance.on('click', async (e) => {
-      const { lng, lat } = e.lngLat
-      
-      console.log(`🎯 Fetching data for: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
-      setLoading(true)
+   // In MapComponent.tsx - updated click handler
+mapInstance.on('click', async (e) => {
+  const { lng, lat } = e.lngLat
+  
+  console.log(`🎯 Fetching REAL data for: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
+  setLoading(true)
 
-      try {
-        const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat)
-        
-        if (propertyData && propertyData.parcel) {
-          const { parcel, latest_sale, dpe } = propertyData
-          
-          const propertyInfo: PropertyInfo = {
-            cadastralId: parcel.cadastral_id,
-            size: parcel.surface_area,
-            zone: parcel.zone_type,
-            commune: parcel.commune_name,
-            department: `Dept. ${parcel.department}`,
-            population: parcel.population,
-            lastSaleDate: latest_sale?.sale_date,
-            lastSalePrice: latest_sale?.sale_price,
-            pricePerSqm: latest_sale && latest_sale.surface_area ? 
-              Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
-            dpeRating: dpe ? {
-              energy: dpe.energy_class,
-              ghg: dpe.ghg_class,
-              date: dpe.rating_date,
-              consumption: dpe.energy_consumption
-            } : undefined
-          }
-
-          // Create marker label with safe property access
-          const labelParts = [
-            parcel.commune_name || 'Unknown'
-          ]
-          
-          if (parcel.population) {
-            labelParts.push(`Pop: ${parcel.population.toLocaleString()}`)
-          }
-          
-          if (dpe?.energy_class) {
-            labelParts.push(`DPE: ${dpe.energy_class}`)
-          }
-          
-          if (latest_sale?.sale_price) {
-            labelParts.push(`€${latest_sale.sale_price.toLocaleString()}`)
-          } else {
-            labelParts.push('No sales data')
-          }
-
-          const clickedPoint = {
-            type: 'Feature' as const,
-            geometry: {
-              type: 'Point' as const,
-              coordinates: [lng, lat]
-            },
-            properties: {
-              label: labelParts.join('\n')
-            }
-          }
-
-          const source = mapInstance.getSource('clicked-points') as any
-          source?.setData({
-            type: 'FeatureCollection',
-            features: [clickedPoint]
-          })
-
-          if (onPropertySelect) {
-            onPropertySelect(propertyInfo)
-          }
-
-          console.log('🏠 Property data loaded:', propertyInfo)
-        }
-      } catch (error) {
-        console.error('💥 Error fetching property data:', error)
-        
-        // Show error marker instead of crashing
-        const errorPoint = {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [lng, lat]
-          },
-          properties: {
-            label: 'Property data\nunavailable'
-          }
-        }
-
-        const source = mapInstance.getSource('clicked-points') as any
-        source?.setData({
-          type: 'FeatureCollection',
-          features: [errorPoint]
-        })
-      } finally {
-        setLoading(false)
+  // ✅ MUST click on a cadastral parcel for real data
+  const features = mapInstance.queryRenderedFeatures(e.point, {
+    layers: ['cadastral-parcel-fills']
+  });
+  
+  const cadastralFeature = features.find(f => f.source === 'french-cadastral-parcels');
+  
+  if (!cadastralFeature) {
+    console.log('❌ No cadastral parcel clicked - showing error message');
+    
+    const errorPoint = {
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [lng, lat]
+      },
+      properties: {
+        label: 'Click on a\ncadastral parcel\nfor real data'
       }
+    }
+
+    const source = mapInstance.getSource('clicked-points') as any
+    source?.setData({
+      type: 'FeatureCollection',
+      features: [errorPoint]
     })
+    
+    setLoading(false)
+    return;
+  }
+
+  try {
+    const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat, cadastralFeature)
+    
+    if (!propertyData || !propertyData.parcel || !propertyData.parcel.surface_area) {
+      throw new Error('No real parcel data available');
+    }
+
+    const { parcel, latest_sale } = propertyData
+    
+    const propertyInfo: PropertyInfo = {
+      cadastralId: parcel.cadastral_id,
+      size: parcel.surface_area,
+      zone: parcel.zone_type,
+      commune: parcel.commune_name,
+      department: `Dept. ${parcel.department}`,
+      population: parcel.population,
+      section: parcel.section,  // ✅ Now included in interface
+      numero: parcel.numero,    // ✅ Now included in interface
+      lastSaleDate: latest_sale?.sale_date,
+      lastSalePrice: latest_sale?.sale_price,
+      pricePerSqm: latest_sale && latest_sale.surface_area ? 
+        Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
+      dataSource: 'real_cadastral'  // ✅ Now required
+    }
+    
+
+    // ✅ Create marker with REAL data only
+    const labelParts = [
+      parcel.commune_name || 'Unknown',
+      `${parcel.section}${parcel.numero}`,
+      `${parcel.surface_area} m² (REAL)`,
+    ]
+    
+    if (latest_sale?.sale_price) {
+      labelParts.push(`€${latest_sale.sale_price.toLocaleString()}`)
+    } else {
+      labelParts.push('No sales data')
+    }
+
+    const clickedPoint = {
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [lng, lat]
+      },
+      properties: {
+        label: labelParts.join('\n')
+      }
+    }
+
+    const source = mapInstance.getSource('clicked-points') as any
+    source?.setData({
+      type: 'FeatureCollection',
+      features: [clickedPoint]
+    })
+
+    if (onPropertySelect) {
+      onPropertySelect(propertyInfo)
+    }
+
+    console.log('✅ REAL property data loaded:', propertyInfo)
+  } catch (error) {
+    console.error('❌ Error fetching REAL data:', error)
+    
+    const errorPoint = {
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [lng, lat]
+      },
+      properties: {
+        label: 'No real data\navailable for\nthis parcel'
+      }
+    }
+
+    const source = mapInstance.getSource('clicked-points') as any
+    source?.setData({
+      type: 'FeatureCollection',
+      features: [errorPoint]
+    })
+  } finally {
+    setLoading(false)
+  }
+})
+
 
     return () => {}
   }, [onPropertySelect])

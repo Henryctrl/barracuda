@@ -4,18 +4,25 @@ import MapComponent from '../components/MapComponent'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 
-// Define property type
+// ✅ Updated PropertyInfo interface
 interface PropertyInfo {
-  cadastralId: string
-  size: number
-  zone: string
+  cadastralId: string | null
+  size: number | null
+  zone: string | null
+  commune?: string
+  department?: string
+  population?: number
   lastSaleDate?: string
   lastSalePrice?: number
   pricePerSqm?: number
+  section?: string
+  numero?: string
+  dataSource: 'real_cadastral' | 'no_data'
   dpeRating?: {
     energy: string
     ghg: string
     date: string
+    consumption?: number
   }
 }
 
@@ -47,7 +54,7 @@ export default function Home() {
         backgroundColor: '#001428',
         background: 'linear-gradient(135deg, #001428 0%, #002851 50%, #003d7a 100%)',
         fontFamily: 'Orbitron, monospace',
-        overflow: 'hidden' // CRITICAL: Prevent page scrolling
+        overflow: 'hidden'
       }}
     >
       {/* Left Sidebar */}
@@ -61,7 +68,7 @@ export default function Home() {
           padding: '20px',
           overflowY: 'auto',
           borderRight: '2px solid rgba(0, 255, 255, 0.2)',
-          flexShrink: 0 // CRITICAL: Prevent sidebar from shrinking
+          flexShrink: 0
         }}
       >
         {/* Header */}
@@ -71,11 +78,11 @@ export default function Home() {
               BARRACUDA
             </h1>
             <p className="text-neon-cyan text-sm font-retro uppercase tracking-wider">
-              Property Prospection Tool
+              Property Prospection Tool - REAL DATA ONLY
             </p>
             <div className="flex justify-center items-center mt-3 text-xs">
               <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse mr-2"></div>
-              <span className="text-neon-green font-retro">SCANNING PROPERTIES</span>
+              <span className="text-neon-green font-retro">PRECISION MODE ACTIVE</span>
             </div>
           </div>
         </Card>
@@ -108,17 +115,6 @@ export default function Home() {
                 onClick={() => setDataLayers({...dataLayers, dvf: !dataLayers.dvf})}
               >
                 {dataLayers.dvf ? "ON" : "OFF"}
-              </Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-white font-retro text-sm">⚡ DPE Ratings</span>
-              <Button
-                neonColor={dataLayers.dpe ? "green" : "orange"}
-                size="sm"
-                variant={dataLayers.dpe ? "primary" : "secondary"}
-                onClick={() => setDataLayers({...dataLayers, dpe: !dataLayers.dpe})}
-              >
-                {dataLayers.dpe ? "ON" : "OFF"}
               </Button>
             </div>
           </div>
@@ -168,16 +164,23 @@ export default function Home() {
                 <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
                   <h4 className="text-neon-green font-retro text-sm mb-2">📋 CADASTRAL</h4>
                   <div className="text-white text-xs space-y-1">
-                    <div>Plot ID: <span className="text-neon-cyan">{selectedProperty.cadastralId}</span></div>
-                    <div>Size: <span className="text-neon-yellow">{selectedProperty.size} m²</span></div>
-                    <div>Zone: <span className="text-white">{selectedProperty.zone}</span></div>
+                    <div>Plot ID: <span className="text-neon-cyan">{selectedProperty.cadastralId || 'N/A'}</span></div>
+                    <div>Size: <span className="text-neon-yellow">{selectedProperty.size ? `${selectedProperty.size} m²` : 'N/A'}</span>
+                      {selectedProperty.dataSource === 'real_cadastral' && (
+                        <span className="text-neon-green ml-2">(REAL)</span>
+                      )}
+                    </div>
+                    <div>Zone: <span className="text-white">{selectedProperty.zone || 'N/A'}</span></div>
+                    {selectedProperty.section && selectedProperty.numero && (
+                      <div>Section: <span className="text-neon-cyan">{selectedProperty.section}{selectedProperty.numero}</span></div>
+                    )}
                   </div>
                 </div>
 
                 {/* Transaction History */}
                 {selectedProperty.lastSaleDate && (
                   <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
-                    <h4 className="text-neon-green font-retro text-sm mb-2">💰 LAST SALE</h4>
+                    <h4 className="text-neon-green font-retro text-sm mb-2">💰 LAST SALE (REAL)</h4>
                     <div className="text-white text-xs space-y-1">
                       <div>Date: <span className="text-neon-cyan">{selectedProperty.lastSaleDate}</span></div>
                       <div>Price: <span className="text-neon-yellow">€{selectedProperty.lastSalePrice?.toLocaleString()}</span></div>
@@ -186,10 +189,10 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* DPE Rating */}
+                {/* DPE Rating - only if real data exists */}
                 {selectedProperty.dpeRating && (
                   <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
-                    <h4 className="text-neon-green font-retro text-sm mb-2">⚡ DPE RATING</h4>
+                    <h4 className="text-neon-green font-retro text-sm mb-2">⚡ DPE RATING (REAL)</h4>
                     <div className="text-white text-xs space-y-1">
                       <div>Energy: <span className="text-neon-yellow">{selectedProperty.dpeRating.energy}</span></div>
                       <div>GHG: <span className="text-neon-orange">{selectedProperty.dpeRating.ghg}</span></div>
@@ -201,21 +204,10 @@ export default function Home() {
             ) : (
               <div className="text-center text-text-secondary text-sm">
                 <div className="text-4xl mb-4">🎯</div>
-                <p className="font-retro">Click on a property plot to view detailed information</p>
-                <Button
-                  neonColor="cyan"
-                  size="sm"
-                  className="mt-4"
-                  onClick={() => {
-                    setSelectedProperty({
-                      cadastralId: "750114000A0456",
-                      size: 850,
-                      zone: "UCa"
-                    })
-                  }}
-                >
-                  🎲 Demo Property
-                </Button>
+                <p className="font-retro">Click on a cadastral parcel to view REAL property data</p>
+                <div className="text-neon-orange text-xs mt-2 font-retro">
+                  NO ESTIMATES - REAL DATA ONLY
+                </div>
               </div>
             )}
           </div>
@@ -253,14 +245,14 @@ export default function Home() {
           display: 'flex',
           flexDirection: 'column',
           padding: '20px',
-          minWidth: 0 // CRITICAL: Allow flex item to shrink
+          minWidth: 0
         }}
       >
         {/* Map Container */}
         <div 
           style={{ 
             flex: 1,
-            minHeight: 0, // CRITICAL: Allow flex item to shrink
+            minHeight: 0,
             position: 'relative'
           }}
         >
@@ -279,9 +271,7 @@ export default function Home() {
             <div className="flex items-center space-x-6">
               <div className="flex items-center">
                 <span className="text-neon-purple">DATA:</span>
-                <span className="text-neon-green ml-2">
-                  {Object.values(dataLayers).filter(Boolean).length} LAYERS ACTIVE
-                </span>
+                <span className="text-neon-green ml-2">REAL ONLY</span>
               </div>
               <div className="flex items-center">
                 <span className="text-neon-yellow">MODE:</span>
@@ -290,15 +280,15 @@ export default function Home() {
               {selectedProperty && (
                 <div className="flex items-center">
                   <span className="text-neon-green">SELECTED:</span>
-                  <span className="text-white ml-2">{selectedProperty.cadastralId}</span>
+                  <span className="text-white ml-2">{selectedProperty.cadastralId || 'N/A'}</span>
                 </div>
               )}
             </div>
             <div className="flex items-center space-x-6">
-              <span className="text-text-secondary">France Cadastral Database</span>
+              <span className="text-text-secondary">French Government Data Only</span>
               <div className="flex items-center">
                 <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse mr-2"></div>
-                <span className="text-neon-green">READY FOR PROSPECTION</span>
+                <span className="text-neon-green">PRECISION MODE</span>
               </div>
             </div>
           </div>
