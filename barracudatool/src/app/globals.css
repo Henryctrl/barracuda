@@ -3,8 +3,31 @@
 @import 'tailwindcss/utilities';
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
-/* NUCLEAR OPTION: Stop ALL scrolling interference */
-html, body, #__next, #__next > div {
+/* DEFAULT: Allow scrolling on all pages */
+html, body, #__next {
+  height: auto !important;
+  min-height: 100vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  position: static !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Smooth scrolling on mobile */
+body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* SCROLL LOCK: Only when map-page-lock class is present */
+html.map-page-lock,
+body.map-page-lock,
+html.map-page-lock #__next,
+body.map-page-lock #__next,
+html.map-page-lock #__next > div,
+body.map-page-lock #__next > div {
   height: 100% !important;
   overflow: hidden !important;
   position: fixed !important;
@@ -13,7 +36,7 @@ html, body, #__next, #__next > div {
   padding: 0 !important;
 }
 
-/* Map container absolute constraints */
+/* Map container styles */
 .maplibregl-map {
   max-height: 100% !important;
   max-width: 100% !important;
@@ -67,4 +90,16 @@ html, body, #__next, #__next > div {
 @keyframes scan {
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100vh); }
+}
+
+/* Smooth scrolling for non-locked pages */
+html:not(.map-page-lock) {
+  scroll-behavior: smooth;
+}
+
+/* Box sizing reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }

@@ -13,186 +13,132 @@ export interface DpeData {
     distance?: number;
   }
   
+  type RawDpe = Record<string, any>;
+  
   export class DpeAPI {
-    private static readonly BASE_URL = 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants';
-    private static cache = new Map<string, any>();
+    private static readonly BASE_URL =
+      'https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants';
   
-    /**
-     * WORKING: Search by address with correct query syntax
-     */
-    static async getDpeNearCoordinates(lng: number, lat: number, radiusKm: number = 2.0): Promise<DpeData[]> {
-      console.log(`🎯 WORKING DPE Search: ${lat.toFixed(6)}, ${lng.toFixed(6)} within ${radiusKm * 1000}m`);
-      
-      try {
-        // Step 1: Get exact address
-        const addressResponse = await fetch(
-          `https://api-adresse.data.gouv.fr/reverse/?lon=${lng}&lat=${lat}&limit=1`
-        );
-        
-        if (!addressResponse.ok) {
-          throw new Error('Failed to get address');
-        }
-        
-        const addressData = await addressResponse.json();
-        const feature = addressData.features?.[0];
-        if (!feature) return [];
-        
-        const address = feature.properties;
-        const fullAddress = `${address.housenumber || ''} ${address.street || ''}`.trim();
-        const postalCode = address.postcode;
-        const commune = address.city;
-        
-        console.log(`📍 Found address: "${fullAddress}", ${commune} (${postalCode})`);
-        
-        // Step 2: Search with correct exact match syntax
-        const searchParams = new URLSearchParams({
-          size: '50',
-          from: '0',
-          q: `Adresse_(BAN):"${fullAddress}" AND Code_postal_(BAN):"${postalCode}" AND Nom__commune_(BAN):"${commune}"`
-        });
-  
-        console.log(`📡 Query: ${searchParams.get('q')}`);
-        const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
-        
-        if (!response.ok) return [];
-        
-        const data = await response.json();
-        console.log(`📊 Found ${data.total} matching DPE records`);
-        
-        const results = data.results || [];
-        
-        // FIXED: Add explicit type to parameter
-        const mappedRecords: DpeData[] = results.map((dpe: any) => ({
-          numero_dpe: dpe['N°DPE'] || '',
-          date_reception_dpe: dpe['Date_réception_DPE'] || '',
-          adresse_bien: dpe['Adresse_(BAN)'] || '',
-          commune_bien: dpe['Nom__commune_(BAN)'] || commune,
-          code_postal_bien: dpe['Code_postal_(BAN)'] || postalCode,
-          etiquette_dpe: dpe['Etiquette_DPE'] || '',
-          consommation_energie: dpe['Conso_5_usages_par_m²_é_finale'] || 0,
-          estimation_ges: dpe['Emission_GES_5_usages_par_m²'] || 0,
-          surface_habitable: dpe['Surface_habitable_logement'] || 0,
-          coordonnee_x: dpe['Coordonnée_cartographique_X_(BAN)'],
-          coordonnee_y: dpe['Coordonnée_cartographique_Y_(BAN)'],
-          distance: 0 // Exact match
-        // FIXED: Add explicit type to parameter
-        })).filter((dpe: any) => dpe.etiquette_dpe && dpe.etiquette_dpe !== 'N.C.' && dpe.consommation_energie > 0);
-  
-        console.log(`🎯 SUCCESS: Found ${mappedRecords.length} valid DPE certificates!`);
-        return mappedRecords;
-        
-      } catch (error) {
-        console.error('❌ Failed:', error);
+    // Broad text search helper
+    private static async searchBroad(query: string, size = 200, from = 0): Promise<RawDpe[]> {
+      const params = new URLSearchParams({ size: String(size), from: String(from), q: query });
+      const url = `${this.BASE_URL}/lines?${params.toString()}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn('ADEME search error:', res.status, url);
         return [];
       }
+      const data = await res.json();
+      return (data?.results ?? []) as RawDpe[];
     }
   
-    /**
-     * WORKING: Search by certificate number with correct syntax
-     */
+    private static mapRaw(d: RawDpe, defaults?: { commune?: string; postal?: string }): DpeData {
+      return {
+        numero_dpe: d['N°DPE'] || '',
+        date_reception_dpe: d['Date_réception_DPE'] || '',
+        adresse_bien: d['Adresse_(BAN)'] || '',
+        commune_bien: d['Nom__commune_(BAN)'] || defaults?.commune || '',
+        code_postal_bien: d['Code_postal_(BAN)'] || defaults?.postal || '',
+        etiquette_dpe: d['Etiquette_DPE'] || '',
+        consommation_energie: d['Conso_5_usages_par_m²_é_finale'] || 0,
+        estimation_ges: d['Emission_GES_5_usages_par_m²'] || 0,
+        surface_habitable: d['Surface_habitable_logement'] || 0,
+        coordonnee_x: d['Coordonnée_cartographique_X_(BAN)'],
+        coordonnee_y: d['Coordonnée_cartographique_Y_(BAN)'],
+      };
+    }
+  
+    private static isValid(d: DpeData): boolean {
+      return Boolean(
+        d.etiquette_dpe &&
+          d.etiquette_dpe !== 'N.C.' &&
+          typeof d.consommation_energie === 'number' &&
+          d.consommation_energie > 0
+      );
+    }
+  
+    // EXACT CERTIFICATE: scan several broad pages containing the number and then exact-match client-side
     static async getDpeByCertificateNumber(certificateNumber: string): Promise<DpeData | null> {
-      console.log(`🎯 Certificate Search: ${certificateNumber}`);
-      
-      try {
-        const searchParams = new URLSearchParams({
-          size: '10',
-          from: '0',
-          q: `N°DPE:"${certificateNumber}"`
-        });
+      console.log('🎯 Certificate Search:', certificateNumber);
+      const pageSize = 200;
+      let scanned = 0;
   
-        console.log(`📡 Query: ${searchParams.get('q')}`);
-        const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
-        
-        if (!response.ok) return null;
-        
-        const data = await response.json();
-        console.log(`📊 Found ${data.total} matching certificates`);
-        
-        if (data.results && data.results.length > 0) {
-          const dpe = data.results[0];
-          console.log(`✅ Found certificate: ${dpe['Adresse_(BAN)']} - Energy: ${dpe['Etiquette_DPE']}`);
-          
-          return {
-            numero_dpe: dpe['N°DPE'] || '',
-            date_reception_dpe: dpe['Date_réception_DPE'] || '',
-            adresse_bien: dpe['Adresse_(BAN)'] || '',
-            commune_bien: dpe['Nom__commune_(BAN)'] || '',
-            code_postal_bien: dpe['Code_postal_(BAN)'] || '',
-            etiquette_dpe: dpe['Etiquette_DPE'] || '',
-            consommation_energie: dpe['Conso_5_usages_par_m²_é_finale'] || 0,
-            estimation_ges: dpe['Emission_GES_5_usages_par_m²'] || 0,
-            surface_habitable: dpe['Surface_habitable_logement'] || 0,
-            coordonnee_x: dpe['Coordonnée_cartographique_X_(BAN)'],
-            coordonnee_y: dpe['Coordonnée_cartographique_Y_(BAN)']
-          };
+      for (let from = 0; from < 2000; from += pageSize) {
+        const results = await this.searchBroad(certificateNumber, pageSize, from);
+        scanned += results.length;
+        if (!results.length) break;
+  
+        const exact = results.find((r: RawDpe) => (r['N°DPE'] || '') === certificateNumber);
+        if (exact) {
+          const mapped = this.mapRaw(exact);
+          console.log(`✅ Exact certificate match after scanning ${scanned}:`, mapped.adresse_bien, mapped.etiquette_dpe);
+          return mapped;
         }
-  
-        return null;
-        
-      } catch (error) {
-        console.error('❌ Certificate search failed:', error);
-        return null;
       }
+  
+      console.log(`❌ No exact certificate match after scanning ${scanned}`);
+      return null;
     }
   
-    /**
-     * Test coordinate fields - FIXED
-     */
-    static async testCoordinateFields(): Promise<any> {
-      try {
-        console.log(`🧪 Testing coordinate fields with simplified approach...`);
-        
-        const searchParams = new URLSearchParams({
-          size: '10'
-        });
+    // ADDRESS SEARCH: reverse geocode → broad search → client-side exact postal/commune + loose address
+    static async getDpeNearCoordinates(lng: number, lat: number, radiusKm = 2.0): Promise<DpeData[]> {
+      console.log(`🎯 DPE Search by address: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
   
-        const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
-        const data = await response.json();
-        
-        if (data.results && data.results.length > 0) {
-          const fields = Object.keys(data.results[0]);
-          const coordFields = fields.filter(f => 
-            f.toLowerCase().includes('coord') || 
-            f.toLowerCase().includes('longitude') || 
-            f.toLowerCase().includes('latitude')
-          );
-          
-          console.log(`📋 All available fields (${fields.length}):`, fields);
-          console.log(`📍 Coordinate-related fields:`, coordFields);
-          console.log(`📄 Sample record:`, data.results[0]);
-          
-          return {
-            totalFields: fields.length,
-            allFields: fields,
-            coordinateFields: coordFields,
-            sampleRecord: data.results[0]
-          };
-        }
-        
-        return { error: 'No results returned' };
-      } catch (error) {
-        console.error('❌ Coordinate field test failed:', error);
-        return { error: error instanceof Error ? error.message : 'Unknown error' };
-      }
+      // Reverse geocoding
+      const rev = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${lng}&lat=${lat}&limit=1`);
+      if (!rev.ok) return [];
+      const revData = await rev.json();
+      const f = revData?.features?.[0];
+      if (!f) return [];
+  
+      const props = f.properties;
+      const house = (props.housenumber || '').toString();
+      const street = (props.street || '').toString();
+      const fullAddress = `${house} ${street}`.trim();
+      const postal = (props.postcode || '').toString();
+      const commune = (props.city || '').toString();
+      console.log(`📍 Address: "${fullAddress}", ${commune} (${postal})`);
+  
+      // Broad query (tokens)
+      const broadQuery = `${fullAddress} ${postal} ${commune}`;
+      const results = await this.searchBroad(broadQuery, 500, 0);
+  
+      // Normalize strings
+      const norm = (s: string) => s.normalize('NFKD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+  
+      const addrNorm = norm(fullAddress);
+      const communeNorm = norm(commune);
+  
+      // Exact on postal & commune, loose on address: startsWith or includes
+      const matched = results.filter((r: RawDpe) => {
+        const rAddr = norm((r['Adresse_(BAN)'] || '').toString());
+        const rPostal = (r['Code_postal_(BAN)'] || '').toString();
+        const rCommune = norm((r['Nom__commune_(BAN)'] || '').toString());
+  
+        const postalOk = rPostal === postal;
+        const communeOk = rCommune === communeNorm;
+  
+        // Allow minor formatting variability (house number position, abbreviations)
+        const addressOk =
+          rAddr === addrNorm ||
+          rAddr.startsWith(addrNorm) ||
+          addrNorm.startsWith(rAddr) ||
+          rAddr.includes(addrNorm);
+  
+        return postalOk && communeOk && addressOk;
+      });
+  
+      console.log(`✅ Candidate matches at address: ${matched.length}`);
+  
+      const mapped = matched.map((r: RawDpe) => this.mapRaw(r, { commune, postal })).filter(this.isValid);
+  
+      console.log(`🎯 Valid DPE at address: ${mapped.length}`);
+      return mapped;
     }
   
-    /**
-     * Debug search - FIXED
-     */
+    // Minimal debug stub
     static async debugDpeSearch(lng: number, lat: number): Promise<any> {
-      try {
-        console.log(`🔬 SIMPLIFIED DEBUG: Testing DPE API for ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-        
-        const coordinateTest = await this.testCoordinateFields();
-        
-        return { 
-          coordinateTest,
-          message: 'Simplified debug completed - check console for field names and sample data'
-        };
-      } catch (error) {
-        console.error('❌ Debug test failed:', error);
-        return { error: error instanceof Error ? error.message : 'Unknown error' };
-      }
+      return { message: 'debug stub' };
     }
   }
   
