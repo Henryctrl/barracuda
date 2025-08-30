@@ -336,7 +336,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setTimeout(setupHoverEffects, 1000)
     })
 
-    // UPDATED: Exact plot click handler with DPE detection
+    // CORRECTED: Exact plot click handler with DPE detection
     mapInstance.on('click', async (e) => {
       const { lng, lat } = e.lngLat
       
@@ -408,13 +408,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
           transactions: transactions || [],
           hasSales: has_sales,
           salesCount: sales_count,
-          // DPE DATA - REAL ONLY
+          // CORRECTED DPE DATA MAPPING
           dpeRating: dpe ? {
             energy: dpe.etiquette_dpe,
-            ghg: dpe.classe_estimation_ges,
+            ghg: dpe.estimation_ges?.toString() || 'Unknown', // Map estimation_ges to ghg
             date: dpe.date_reception_dpe,
             consumption: dpe.consommation_energie,
-            yearBuilt: dpe.annee_construction,
+            yearBuilt: 'Unknown', // Remove type_batiment reference since it doesn't exist
             surfaceArea: dpe.surface_habitable
           } : undefined,
           nearbyDpeCount

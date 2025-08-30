@@ -1,31 +1,15 @@
 export interface DpeData {
     numero_dpe: string;
     date_reception_dpe: string;
-    date_fin_validite_dpe: string;
     adresse_bien: string;
-    code_postal_bien: string;
     commune_bien: string;
-    
-    // Energy performance - REAL VALUES ONLY
-    etiquette_dpe: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
-    classe_consommation_energie: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
-    classe_estimation_ges: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
-    
-    // Consumption values - REAL MEASUREMENTS ONLY
+    code_postal_bien: string;
+    etiquette_dpe: string;
     consommation_energie: number;
     estimation_ges: number;
-    
-    // Property details - VERIFIED DATA ONLY
-    type_batiment: string;
-    annee_construction: string;
     surface_habitable: number;
-    surface_thermique: number;
-    
-    // Geographic coordinates - CORRECT FIELD NAMES
-    'Coordonnée_cartographique_X_(BAN)'?: number;
-    'Coordonnée_cartographique_Y_(BAN)'?: number;
-    
-    // Calculated distance (added during search)
+    coordonnee_x?: number;
+    coordonnee_y?: number;
     distance?: number;
   }
   
@@ -34,154 +18,216 @@ export interface DpeData {
     private static cache = new Map<string, any>();
   
     /**
-     * CORRECTED: Get DPE data using proper field names and mapping
+     * WORKING: Search by address - this is what working apps use
      */
-    static async getDpeNearCoordinates(lng: number, lat: number, radiusKm: number = 1.0): Promise<DpeData[]> {
-      console.log(`🏡 CORRECTED DPE Search: ${lat.toFixed(6)}, ${lng.toFixed(6)} within ${radiusKm * 1000}m`);
+    static async getDpeNearCoordinates(lng: number, lat: number, radiusKm: number = 2.0): Promise<DpeData[]> {
+      console.log(`🎯 ADDRESS-BASED DPE Search: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       
-      const cacheKey = `dpe_corrected_${lng.toFixed(6)}_${lat.toFixed(6)}_${radiusKm}`;
-      
-      if (this.cache.has(cacheKey)) {
-        return this.cache.get(cacheKey);
-      }
-  
       try {
-        // Use the corrected field names from debug output
-        console.log(`🔍 Using corrected field names: Coordonnée_cartographique_X_(BAN), Coordonnée_cartographique_Y_(BAN)`);
+        // Step 1: Get exact address from coordinates
+        const addressResponse = await fetch(
+          `https://api-adresse.data.gouv.fr/reverse/?lon=${lng}&lat=${lat}&limit=1`
+        );
         
-        const searchParams = new URLSearchParams({
-          size: '500', // Get more records to filter through
-          from: '0',
-          select: 'N°DPE,Date_réception_DPE,Date_fin_validité_DPE,Adresse_(BAN),Code_postal_(BAN),Nom__commune_(BAN),Etiquette_DPE,Classe_consommation_énergie,Classe_estimation_GES,Conso_5_usages_par_m²_é_finale,Emission_GES_5_usages_par_m²,Type_bâtiment,Période_construction,Surface_habitable_logement,Coordonnée_cartographique_X_(BAN),Coordonnée_cartographique_Y_(BAN)'
-        });
-  
-        console.log(`📡 Fetching DPE records with correct field selection...`);
-        const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
+        if (!addressResponse.ok) {
+          throw new Error('Failed to get address from coordinates');
+        }
         
-        if (!response.ok) {
-          console.warn(`⚠️ DPE API returned ${response.status}`);
-          this.cache.set(cacheKey, []);
+        const addressData = await addressResponse.json();
+        const feature = addressData.features?.[0];
+        if (!feature) {
+          console.warn('❌ Could not determine address for coordinates');
           return [];
         }
-  
-        const data = await response.json();
-        console.log(`📊 Retrieved ${data.total} total DPE records`);
         
-        const results = data.results || [];
-        console.log(`🔍 Processing ${results.length} records for coordinate filtering...`);
-  
-        // Filter records with coordinates and calculate distances
-        const nearbyRecords = results.filter((dpe: any) => {
-          // Check if record has the essential DPE data
-          const hasValidDpe = dpe['Etiquette_DPE'] && 
-                             dpe['Etiquette_DPE'] !== 'N.C.' && 
-                             dpe['Conso_5_usages_par_m²_é_finale'] && 
-                             dpe['Conso_5_usages_par_m²_é_finale'] > 0;
-  
-          if (!hasValidDpe) {
-            return false;
-          }
-          
-          // Check coordinates using correct field names
-          const coordX = dpe['Coordonnée_cartographique_X_(BAN)'];
-          const coordY = dpe['Coordonnée_cartographique_Y_(BAN)'];
-          
-          if (!coordX || !coordY) {
-            return false;
-          }
-          
-          // Calculate distance
-          const distance = this.calculateDistance(lat, lng, coordY, coordX);
-          
-          // Add distance to record for sorting
-          dpe.distance = distance;
-          
-          const isNearby = distance <= radiusKm;
-          if (isNearby) {
-            console.log(`✅ Found nearby DPE: ${dpe['Adresse_(BAN)']} in ${dpe['Nom__commune_(BAN)']} - ${distance.toFixed(2)}km away - Energy: ${dpe['Etiquette_DPE']}`);
-          }
-          
-          return isNearby;
-        });
-  
-        // Sort by distance (closest first)
-        nearbyRecords.sort((a: any, b: any) => a.distance - b.distance);
-  
-        // Map to our interface format
-        const mappedRecords: DpeData[] = nearbyRecords.map((dpe: any) => ({
-          numero_dpe: dpe['N°DPE'] || '',
-          date_reception_dpe: dpe['Date_réception_DPE'] || '',
-          date_fin_validite_dpe: dpe['Date_fin_validité_DPE'] || '',
-          adresse_bien: dpe['Adresse_(BAN)'] || dpe['Adresse_brute'] || '',
-          code_postal_bien: dpe['Code_postal_(BAN)'] || '',
-          commune_bien: dpe['Nom__commune_(BAN)'] || '',
-          etiquette_dpe: dpe['Etiquette_DPE'] as any,
-          classe_consommation_energie: dpe['Classe_consommation_énergie'] as any,
-          classe_estimation_ges: dpe['Classe_estimation_GES'] as any,
-          consommation_energie: dpe['Conso_5_usages_par_m²_é_finale'] || 0,
-          estimation_ges: dpe['Emission_GES_5_usages_par_m²'] || 0,
-          type_batiment: dpe['Type_bâtiment'] || '',
-          annee_construction: dpe['Période_construction'] || '',
-          surface_habitable: dpe['Surface_habitable_logement'] || 0,
-          surface_thermique: dpe['Surface_habitable_logement'] || 0,
-          'Coordonnée_cartographique_X_(BAN)': dpe['Coordonnée_cartographique_X_(BAN)'],
-          'Coordonnée_cartographique_Y_(BAN)': dpe['Coordonnée_cartographique_Y_(BAN)'],
-          distance: dpe.distance
-        }));
-  
-        console.log(`🎯 FOUND ${mappedRecords.length} DPE certificates within ${radiusKm * 1000}m using CORRECTED field names`);
+        const address = feature.properties;
+        const fullAddress = `${address.housenumber || ''} ${address.street || ''} ${address.name || ''}`.trim();
+        const postalCode = address.postcode;
+        const commune = address.city;
         
-        this.cache.set(cacheKey, mappedRecords);
-        return mappedRecords;
+        console.log(`📍 Found address: "${fullAddress}", ${commune} (${postalCode})`);
+        
+        // Step 2: Try multiple search approaches
+        const searchStrategies = [
+          // Exact address match
+          {
+            name: 'Exact Address',
+            query: `"${fullAddress}" AND Code_postal_(BAN):${postalCode}`
+          },
+          // Street name + postal code
+          {
+            name: 'Street + Postal',
+            query: `${address.street || address.name} AND Code_postal_(BAN):${postalCode}`
+          },
+          // Just postal code with commune
+          {
+            name: 'Postal Code Area',
+            query: `Code_postal_(BAN):${postalCode} AND Nom__commune_(BAN):${commune}`
+          },
+          // Broader postal code search
+          {
+            name: 'Postal Code Only',
+            query: `Code_postal_(BAN):${postalCode}`
+          }
+        ];
+  
+        for (const strategy of searchStrategies) {
+          console.log(`🔍 Trying ${strategy.name}: ${strategy.query}`);
+          
+          const searchParams = new URLSearchParams({
+            size: '50',
+            from: '0',
+            q: strategy.query
+          });
+  
+          const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
+          
+          if (!response.ok) {
+            console.warn(`⚠️ ${strategy.name} search failed: ${response.status}`);
+            continue;
+          }
+  
+          const data = await response.json();
+          console.log(`📊 ${strategy.name} returned ${data.total} total records`);
+          
+          if (data.results && data.results.length > 0) {
+            const validRecords = this.filterValidDPE(data.results, lng, lat, radiusKm, commune, postalCode);
+            
+            if (validRecords.length > 0) {
+              console.log(`✅ SUCCESS with ${strategy.name}: Found ${validRecords.length} DPE certificates`);
+              return validRecords;
+            }
+          }
+        }
+  
+        console.log(`❌ No DPE certificates found with any search strategy`);
+        return [];
         
       } catch (error) {
         console.error('❌ Failed to fetch DPE data:', error);
-        this.cache.set(cacheKey, []);
         return [];
       }
     }
   
     /**
-     * Test which records actually have coordinates
+     * Filter and validate DPE records
      */
-    static async testCoordinateFields(): Promise<any> {
-      try {
-        console.log(`🧪 Testing which records have coordinate data...`);
+    private static filterValidDPE(results: any[], lng: number, lat: number, radiusKm: number, commune: string, postalCode: string): DpeData[] {
+      const validRecords = results.filter((dpe: any) => {
+        // Must have energy class - try multiple field names
+        const energyClass = dpe.Etiquette_DPE || dpe['Etiquette DPE'] || dpe.etiquette_dpe;
+        if (!energyClass || energyClass === 'N.C.') {
+          return false;
+        }
+  
+        // Must have consumption data
+        const consumption = dpe['Conso_5_usages_par_m²_é_finale'] || dpe.consommation_energie;
+        if (!consumption || consumption <= 0) {
+          return false;
+        }
+  
+        return true;
+      });
+  
+      console.log(`✅ Filtered to ${validRecords.length} valid DPE records with energy class`);
+  
+      // Calculate distances if coordinates exist
+      const withDistances = validRecords.map((dpe: any) => {
+        const coordX = dpe['Coordonnée_cartographique_X_(BAN)'];
+        const coordY = dpe['Coordonnée_cartographique_Y_(BAN)'];
         
+        if (coordX && coordY) {
+          const distance = this.calculateSimpleDistance(lat, lng, coordY, coordX);
+          dpe.distance = distance;
+        } else {
+          dpe.distance = 0; // Same postal code/commune = closest
+        }
+  
+        return dpe;
+      });
+  
+      // Sort by distance
+      withDistances.sort((a: any, b: any) => (a.distance || 0) - (b.distance || 0));
+  
+      // Map to interface
+      return withDistances.map((dpe: any) => {
+        const coordX = dpe['Coordonnée_cartographique_X_(BAN)'];
+        const coordY = dpe['Coordonnée_cartographique_Y_(BAN)'];
+        
+        const result: DpeData = {
+          numero_dpe: dpe['N°DPE'] || dpe.numero_dpe || '',
+          date_reception_dpe: dpe['Date_réception_DPE'] || dpe.date_reception_dpe || '',
+          adresse_bien: dpe['Adresse_(BAN)'] || dpe.adresse_bien || '',
+          commune_bien: dpe['Nom__commune_(BAN)'] || dpe.commune_bien || commune,
+          code_postal_bien: dpe['Code_postal_(BAN)'] || dpe.code_postal_bien || postalCode,
+          etiquette_dpe: dpe['Etiquette_DPE'] || dpe.etiquette_dpe || '',
+          consommation_energie: dpe['Conso_5_usages_par_m²_é_finale'] || dpe.consommation_energie || 0,
+          estimation_ges: dpe['Emission_GES_5_usages_par_m²'] || dpe.estimation_ges || 0,
+          surface_habitable: dpe['Surface_habitable_logement'] || dpe.surface_habitable || 0,
+          coordonnee_x: coordX,
+          coordonnee_y: coordY,
+          distance: dpe.distance
+        };
+  
+        console.log(`📋 Mapped DPE: ${result.adresse_bien} - Energy: ${result.etiquette_dpe} - Distance: ${result.distance?.toFixed(2)}km`);
+        return result;
+      });
+    }
+  
+    /**
+     * Search by specific certificate number (for known certificates)
+     */
+    static async getDpeByCertificateNumber(certificateNumber: string): Promise<DpeData | null> {
+      console.log(`🎯 Certificate Search: ${certificateNumber}`);
+      
+      try {
         const searchParams = new URLSearchParams({
-          size: '100',
-          select: 'Adresse_(BAN),Nom__commune_(BAN),Coordonnée_cartographique_X_(BAN),Coordonnée_cartographique_Y_(BAN),Etiquette_DPE'
+          size: '10',
+          q: `N°DPE:"${certificateNumber}"`
         });
   
         const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
-        const data = await response.json();
         
-        const recordsWithCoords = data.results?.filter((r: any) => 
-          r['Coordonnée_cartographique_X_(BAN)'] && r['Coordonnée_cartographique_Y_(BAN)']
-        ) || [];
-        
-        console.log(`📍 Found ${recordsWithCoords.length} out of ${data.results?.length} records with coordinates`);
-        
-        if (recordsWithCoords.length > 0) {
-          console.log(`✅ Sample records with coordinates:`, recordsWithCoords.slice(0, 3));
+        if (!response.ok) {
+          console.warn(`⚠️ Certificate search failed: ${response.status}`);
+          return null;
         }
+  
+        const data = await response.json();
+        console.log(`📊 Certificate search returned ${data.total} records`);
         
-        return {
-          totalTested: data.results?.length || 0,
-          withCoordinates: recordsWithCoords.length,
-          samples: recordsWithCoords.slice(0, 5)
-        };
+        if (data.results && data.results.length > 0) {
+          const dpe = data.results[0];
+          console.log(`✅ Found certificate: ${dpe['Adresse_(BAN)']} - Energy: ${dpe['Etiquette_DPE']}`);
+          
+          return {
+            numero_dpe: dpe['N°DPE'] || '',
+            date_reception_dpe: dpe['Date_réception_DPE'] || '',
+            adresse_bien: dpe['Adresse_(BAN)'] || '',
+            commune_bien: dpe['Nom__commune_(BAN)'] || '',
+            code_postal_bien: dpe['Code_postal_(BAN)'] || '',
+            etiquette_dpe: dpe['Etiquette_DPE'] || '',
+            consommation_energie: dpe['Conso_5_usages_par_m²_é_finale'] || 0,
+            estimation_ges: dpe['Emission_GES_5_usages_par_m²'] || 0,
+            surface_habitable: dpe['Surface_habitable_logement'] || 0,
+            coordonnee_x: dpe['Coordonnée_cartographique_X_(BAN)'],
+            coordonnee_y: dpe['Coordonnée_cartographique_Y_(BAN)']
+          };
+        }
+  
+        return null;
+        
       } catch (error) {
-        console.error('❌ Coordinate field test failed:', error);
-        return { error: error instanceof Error ? error.message : 'Unknown error' };
+        console.error('❌ Certificate search failed:', error);
+        return null;
       }
     }
   
     /**
-     * Calculate distance between two points in kilometers
+     * Simple distance calculation
      */
-    private static calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-      const R = 6371; // Earth's radius in kilometers
+    private static calculateSimpleDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+      const R = 6371;
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLng = (lng2 - lng1) * Math.PI / 180;
       const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -191,11 +237,33 @@ export interface DpeData {
       return R * c;
     }
   
-    // Keep your existing debugDpeSearch method for additional testing
+    // Keep existing debug methods unchanged...
+    static async testCoordinateFields(): Promise<any> {
+      try {
+        const searchParams = new URLSearchParams({ size: '10' });
+        const response = await fetch(`${this.BASE_URL}/lines?${searchParams.toString()}`);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+          const fields = Object.keys(data.results[0]);
+          return {
+            totalFields: fields.length,
+            allFields: fields,
+            sampleRecord: data.results[0]
+          };
+        }
+        return { error: 'No results returned' };
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    }
+  
     static async debugDpeSearch(lng: number, lat: number): Promise<any> {
-      // ... your existing debug method stays the same
       const coordinateTest = await this.testCoordinateFields();
-      return { coordinateTest };
+      return { 
+        coordinateTest,
+        message: 'Debug completed - check console for detailed logs'
+      };
     }
   }
   

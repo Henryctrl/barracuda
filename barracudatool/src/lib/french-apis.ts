@@ -342,7 +342,7 @@ static async getEnhancedPropertyData(userLng: number, userLat: number, cadastral
   let baseData = null;
   
   try {
-    console.log(`🔍 Fetching ENHANCED property data with DPE for: ${userLat.toFixed(6)}, ${userLng.toFixed(6)}`);
+    console.log(`🔍 Fetching ENHANCED property data with COORDINATE CONVERSION for: ${userLat.toFixed(6)}, ${userLng.toFixed(6)}`);
     
     // Get your existing data FIRST
     baseData = await this.getCompleteParcelData(userLng, userLat, cadastralFeature);
@@ -351,30 +351,28 @@ static async getEnhancedPropertyData(userLng: number, userLat: number, cadastral
       return null;
     }
 
-    // Get DPE data nearby (wider search radius)
-    const dpeData = await DpeAPI.getDpeNearCoordinates(userLng, userLat, 0.2); // 200m radius
+    // Get DPE data using coordinate conversion (wider search radius)
+    const dpeData = await DpeAPI.getDpeNearCoordinates(userLng, userLat, 1.0); // 1km radius
     
-    // Find the closest DPE match by address and distance
+    // Find the closest DPE match
     let closestDpe = null;
     if (dpeData.length > 0) {
-      console.log(`🏡 Found ${dpeData.length} DPE certificates nearby`);
+      console.log(`🏡 Found ${dpeData.length} DPE certificates using coordinate conversion`);
       closestDpe = dpeData[0]; // Already sorted by distance
       
-      // Log the closest match for debugging
-      console.log(`✅ Closest DPE: ${closestDpe.adresse_bien} - Energy: ${closestDpe.etiquette_dpe}${closestDpe.distance ? `, Distance: ${closestDpe.distance.toFixed(2)}km` : ''}`);
+      console.log(`✅ Closest DPE: ${closestDpe.adresse_bien} - Energy: ${closestDpe.etiquette_dpe}, Distance: ${closestDpe.distance?.toFixed(2)}km`);
     } else {
-      console.log('❌ No DPE certificates found in area');
+      console.log('❌ No DPE certificates found even with coordinate conversion');
     }
 
     return {
       ...baseData,
       dpe: closestDpe,
       nearbyDpeCount: dpeData.length,
-      dpeData: dpeData.slice(0, 3) // Max 3 nearby certificates for accuracy
+      dpeData: dpeData.slice(0, 3)
     };
   } catch (error) {
     console.error('❌ Failed to fetch enhanced property data:', error);
-    // Return baseData if it exists, otherwise null
     return baseData ? {
       ...baseData,
       dpe: null,
@@ -382,4 +380,5 @@ static async getEnhancedPropertyData(userLng: number, userLat: number, cadastral
       dpeData: []
     } : null;
   }
-}}
+}
+}
