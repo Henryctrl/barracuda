@@ -72,7 +72,7 @@ export default function StructuredDPESearch() {
       minHeight: '100vh',
       backgroundColor: '#f8f9fa'
     }}>
-      <h1>🎯 Structured DPE Search - No Duplicates</h1>
+      <h1>🎯 Structured DPE Search - FIXED VERSION</h1>
       
       <div style={{ 
         backgroundColor: '#d1ecf1',
@@ -81,7 +81,7 @@ export default function StructuredDPESearch() {
         borderRadius: '6px',
         marginBottom: '20px'
       }}>
-        <strong>🧠 Smart Logic:</strong> Department → Postal Code → City → Street → House Number → Remove Duplicates
+        <strong>🧠 Fixed Logic:</strong> Text search by postal + city → Manual filtering → Street matching → Remove duplicates
       </div>
       
       <div style={{ 
@@ -94,7 +94,7 @@ export default function StructuredDPESearch() {
         <form onSubmit={handleSearch}>
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>
-              🏠 Address (Structured Search):
+              🏠 Address (Fixed Structured Search):
             </label>
             <input
               type="text"
@@ -128,7 +128,7 @@ export default function StructuredDPESearch() {
                 fontWeight: 'bold'
               }}
             >
-              {loading ? '🔍 Searching...' : '🎯 Structured Search'}
+              {loading ? '🔍 Searching...' : '🎯 Fixed Structured Search'}
             </button>
 
             <button
@@ -137,6 +137,14 @@ export default function StructuredDPESearch() {
               style={{ padding: '8px 16px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}
             >
               Test Nouic
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAddress('1042 Route de Tirecul, 24240 Monbazillac')}
+              style={{ padding: '8px 16px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}
+            >
+              Test Missing
             </button>
           </div>
         </form>
@@ -160,7 +168,7 @@ export default function StructuredDPESearch() {
                 border: `1px solid ${results.total_found > 0 ? '#c3e6cb' : '#ffeaa7'}`
               }}>
                 <strong>
-                  {results.total_found > 0 ? '✅ STRUCTURED SEARCH SUCCESS' : '⚠️ NO EXACT MATCHES'}
+                  {results.total_found > 0 ? '✅ FIXED STRUCTURED SEARCH SUCCESS' : '⚠️ NO EXACT MATCHES'}
                 </strong>
                 <div>{results.message}</div>
                 {results.filters_applied && (

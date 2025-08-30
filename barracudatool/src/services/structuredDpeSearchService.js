@@ -2,7 +2,7 @@ const BASE_URL = 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logemen
 
 export class StructuredDPESearchService {
   /**
-   * Hierarchical search with detailed logging
+   * Hierarchical search with detailed logging and proper filtering
    */
   static async hierarchicalSearch(address) {
     console.log('🔍 Starting hierarchical search for:', address);
@@ -43,45 +43,23 @@ export class StructuredDPESearchService {
       
       console.log('🎯 Final filters to apply:', filters);
       
-      // Step 1: Apply location filters
+      // Step 1: Apply location filters with corrected method
       let results = await this.fetchWithFilters(filters);
       console.log(`📊 Step 1 - Location filters: ${results.length} records found`);
       
-      if (results.length === 0) {
-        console.log('❌ No results with strict filters. Trying relaxed filters...');
+      // Step 2: Filter by street name (re-enable this)
+      if (street && results.length > 0) {
+        const beforeStreet = results.length;
+        results = this.filterByStreetName(results, street);
+        console.log(`📊 Step 2 - Street filter "${street}": ${beforeStreet} → ${results.length} records`);
         
-        // Try without house number
-        const relaxedFilters = { ...filters };
-        delete relaxedFilters['N°_voie_(BAN)'];
-        console.log('🔄 Trying without house number:', relaxedFilters);
-        
-        results = await this.fetchWithFilters(relaxedFilters);
-        console.log(`📊 Step 1b - Relaxed filters: ${results.length} records found`);
-        
-        if (results.length === 0 && city) {
-          // Try without city (case sensitivity issue)
-          const superRelaxedFilters = { ...relaxedFilters };
-          delete superRelaxedFilters['Nom__commune_(BAN)'];
-          console.log('🔄 Trying without city:', superRelaxedFilters);
-          
-          results = await this.fetchWithFilters(superRelaxedFilters);
-          console.log(`📊 Step 1c - Super relaxed filters: ${results.length} records found`);
+        // Log some street names for debugging
+        if (results.length > 0) {
+          console.log('🏠 Sample street names found:', 
+            results.slice(0, 3).map(r => r['Nom__rue_(BAN)'] || r['Adresse_brute'])
+          );
         }
       }
-      
-    //   // Step 2: Filter by street name
-    //   if (street && results.length > 0) {
-    //     const beforeStreet = results.length;
-    //     results = this.filterByStreetName(results, street);
-    //     console.log(`📊 Step 2 - Street filter "${street}": ${beforeStreet} → ${results.length} records`);
-        
-    //     // Log some street names for debugging
-    //     if (results.length > 0) {
-    //       console.log('🏠 Sample street names found:', 
-    //         results.slice(0, 3).map(r => r['Nom__rue_(BAN)'] || r['Adresse_brute'])
-    //       );
-    //     }
-    //   }
       
       // Step 3: Remove duplicates
       const beforeDedup = results.length;
@@ -126,21 +104,26 @@ export class StructuredDPESearchService {
   }
 
   /**
-   * Fetch with detailed logging
+   * FIXED: Proper filtering that actually works
    */
   static async fetchWithFilters(filters, maxResults = 200) {
+    // Build query string from location data
+    let queryString = '';
+    if (filters['Code_postal_(BAN)']) {
+      queryString = filters['Code_postal_(BAN)'];
+    }
+    if (filters['Nom__commune_(BAN)']) {
+      queryString += ' ' + filters['Nom__commune_(BAN)'];
+    }
+    
     const params = new URLSearchParams({
+      q: queryString,  // Use text search instead of broken field filters
       size: maxResults,
       select: '*'
     });
     
-    // Add filters to URL
-    Object.entries(filters).forEach(([field, value]) => {
-      params.append(field, value);
-    });
-    
     const url = `${BASE_URL}?${params}`;
-    console.log('🌐 API Request URL:', url);
+    console.log('🌐 API Request URL (Fixed):', url);
     
     const response = await fetch(url);
     
@@ -155,7 +138,33 @@ export class StructuredDPESearchService {
       returned: data.results?.length || 0
     });
     
-    return data.results || [];
+    // Now manually filter the results by the exact criteria
+    let filteredResults = data.results || [];
+    
+    if (filters['Code_postal_(BAN)']) {
+      filteredResults = filteredResults.filter(r => 
+        r['Code_postal_(BAN)'] === filters['Code_postal_(BAN)']
+      );
+      console.log(`📊 After postal code filter: ${filteredResults.length} records`);
+    }
+    
+    if (filters['Nom__commune_(BAN)']) {
+      filteredResults = filteredResults.filter(r => 
+        r['Nom__commune_(BAN)'] && 
+        r['Nom__commune_(BAN)'].toLowerCase() === filters['Nom__commune_(BAN)'].toLowerCase()
+      );
+      console.log(`📊 After city filter: ${filteredResults.length} records`);
+    }
+    
+    if (filters['N°_voie_(BAN)']) {
+      filteredResults = filteredResults.filter(r => 
+        r['N°_voie_(BAN)'] && 
+        r['N°_voie_(BAN)'].toString() === filters['N°_voie_(BAN)']
+      );
+      console.log(`📊 After house number filter: ${filteredResults.length} records`);
+    }
+    
+    return filteredResults;
   }
 
   /**
@@ -207,7 +216,9 @@ export class StructuredDPESearchService {
     }
   }
 
-  // Keep all other methods the same (parseAddress, filterByStreetName, etc.)
+  /**
+   * Parse address into structured components
+   */
   static parseAddress(address) {
     const normalized = address.toLowerCase().trim();
     
@@ -234,31 +245,54 @@ export class StructuredDPESearchService {
     };
   }
 
+  /**
+   * IMPROVED: More flexible street name filtering
+   */
   static filterByStreetName(results, searchStreet) {
     const normalizedSearch = this.normalizeStreetName(searchStreet);
     console.log('🔍 Filtering by normalized street name:', normalizedSearch);
     
-    return results.filter(result => {
+    const matches = results.filter(result => {
       const addresses = [
         result['Adresse_brute'],
         result['Adresse_(BAN)'],
         result['Nom__rue_(BAN)']
       ].filter(Boolean);
       
-      const matches = addresses.some(addr => {
+      const streetMatches = addresses.some(addr => {
         const normalizedAddr = this.normalizeStreetName(addr);
-        return normalizedAddr.includes(normalizedSearch) || 
-               normalizedSearch.includes(normalizedAddr);
+        
+        // More flexible matching strategies
+        const exactMatch = normalizedAddr === normalizedSearch;
+        const containsMatch = normalizedAddr.includes(normalizedSearch) || normalizedSearch.includes(normalizedAddr);
+        
+        // Handle common French street name variations
+        const searchWords = normalizedSearch.split(' ');
+        const addrWords = normalizedAddr.split(' ');
+        const wordOverlap = searchWords.some(word => 
+          addrWords.some(addrWord => 
+            word.length > 3 && (addrWord.includes(word) || word.includes(addrWord))
+          )
+        );
+        
+        if (exactMatch || containsMatch || wordOverlap) {
+          console.log(`✅ Street match: "${searchStreet}" ↔ "${addr}" (normalized: "${normalizedAddr}")`);
+          return true;
+        }
+        
+        return false;
       });
       
-      if (matches) {
-        console.log(`✅ Street match: "${searchStreet}" found in "${addresses[0]}"`);
-      }
-      
-      return matches;
+      return streetMatches;
     });
+    
+    console.log(`📊 Street filtering results: ${results.length} → ${matches.length}`);
+    return matches;
   }
 
+  /**
+   * Remove duplicate DPE records
+   */
   static removeDuplicates(results) {
     const seen = new Set();
     const duplicates = [];
@@ -280,6 +314,9 @@ export class StructuredDPESearchService {
     return unique;
   }
 
+  /**
+   * Normalize street names for comparison
+   */
   static normalizeStreetName(street) {
     if (!street) return '';
     
@@ -299,6 +336,9 @@ export class StructuredDPESearchService {
       .trim();
   }
 
+  /**
+   * Rank results by how exactly they match the search
+   */
   static rankByExactness(results, searchAddress) {
     const searchComponents = this.parseAddress(searchAddress);
     
