@@ -1,5 +1,3 @@
-// barracudatool/src/app/page.tsx
-
 'use client'
 import { useState } from 'react'
 import MapComponent from '../components/MapComponent'
@@ -24,7 +22,10 @@ interface PropertyInfo {
     ghg: string
     date: string
     consumption?: number
+    yearBuilt?: string
+    surfaceArea?: number
   }
+  nearbyDpeCount?: number
   transactions?: Array<{
     sale_date: string
     sale_price: number
@@ -49,7 +50,7 @@ export default function Home() {
   const [dataLayers, setDataLayers] = useState<DataLayers>({
     cadastral: true,
     dvf: true,
-    dpe: false
+    dpe: true
   })
   const [isDvfModalOpen, setIsDvfModalOpen] = useState(false)
 
@@ -94,7 +95,7 @@ export default function Home() {
             </p>
             <div className="flex justify-center items-center mt-3 text-xs">
               <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse mr-2"></div>
-              <span className="text-neon-green font-retro">EXACT PLOT MODE ACTIVE</span>
+              <span className="text-neon-green font-retro">EXACT PLOT + DPE MODE ACTIVE</span>
             </div>
           </div>
         </Card>
@@ -127,6 +128,17 @@ export default function Home() {
                 onClick={() => setDataLayers({...dataLayers, dvf: !dataLayers.dvf})}
               >
                 {dataLayers.dvf ? "ON" : "OFF"}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white font-retro text-sm">⚡ DPE Energy</span>
+              <Button
+                neonColor={dataLayers.dpe ? "green" : "orange"}
+                size="sm"
+                variant={dataLayers.dpe ? "primary" : "secondary"}
+                onClick={() => setDataLayers({...dataLayers, dpe: !dataLayers.dpe})}
+              >
+                {dataLayers.dpe ? "ON" : "OFF"}
               </Button>
             </div>
           </div>
@@ -213,6 +225,78 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* DPE Energy Performance - REAL DATA ONLY */}
+                <div className={`bg-surface/50 p-3 rounded border-2 ${
+                  selectedProperty.dpeRating 
+                    ? 'border-neon-purple/70 bg-purple-900/20' 
+                    : 'border-neon-orange/70 bg-red-900/20'
+                }`}>
+                  <h4 className={`font-retro text-sm mb-3 ${
+                    selectedProperty.dpeRating ? 'text-neon-purple' : 'text-neon-orange'
+                  }`}>
+                    ⚡ ENERGY PERFORMANCE (DPE)
+                  </h4>
+                  <div className="text-white text-xs space-y-2">
+                    {selectedProperty.dpeRating ? (
+                      <>
+                        <div className="text-neon-green font-bold text-sm mb-2">✅ REAL DPE CERTIFICATE FOUND</div>
+                        <div className="flex items-center">
+                          <span>Energy Class:</span>
+                          <span className={`ml-2 px-2 py-1 rounded font-bold text-xs ${
+                            selectedProperty.dpeRating.energy === 'A' ? 'bg-green-600 text-white' :
+                            selectedProperty.dpeRating.energy === 'B' ? 'bg-green-500 text-white' :
+                            selectedProperty.dpeRating.energy === 'C' ? 'bg-yellow-500 text-black' :
+                            selectedProperty.dpeRating.energy === 'D' ? 'bg-yellow-600 text-black' :
+                            selectedProperty.dpeRating.energy === 'E' ? 'bg-orange-500 text-white' :
+                            selectedProperty.dpeRating.energy === 'F' ? 'bg-red-500 text-white' :
+                            'bg-red-700 text-white'
+                          }`}>
+                            {selectedProperty.dpeRating.energy}
+                          </span>
+                        </div>
+                        <div className="flex items-center">
+                          <span>GHG Class:</span>
+                          <span className={`ml-2 px-2 py-1 rounded font-bold text-xs ${
+                            selectedProperty.dpeRating.ghg === 'A' ? 'bg-green-600 text-white' :
+                            selectedProperty.dpeRating.ghg === 'B' ? 'bg-green-500 text-white' :
+                            selectedProperty.dpeRating.ghg === 'C' ? 'bg-yellow-500 text-black' :
+                            selectedProperty.dpeRating.ghg === 'D' ? 'bg-yellow-600 text-black' :
+                            selectedProperty.dpeRating.ghg === 'E' ? 'bg-orange-500 text-white' :
+                            selectedProperty.dpeRating.ghg === 'F' ? 'bg-red-500 text-white' :
+                            'bg-red-700 text-white'
+                          }`}>
+                            {selectedProperty.dpeRating.ghg}
+                          </span>
+                        </div>
+                        {selectedProperty.dpeRating.consumption && (
+                          <div>Consumption: <span className="text-neon-yellow">{selectedProperty.dpeRating.consumption} kWh/m²/year</span></div>
+                        )}
+                        <div>Certificate Date: <span className="text-neon-cyan">{selectedProperty.dpeRating.date}</span></div>
+                        {selectedProperty.dpeRating.yearBuilt && (
+                          <div>Built: <span className="text-neon-orange">{selectedProperty.dpeRating.yearBuilt}</span></div>
+                        )}
+                        {selectedProperty.dpeRating.surfaceArea && (
+                          <div>Habitable: <span className="text-neon-yellow">{selectedProperty.dpeRating.surfaceArea} m²</span></div>
+                        )}
+                        <div className="text-neon-green text-xs mt-2">📋 ADEME VERIFIED CERTIFICATE</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-neon-orange font-bold text-sm mb-2">❌ NO DPE CERTIFICATE FOUND</div>
+                        <div className="text-text-secondary">
+                          No energy performance certificate registered for this exact location
+                        </div>
+                        {selectedProperty.nearbyDpeCount !== undefined && selectedProperty.nearbyDpeCount > 0 && (
+                          <div className="text-neon-cyan text-xs mt-2">
+                            {selectedProperty.nearbyDpeCount} certificate{selectedProperty.nearbyDpeCount > 1 ? 's' : ''} found nearby
+                          </div>
+                        )}
+                        <div className="text-neon-orange text-xs mt-2">100% REAL DATA - NO ESTIMATES</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
                 {/* Cadastral Info */}
                 <div className="bg-surface/50 p-3 rounded border border-neon-green/30">
                   <h4 className="text-neon-green font-retro text-sm mb-2">📋 EXACT CADASTRAL DATA</h4>
@@ -256,7 +340,7 @@ export default function Home() {
             ) : (
               <div className="text-center text-text-secondary text-sm">
                 <div className="text-4xl mb-4">🎯</div>
-                <p className="font-retro">Click on a cadastral parcel to check if that exact plot has been sold</p>
+                <p className="font-retro">Click on a cadastral parcel to check if that exact plot has been sold and its energy performance</p>
                 <div className="text-neon-orange text-xs mt-2 font-retro">
                   100% REAL DATA - NO ESTIMATES
                 </div>
@@ -284,6 +368,14 @@ export default function Home() {
               onClick={() => setSelectedProperty(null)}
             >
               🔄 Clear Selection
+            </Button>
+            <Button 
+              neonColor="cyan" 
+              size="sm"
+              onClick={() => window.open('/test-dpe', '_blank')}
+              className="w-full"
+            >
+              🧪 Test DPE Feature
             </Button>
           </div>
         </Card>
@@ -330,13 +422,23 @@ export default function Home() {
                 <span className="text-white ml-2">{viewMode.toUpperCase()}</span>
               </div>
               {selectedProperty && (
-                <div className="flex items-center">
-                  <span className={selectedProperty.hasSales ? "text-neon-green" : "text-neon-orange"}>
-                    STATUS:
-                  </span>
-                  <span className="text-white ml-2">
-                    {selectedProperty.hasSales ? "SOLD" : "NO SALES"}
-                  </span>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center">
+                    <span className={selectedProperty.hasSales ? "text-neon-green" : "text-neon-orange"}>
+                      SALES:
+                    </span>
+                    <span className="text-white ml-2">
+                      {selectedProperty.hasSales ? "SOLD" : "NO SALES"}
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className={selectedProperty.dpeRating ? "text-neon-purple" : "text-neon-orange"}>
+                      DPE:
+                    </span>
+                    <span className="text-white ml-2">
+                      {selectedProperty.dpeRating ? selectedProperty.dpeRating.energy : "NO CERT"}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

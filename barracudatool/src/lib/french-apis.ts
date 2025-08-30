@@ -1,5 +1,8 @@
 // barracudatool/src/lib/french-apis.ts
 
+import { BanAPI, type BanAddress } from './ban-api';
+import { DpeAPI, type DpeData } from './dpe-api';
+
 export class FrenchCadastralAPI {
   private static cache = new Map<string, any>();
 
@@ -328,4 +331,55 @@ static async getDVFTransactions(userLng: number, userLat: number, exactCadastral
       throw error;
     }
   }
-}
+  // Add this method to your FrenchCadastralAPI class
+// Add this corrected method to your FrenchCadastralAPI class
+// Add these imports at the top of your french-apis.ts file
+// import { DpeAPI, type DpeData } from './dpe-api';
+
+// Add this method to your FrenchCadastralAPI class
+// Add this to your FrenchCadastralAPI class
+static async getEnhancedPropertyData(userLng: number, userLat: number, cadastralFeature?: any) {
+  let baseData = null;
+  
+  try {
+    console.log(`🔍 Fetching ENHANCED property data with DPE for: ${userLat.toFixed(6)}, ${userLng.toFixed(6)}`);
+    
+    // Get your existing data FIRST
+    baseData = await this.getCompleteParcelData(userLng, userLat, cadastralFeature);
+    if (!baseData) {
+      console.log('❌ No base parcel data found');
+      return null;
+    }
+
+    // Get DPE data nearby (wider search radius)
+    const dpeData = await DpeAPI.getDpeNearCoordinates(userLng, userLat, 0.2); // 200m radius
+    
+    // Find the closest DPE match by address and distance
+    let closestDpe = null;
+    if (dpeData.length > 0) {
+      console.log(`🏡 Found ${dpeData.length} DPE certificates nearby`);
+      closestDpe = dpeData[0]; // Already sorted by distance
+      
+      // Log the closest match for debugging
+      console.log(`✅ Closest DPE: ${closestDpe.adresse_bien} - Energy: ${closestDpe.etiquette_dpe}${closestDpe.distance ? `, Distance: ${closestDpe.distance.toFixed(2)}km` : ''}`);
+    } else {
+      console.log('❌ No DPE certificates found in area');
+    }
+
+    return {
+      ...baseData,
+      dpe: closestDpe,
+      nearbyDpeCount: dpeData.length,
+      dpeData: dpeData.slice(0, 3) // Max 3 nearby certificates for accuracy
+    };
+  } catch (error) {
+    console.error('❌ Failed to fetch enhanced property data:', error);
+    // Return baseData if it exists, otherwise null
+    return baseData ? {
+      ...baseData,
+      dpe: null,
+      nearbyDpeCount: 0,
+      dpeData: []
+    } : null;
+  }
+}}

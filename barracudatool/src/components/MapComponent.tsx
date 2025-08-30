@@ -1,5 +1,3 @@
-// barracudatool/src/components/MapComponent.tsx
-
 'use client'
 import React from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -24,7 +22,10 @@ interface PropertyInfo {
     ghg: string
     date: string
     consumption?: number
+    yearBuilt?: string
+    surfaceArea?: number
   }
+  nearbyDpeCount?: number
   transactions?: Array<{
     sale_date: string
     sale_price: number
@@ -63,7 +64,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   useEffect(() => {
     if (initialized.current || !mapContainer.current) return
 
-    console.log('🗺️ INITIALIZING FRENCH PROPERTY MAP WITH EXACT PLOT DETECTION')
+    console.log('🗺️ INITIALIZING FRENCH PROPERTY MAP WITH EXACT PLOT + DPE DETECTION')
     
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!
 
@@ -88,7 +89,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current = mapInstance
 
     mapInstance.on('load', () => {
-      console.log('✅ Map loaded - Setting up exact plot detection layers')
+      console.log('✅ Map loaded - Setting up exact plot + DPE detection layers')
       
       const addCadastralLayers = async () => {
         try {
@@ -335,11 +336,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setTimeout(setupHoverEffects, 1000)
     })
 
-    // UPDATED: Exact plot click handler with sale detection
+    // UPDATED: Exact plot click handler with DPE detection
     mapInstance.on('click', async (e) => {
       const { lng, lat } = e.lngLat
       
-      console.log(`🎯 Checking exact plot for sales: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
+      console.log(`🎯 Checking exact plot for sales + DPE: ${lng.toFixed(6)}, ${lat.toFixed(6)}`)
       setLoading(true)
 
       // Must click on a cadastral parcel for exact plot data
@@ -381,13 +382,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
         
         console.log(`🏠 Clicked on exact parcel: ${cadastralId}`);
         
-        const propertyData = await FrenchCadastralAPI.getCompleteParcelData(lng, lat, cadastralFeature)
+        // Get enhanced property data with DPE
+        const propertyData = await FrenchCadastralAPI.getEnhancedPropertyData(lng, lat, cadastralFeature)
         
         if (!propertyData || !propertyData.parcel || !propertyData.parcel.surface_area) {
           throw new Error('No real parcel data available');
         }
 
-        const { parcel, latest_sale, transactions, has_sales, sales_count } = propertyData
+        const { parcel, latest_sale, transactions, has_sales, sales_count, dpe, nearbyDpeCount } = propertyData
         
         const propertyInfo: PropertyInfo = {
           cadastralId: parcel.cadastral_id || cadastralId,
@@ -405,10 +407,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
           dataSource: 'real_cadastral',
           transactions: transactions || [],
           hasSales: has_sales,
-          salesCount: sales_count
+          salesCount: sales_count,
+          // DPE DATA - REAL ONLY
+          dpeRating: dpe ? {
+            energy: dpe.etiquette_dpe,
+            ghg: dpe.classe_estimation_ges,
+            date: dpe.date_reception_dpe,
+            consumption: dpe.consommation_energie,
+            yearBuilt: dpe.annee_construction,
+            surfaceArea: dpe.surface_habitable
+          } : undefined,
+          nearbyDpeCount
         }
 
-        // Create marker with exact sale status
+        // Create marker with exact sale + DPE status
         const labelParts = [
           parcel.commune_name || 'Unknown',
           `${parcel.section || ''}${parcel.numero || ''}`,
@@ -423,6 +435,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
           }
         } else {
           labelParts.push('❌ NO SALES RECORDED');
+        }
+
+        // Add DPE status
+        if (dpe) {
+          labelParts.push(`⚡ DPE: ${dpe.etiquette_dpe} (${dpe.consommation_energie} kWh/m²)`);
+        } else {
+          labelParts.push('⚡ NO DPE CERTIFICATE');
         }
 
         const clickedPoint = {
@@ -446,9 +465,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
           onPropertySelect(propertyInfo)
         }
 
-        console.log(`✅ ${has_sales ? 'PLOT SOLD' : 'NO SALES'} - Exact plot data:`, propertyInfo)
+        console.log(`✅ ${has_sales ? 'PLOT SOLD' : 'NO SALES'} + ${dpe ? 'REAL DPE' : 'NO DPE'} - Exact plot data:`, propertyInfo)
       } catch (error) {
-        console.error('❌ Error checking exact plot sales:', error)
+        console.error('❌ Error checking exact plot sales + DPE:', error)
         
         const errorPoint = {
           type: 'Feature' as const,
@@ -478,7 +497,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     <div className="map-wrapper">
       <div className="absolute top-4 left-4 z-10 bg-surface/90 border-2 border-neon-green p-2 rounded">
         <div className="text-neon-green font-retro text-xs">
-          {loading ? '🔄 CHECKING EXACT PLOT SALES...' : '🇫🇷 EXACT PLOT SALE DETECTOR'}
+          {loading ? '🔄 CHECKING PLOT + DPE...' : '🇫🇷 EXACT PLOT + DPE DETECTOR'}
         </div>
         <div className="text-neon-cyan font-retro text-xs mt-1">
           Zoom: {currentZoom.toFixed(1)} • {currentZoom >= 15 ? 'PARCELS VISIBLE' : 'ZOOM IN FOR PARCELS'}
@@ -491,13 +510,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
       </div>
 
       <div className="absolute bottom-4 left-4 z-10 bg-surface/90 border-2 border-neon-yellow p-3 rounded">
-        <div className="text-neon-yellow font-retro text-xs mb-2">EXACT PLOT DETECTION</div>
+        <div className="text-neon-yellow font-retro text-xs mb-2">EXACT PLOT + DPE DETECTION</div>
         <div className="space-y-1 text-xs text-white">
           <div>✅ geo.api.gouv.fr - Communes</div>
           <div>{cadastralLayersLoaded ? '✅' : '⚠️'} French Cadastre - Exact Plots</div>
           <div>✅ DVF+ Sales - Exact Plot Matching</div>
+          <div>✅ ADEME DPE - Real Energy Certificates</div>
           <div className="text-neon-cyan mt-2">
-            {currentZoom >= 15 ? '🎯 Click exact plot for sale status' : '🔍 Zoom in and click for exact plot data'}
+            {currentZoom >= 15 ? '🎯 Click exact plot for sale + DPE status' : '🔍 Zoom in and click for exact plot data'}
           </div>
         </div>
       </div>
