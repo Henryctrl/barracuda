@@ -50,6 +50,21 @@ export class EnhancedDPEForCadastral {
       // Apply strict filtering for exact match
       const exactMatch = this.findExactMatch(uniqueCandidates, propertyInfo);
       
+      // FORMAT ALL CANDIDATES for the "View All" button
+      const formattedCandidates = uniqueCandidates.map(dpe => ({
+        id: dpe['N°DPE'],
+        address: dpe['Adresse_brute'] || dpe['Adresse_(BAN)'] || 'Unknown',
+        energy_class: dpe['Etiquette_DPE'],
+        ghg_class: dpe['Etiquette_GES'],
+        surface: dpe['Surface_habitable_logement'],
+        annual_cost: dpe['Coût_total_5_usages'],
+        establishment_date: dpe['Date_établissement_DPE'],
+        score: dpe._exactness_score || 0,
+        reason: dpe._exactness_score < 90 ? 
+          `Score: ${dpe._exactness_score}/100 - Not exact enough` : 
+          'Qualified candidate'
+      })).sort((a, b) => b.score - a.score); // Sort by score
+      
       if (exactMatch) {
         console.log(`✅ EXACT MATCH FOUND: ${exactMatch.id}`);
         return {
@@ -57,15 +72,17 @@ export class EnhancedDPEForCadastral {
           hasExactMatch: true,
           dpeRating: this.formatDPEForYourSystem(exactMatch),
           nearbyDpeCount: uniqueCandidates.length - 1,
+          allDpeCandidates: formattedCandidates, // Include all candidates
           searchedWith: propertyInfo.cadastralId
         };
       } else {
-        console.log(`❌ No exact match found. ${uniqueCandidates.length} nearby candidates`);
+        console.log(`❌ No exact match found. ${uniqueCandidates.length} candidates available`);
         return {
           success: true,
           hasExactMatch: false,
           dpeRating: null,
           nearbyDpeCount: uniqueCandidates.length,
+          allDpeCandidates: formattedCandidates, // Include all candidates
           searchedWith: propertyInfo.cadastralId
         };
       }
@@ -76,6 +93,7 @@ export class EnhancedDPEForCadastral {
         success: false,
         hasExactMatch: false,
         dpeRating: null,
+        allDpeCandidates: [],
         error: error.message
       };
     }
@@ -115,60 +133,74 @@ export class EnhancedDPEForCadastral {
   }
   
   /**
-   * Find exact match using multiple criteria
+   * Find TRULY exact match using very strict criteria
    */
   static findExactMatch(candidates, propertyInfo) {
-    console.log(`🎯 Looking for exact match among ${candidates.length} candidates`);
+    console.log(`🎯 Looking for TRULY EXACT match among ${candidates.length} candidates`);
     
-    // Score each candidate for exactness
+    // Score each candidate with MUCH stricter criteria
     const scoredCandidates = candidates.map(dpe => {
       let score = 0;
       const details = {};
       
-      // Department match (essential - 40 points)
+      // Department match (ESSENTIAL - must have this)
       if (propertyInfo.department && dpe['N°_département_(BAN)'] === propertyInfo.department) {
         score += 40;
         details.department = 'exact';
+      } else {
+        // NO DEPARTMENT MATCH = INSTANT DISQUALIFICATION
+        return { ...dpe, _exactness_score: 0, _exactness_details: { disqualified: 'wrong_department' } };
       }
       
-      // Commune match (high priority - 30 points)
+      // Commune match (ESSENTIAL - must have this too) 
       if (propertyInfo.commune && dpe['Nom__commune_(BAN)']) {
-        const dpeCommune = dpe['Nom__commune_(BAN)'].toLowerCase();
-        const searchCommune = propertyInfo.commune.toLowerCase();
+        const dpeCommune = dpe['Nom__commune_(BAN)'].toLowerCase().trim();
+        const searchCommune = propertyInfo.commune.toLowerCase().trim();
         
         if (dpeCommune === searchCommune) {
-          score += 30;
+          score += 40; // Exact commune match
           details.commune = 'exact';
-        } else if (dpeCommune.includes(searchCommune) || searchCommune.includes(dpeCommune)) {
-          score += 15;
-          details.commune = 'partial';
+        } else {
+          // NO COMMUNE MATCH = INSTANT DISQUALIFICATION  
+          return { ...dpe, _exactness_score: 0, _exactness_details: { disqualified: 'wrong_commune' } };
         }
+      } else {
+        // NO COMMUNE DATA = INSTANT DISQUALIFICATION
+        return { ...dpe, _exactness_score: 0, _exactness_details: { disqualified: 'no_commune_data' } };
       }
       
-      // Address proximity (20 points) - check if addresses mention similar locations
-      if (propertyInfo.section || propertyInfo.numero) {
+      // Address pattern matching (REQUIRED for high score)
+      let addressMatch = false;
+      if (dpe['Adresse_brute'] || dpe['Adresse_(BAN)']) {
         const dpeAddress = (dpe['Adresse_brute'] || dpe['Adresse_(BAN)'] || '').toLowerCase();
         
-        // Look for section/numero patterns in address
+        // Look for specific address elements
         if (propertyInfo.section && dpeAddress.includes(propertyInfo.section.toLowerCase())) {
           score += 10;
+          addressMatch = true;
           details.address = 'section_match';
         }
         if (propertyInfo.numero && dpeAddress.includes(propertyInfo.numero)) {
           score += 10;
-          details.address = 'numero_match';
+          addressMatch = true;
+          details.address = details.address ? 'section_and_numero' : 'numero_match';
+        }
+        
+        // Bonus for very specific address matches (street numbers, etc.)
+        const streetNumberPattern = /\b\d+\s/;
+        if (streetNumberPattern.test(dpeAddress)) {
+          score += 5;
+          details.hasStreetNumber = true;
         }
       }
       
-      // Recent DPE (10 points for newer certificates)
+      // Recent DPE gets small bonus (but not required)
       if (dpe['Date_établissement_DPE']) {
         const dpeDate = new Date(dpe['Date_établissement_DPE']);
         const now = new Date();
         const ageInYears = (now - dpeDate) / (1000 * 60 * 60 * 24 * 365);
         
-        if (ageInYears < 2) score += 10;
-        else if (ageInYears < 5) score += 5;
-        
+        if (ageInYears < 3) score += 5; // Small bonus for recent DPE
         details.age = `${ageInYears.toFixed(1)} years`;
       }
       
@@ -179,21 +211,39 @@ export class EnhancedDPEForCadastral {
       };
     });
     
-    // Sort by score
-    scoredCandidates.sort((a, b) => b._exactness_score - a._exactness_score);
+    // Remove all disqualified candidates
+    const qualifiedCandidates = scoredCandidates.filter(c => c._exactness_score > 0);
     
-    // Log top candidates
-    console.log('🏆 Top 3 candidates:');
-    scoredCandidates.slice(0, 3).forEach((candidate, i) => {
-      console.log(`  ${i+1}. Score: ${candidate._exactness_score}/100 - ${candidate['Adresse_brute']} (${candidate['N°DPE']})`);
-    });
+    console.log(`📊 Qualified candidates: ${qualifiedCandidates.length}/${candidates.length}`);
     
-    // Return exact match only if score is high enough
-    const topCandidate = scoredCandidates[0];
-    if (topCandidate && topCandidate._exactness_score >= 70) {
-      return topCandidate;
+    if (qualifiedCandidates.length === 0) {
+      console.log('❌ No candidates passed basic qualification (department + commune match)');
+      return null;
     }
     
+    // Sort by score
+    qualifiedCandidates.sort((a, b) => b._exactness_score - a._exactness_score);
+    
+    // Log top candidates
+    console.log('🏆 Top qualified candidates:');
+    qualifiedCandidates.slice(0, 3).forEach((candidate, i) => {
+      console.log(`  ${i+1}. Score: ${candidate._exactness_score}/100 - ${candidate['Adresse_brute']} (${candidate['N°DPE']})`);
+      console.log(`     Details:`, candidate._exactness_details);
+    });
+    
+    const topCandidate = qualifiedCandidates[0];
+    
+    // MUCH STRICTER THRESHOLD: Must have department + commune + some address element
+    // Minimum 90/100 points required for exact match
+    if (topCandidate && topCandidate._exactness_score >= 90) {
+      console.log(`✅ EXACT MATCH FOUND with ${topCandidate._exactness_score}/100 points`);
+      return topCandidate;
+    } else if (topCandidate) {
+      console.log(`❌ Best candidate only scored ${topCandidate._exactness_score}/100 - not exact enough`);
+      return null;
+    }
+    
+    console.log('❌ No truly exact match found');
     return null;
   }
   

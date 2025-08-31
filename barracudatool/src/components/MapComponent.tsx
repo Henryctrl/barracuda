@@ -3,6 +3,7 @@ import React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import * as maptilersdk from '@maptiler/sdk'
 import { FrenchCadastralAPI } from '../lib/french-apis'
+import { EnhancedDPEForCadastral } from '../services/enhancedDpeForCadastral' // ADD THIS IMPORT
 
 interface PropertyInfo {
   cadastralId: string | null
@@ -24,8 +25,24 @@ interface PropertyInfo {
     consumption?: number
     yearBuilt?: string
     surfaceArea?: number
+    annualCost?: number
+    dpeId?: string
+    address?: string
+    isActive?: boolean
   }
   nearbyDpeCount?: number
+  // ADD THESE NEW FIELDS:
+  allDpeCandidates?: Array<{
+    id: string
+    address: string
+    energy_class: string
+    ghg_class: string
+    surface?: number
+    annual_cost?: number
+    establishment_date?: string
+    score: number
+    reason?: string
+  }>
   transactions?: Array<{
     sale_date: string
     sale_price: number
@@ -37,6 +54,7 @@ interface PropertyInfo {
   hasSales?: boolean
   salesCount?: number
 }
+
 
 interface DataLayers {
   cadastral: boolean
@@ -336,7 +354,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setTimeout(setupHoverEffects, 1000)
     })
 
-    // CORRECTED: Exact plot click handler with DPE detection
+    // ✨ ENHANCED: Exact plot click handler with EXACT DPE matching
     mapInstance.on('click', async (e) => {
       const { lng, lat } = e.lngLat
       
@@ -382,43 +400,70 @@ const MapComponent: React.FC<MapComponentProps> = ({
         
         console.log(`🏠 Clicked on exact parcel: ${cadastralId}`);
         
-        // Get enhanced property data with DPE
+        // Get enhanced property data with sales/DVF
         const propertyData = await FrenchCadastralAPI.getEnhancedPropertyData(lng, lat, cadastralFeature)
         
         if (!propertyData || !propertyData.parcel || !propertyData.parcel.surface_area) {
           throw new Error('No real parcel data available');
         }
 
-        const { parcel, latest_sale, transactions, has_sales, sales_count, dpe, nearbyDpeCount } = propertyData
+        const { parcel, latest_sale, transactions, has_sales, sales_count } = propertyData
         
-        const propertyInfo: PropertyInfo = {
-          cadastralId: parcel.cadastral_id || cadastralId,
-          size: parcel.surface_area,
-          zone: parcel.zone_type,
-          commune: parcel.commune_name,
-          department: `Dept. ${parcel.department}`,
-          population: parcel.population,
-          section: parcel.section,
-          numero: parcel.numero,
-          lastSaleDate: latest_sale?.sale_date,
-          lastSalePrice: latest_sale?.sale_price,
-          pricePerSqm: latest_sale && latest_sale.surface_area ? 
-            Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
-          dataSource: 'real_cadastral',
-          transactions: transactions || [],
-          hasSales: has_sales,
-          salesCount: sales_count,
-          // CORRECTED DPE DATA MAPPING
-          dpeRating: dpe ? {
-            energy: dpe.etiquette_dpe,
-            ghg: dpe.estimation_ges?.toString() || 'Unknown', // Map estimation_ges to ghg
-            date: dpe.date_reception_dpe,
-            consumption: dpe.consommation_energie,
-            yearBuilt: 'Unknown', // Remove type_batiment reference since it doesn't exist
-            surfaceArea: dpe.surface_habitable
-          } : undefined,
-          nearbyDpeCount
-        }
+                // ✨ ENHANCED DPE LOOKUP - Get EXACT match instead of nearby results
+                let enhancedDPE = null;
+                let nearbyDpeCount = 0;
+                let allCandidates = []; // Add this line
+                
+                if (dataLayers?.dpe) {
+                  console.log('🔍 Getting EXACT DPE match for parcel...');
+                  
+                  // Build property info for DPE search
+                  const propertyInfoForDPE = {
+                    cadastralId: parcel.cadastral_id || cadastralId,
+                    commune: parcel.commune_name,
+                    department: parcel.department?.toString(),
+                    section: parcel.section,
+                    numero: parcel.numero,
+                    size: parcel.surface_area
+                  };
+                  
+                  const dpeResult = await EnhancedDPEForCadastral.getExactDPEForProperty(propertyInfoForDPE);
+                  
+                  if (dpeResult.success && dpeResult.hasExactMatch && dpeResult.dpeRating) {
+                    enhancedDPE = dpeResult.dpeRating;
+                    console.log('✅ EXACT DPE MATCH FOUND:', enhancedDPE.dpeId);
+                  } else {
+                    console.log('❌ No exact DPE match found');
+                  }
+                  
+                  nearbyDpeCount = dpeResult.nearbyDpeCount || 0;
+                  allCandidates = dpeResult.allDpeCandidates || []; // Add this line
+                }
+                
+                const propertyInfo: PropertyInfo = {
+                  cadastralId: parcel.cadastral_id || cadastralId,
+                  size: parcel.surface_area,
+                  zone: parcel.zone_type,
+                  commune: parcel.commune_name,
+                  department: `Dept. ${parcel.department}`,
+                  population: parcel.population,
+                  section: parcel.section,
+                  numero: parcel.numero,
+                  lastSaleDate: latest_sale?.sale_date,
+                  lastSalePrice: latest_sale?.sale_price,
+                  pricePerSqm: latest_sale && latest_sale.surface_area ? 
+                    Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
+                  dataSource: 'real_cadastral',
+                  transactions: transactions || [],
+                  hasSales: has_sales,
+                  salesCount: sales_count,
+                  // ✨ ENHANCED DPE DATA with all candidates
+                  dpeRating: enhancedDPE || undefined,
+                  nearbyDpeCount,
+                  allDpeCandidates: allCandidates // Use the local variable instead of dpeResult
+                }
+        
+        
 
         // Create marker with exact sale + DPE status
         const labelParts = [
@@ -437,11 +482,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
           labelParts.push('❌ NO SALES RECORDED');
         }
 
-        // Add DPE status
-        if (dpe) {
-          labelParts.push(`⚡ DPE: ${dpe.etiquette_dpe} (${dpe.consommation_energie} kWh/m²)`);
+        // Add EXACT DPE status
+        if (enhancedDPE) {
+          labelParts.push(`⚡ DPE: ${enhancedDPE.energy}/${enhancedDPE.ghg} (EXACT MATCH)`);
+          if (enhancedDPE.consumption) {
+            labelParts.push(`${enhancedDPE.consumption} kWh/m²`);
+          }
         } else {
-          labelParts.push('⚡ NO DPE CERTIFICATE');
+          labelParts.push('⚡ NO EXACT DPE MATCH');
+          if (nearbyDpeCount > 0) {
+            labelParts.push(`(${nearbyDpeCount} nearby)`);
+          }
         }
 
         const clickedPoint = {
@@ -465,7 +516,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
           onPropertySelect(propertyInfo)
         }
 
-        console.log(`✅ ${has_sales ? 'PLOT SOLD' : 'NO SALES'} + ${dpe ? 'REAL DPE' : 'NO DPE'} - Exact plot data:`, propertyInfo)
+        console.log(`✅ ${has_sales ? 'PLOT SOLD' : 'NO SALES'} + ${enhancedDPE ? 'EXACT DPE' : 'NO EXACT DPE'} - Property:`, propertyInfo)
       } catch (error) {
         console.error('❌ Error checking exact plot sales + DPE:', error)
         
@@ -491,13 +542,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
     })
 
     return () => {}
-  }, [onPropertySelect])
+  }, [onPropertySelect, dataLayers?.dpe]) // Add dataLayers.dpe to dependencies
 
   return (
     <div className="map-wrapper">
       <div className="absolute top-4 left-4 z-10 bg-surface/90 border-2 border-neon-green p-2 rounded">
         <div className="text-neon-green font-retro text-xs">
-          {loading ? '🔄 CHECKING PLOT + DPE...' : '🇫🇷 EXACT PLOT + DPE DETECTOR'}
+          {loading ? '🔄 CHECKING PLOT + EXACT DPE...' : '🇫🇷 EXACT PLOT + EXACT DPE DETECTOR'}
         </div>
         <div className="text-neon-cyan font-retro text-xs mt-1">
           Zoom: {currentZoom.toFixed(1)} • {currentZoom >= 15 ? 'PARCELS VISIBLE' : 'ZOOM IN FOR PARCELS'}
@@ -510,14 +561,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
       </div>
 
       <div className="absolute bottom-4 left-4 z-10 bg-surface/90 border-2 border-neon-yellow p-3 rounded">
-        <div className="text-neon-yellow font-retro text-xs mb-2">EXACT PLOT + DPE DETECTION</div>
+        <div className="text-neon-yellow font-retro text-xs mb-2">EXACT PLOT + EXACT DPE DETECTION</div>
         <div className="space-y-1 text-xs text-white">
           <div>✅ geo.api.gouv.fr - Communes</div>
           <div>{cadastralLayersLoaded ? '✅' : '⚠️'} French Cadastre - Exact Plots</div>
           <div>✅ DVF+ Sales - Exact Plot Matching</div>
-          <div>✅ ADEME DPE - Real Energy Certificates</div>
+          <div>✅ ADEME DPE - EXACT MATCH ONLY</div>
           <div className="text-neon-cyan mt-2">
-            {currentZoom >= 15 ? '🎯 Click exact plot for sale + DPE status' : '🔍 Zoom in and click for exact plot data'}
+            {currentZoom >= 15 ? '🎯 Click exact plot for exact DPE match' : '🔍 Zoom in and click for exact plot data'}
           </div>
         </div>
       </div>
