@@ -22,11 +22,10 @@ export async function GET(
     );
   }
 
-  // --- THE FINAL, ROBUST FIX: Intelligent Parcel ID Parsing ---
-  // The parcel ID format can vary. This regular expression is designed
-  // to correctly capture the components from different formats.
-  // It looks for: (5-digit INSEE)(2-digit prefix)(2-char section)(4-char number)
-  const match = parcelId.match(/^(\d{5})\d{2}(\w{2})(\w{4})$/);
+  // --- THE FINAL, CORRECTED PARSING LOGIC ---
+  // This regular expression correctly handles the format:
+  // (5-digit INSEE)(3-digit prefix)(2-char section)(4-char number)
+  const match = parcelId.match(/^(\d{5})\d{3}(\w{2})(\w{4})$/);
 
   if (!match) {
     console.error(`Failed to parse parcelId: ${parcelId}`);
@@ -62,7 +61,7 @@ export async function GET(
     const data = await response.json();
 
     if (data.features && data.features.length > 0) {
-      const properties = data.features[0].properties as IgnParcelProperties;
+      const properties = data.features.properties as IgnParcelProperties;
       return NextResponse.json(properties);
     } else {
       return NextResponse.json(

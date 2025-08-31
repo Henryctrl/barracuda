@@ -24,6 +24,12 @@
   }
 }
 
+/* Barracuda Map Page Scroll Lock */
+body.map-page-lock,
+html.map-page-lock {
+  overflow: hidden !important;
+}
+
 /* Reset box-sizing, which is good practice */
 *,
 *::before,
