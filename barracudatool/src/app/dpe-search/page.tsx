@@ -53,7 +53,7 @@ export default function DpeSearchPage() {
       const dataset = 'dpe03existant';
       const queryParams = new URLSearchParams({
           qs: `code_postal_ban:"${postalCode}"`,
-          size: '1000',
+          size: '10000',
           select: 'numero_dpe,adresse_brut,nom_commune_ban,code_postal_ban,etiquette_dpe,etiquette_ges,_geopoint'
       }).toString();
       const url = `https://data.ademe.fr/data-fair/api/v1/datasets/${dataset}/lines?${queryParams}`;
