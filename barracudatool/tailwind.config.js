@@ -1,33 +1,29 @@
-import { theme } from './src/styles/theme.js'
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    './pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './components/**/*.{js,ts,jsx,tsx,mdx}',
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {
-      colors: {
-        primary: theme.colors.primary,
-        neon: theme.colors.neon,
-        surface: theme.colors.surface,
-        text: theme.colors.text
-      },
       fontFamily: {
-        retro: theme.fonts.retro,
-        body: theme.fonts.body
+        sans: ['Orbitron', 'sans-serif'],
+      },
+      colors: {
+        'background-dark': '#0d0d21',
+        'container-bg': 'rgba(10, 10, 30, 0.85)',
+        'accent-magenta': '#ff00ff',
+        'accent-cyan': '#00ffff',
+        'text-primary': '#c0c0ff',
+        'text-bright': '#ffffff',
       },
       boxShadow: {
-        'neon': '0 0 20px currentColor',
-        'neon-lg': '0 0 40px currentColor'
+        'glow-magenta': '0 0 25px rgba(255, 0, 255, 0.7)',
+        'glow-cyan': '0 0 25px rgba(0, 255, 255, 0.7)',
+        'glow-cyan-inset': 'inset 0 0 10px rgba(0, 255, 255, 0.5)',
       },
-      animation: {
-        'pulse-neon': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'glow': 'glow 2s ease-in-out infinite alternate'
-      }
     },
   },
-  plugins: [],
+  plugins: [], // Ensure this is empty or removed
 }

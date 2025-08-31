@@ -1,24 +1,127 @@
 'use client'
 
-import Link from 'next/link';
+import Link from 'next/link' // Import the Link component
+
+// A brilliant homepage for a website called "Barracuda"
+// Themed in the style of the provided dpe-search/page.tsx
 
 export default function HomePage() {
-return (
-  <main style={{ padding: '1rem' }}>
-    <h1>Barracuda Tool</h1>
-    <p>Welcome to the Barracuda Tool application!</p>
-    <nav>
-      <ul>
-        <li>
-          <Link href="/main">Go to Main Page</Link>
-        </li>
-        <li>
-          <Link href="/test-dpe">Go to DPE Test Page</Link>
-        </li>
-        <li>
-          <Link href="/test">Go to Test Page</Link>
-        </li>
-        </ul>
-    </nav>
-  </main>
-)};
+  
+  // --- Cyberpunk Theming Styles (Adapted for Homepage) ---
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      backgroundColor: '#0d0d21',
+      padding: '40px',
+      fontFamily: "'Orbitron', sans-serif",
+      color: '#00ffff',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    main: {
+      maxWidth: '900px',
+      width: '100%',
+      margin: 'auto',
+      border: '2px solid #ff00ff',
+      borderRadius: '10px',
+      padding: '40px',
+      backgroundColor: 'rgba(10, 10, 30, 0.85)',
+      boxShadow: '0 0 35px rgba(255, 0, 255, 0.6)',
+      textAlign: 'center' as const,
+    },
+    header: {
+      fontSize: '4.5rem',
+      fontWeight: 'bold',
+      color: '#ff00ff',
+      textShadow: '0 0 15px #ff00ff, 0 0 5px #ffffff',
+      marginBottom: '10px',
+      letterSpacing: '4px',
+    },
+    subHeader: {
+      fontSize: '1.2rem',
+      color: '#00ffff',
+      textShadow: '0 0 8px #00ffff',
+      marginBottom: '40px',
+      fontStyle: 'italic',
+    },
+    contentSection: {
+      borderTop: '1px dashed #00ffff',
+      paddingTop: '30px',
+      marginTop: '30px',
+    },
+    sectionHeader: {
+      fontSize: '1.5rem',
+      color: '#ff00ff',
+      textTransform: 'uppercase' as const,
+      marginBottom: '15px',
+    },
+    bodyText: {
+      color: '#c0c0ff',
+      fontSize: '1rem',
+      lineHeight: '1.6',
+      maxWidth: '700px',
+      margin: '0 auto 30px auto',
+    },
+    directiveGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+      gap: '20px',
+      textAlign: 'left' as const,
+      marginTop: '20px',
+    },
+    directiveItem: {
+      border: '1px solid #00ffff',
+      backgroundColor: 'rgba(0, 255, 255, 0.05)',
+      padding: '15px',
+      borderRadius: '5px',
+      color: '#00ffff',
+      fontWeight: 'bold',
+      boxShadow: 'inset 0 0 8px rgba(0, 255, 255, 0.3)',
+    },
+    button: {
+      width: '60%',
+      margin: '40px auto 0 auto',
+      padding: '18px',
+      fontSize: '1.5rem',
+      fontWeight: 'bold',
+      color: '#0d0d21',
+      backgroundColor: '#00ffff',
+      border: 'none',
+      borderRadius: '5px',
+      cursor: 'pointer',
+      textShadow: '0 0 5px #0d0d21',
+      boxShadow: '0 0 25px #00ffff',
+      transition: 'all 0.3s ease',
+      display: 'block',
+      textDecoration: 'none', // To remove underline from the link
+    },
+  };
+
+  return (
+    <div style={styles.container}>
+      <main style={styles.main}>
+        <h1 style={styles.header}>BARRACUDA</h1>
+        <p style={styles.subHeader}>// THE DEEP DATA DIVE PROTOCOL</p>
+
+        <p style={styles.bodyText}>
+          In the neon-drenched abyss of the data sphere, information flows in torrents. To navigate it is to survive. To command it is to prevail. Barracuda is your vessel—an apex predator in the digital ocean, engineered for speed, precision, and relentless efficiency.
+        </p>
+
+        <div style={styles.contentSection}>
+          <h2 style={styles.sectionHeader}>// Core Directives</h2>
+          <div style={styles.directiveGrid}>
+            <div style={styles.directiveItem}>{'>'} STEALTH PENETRATION</div>
+            <div style={styles.directiveItem}>{'>'} RAPID DATA EXTRACTION</div>
+            <div style={styles.directiveItem}>{'>'} PREDICTIVE ANALYSIS</div>
+            <div style={styles.directiveItem}>{'>'} TOTAL ANOMALY DETECTION</div>
+          </div>
+        </div>
+
+        <Link href="/hunter" style={styles.button}>
+            [ INITIATE DIVE ]
+        </Link>
+      </main>
+    </div>
+  )
+}
