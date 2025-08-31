@@ -5,56 +5,7 @@ import * as maptilersdk from '@maptiler/sdk'
 import { FrenchCadastralAPI } from '../lib/french-apis'
 import { EnhancedDPEForCadastral } from '../services/enhancedDpeForCadastral' // ADD THIS IMPORT
 
-interface PropertyInfo {
-  cadastralId: string | null
-  size: number | null
-  zone: string | null
-  commune?: string
-  department?: string
-  population?: number
-  lastSaleDate?: string
-  lastSalePrice?: number
-  pricePerSqm?: number
-  section?: string
-  numero?: string
-  dataSource: 'real_cadastral' | 'no_data'
-  dpeRating?: {
-    energy: string
-    ghg: string
-    date: string
-    consumption?: number
-    yearBuilt?: string
-    surfaceArea?: number
-    annualCost?: number
-    dpeId?: string
-    address?: string
-    isActive?: boolean
-  }
-  nearbyDpeCount?: number
-  // ADD THESE NEW FIELDS:
-  allDpeCandidates?: Array<{
-    id: string
-    address: string
-    energy_class: string
-    ghg_class: string
-    surface?: number
-    annual_cost?: number
-    establishment_date?: string
-    score: number
-    reason?: string
-  }>
-  transactions?: Array<{
-    sale_date: string
-    sale_price: number
-    property_type: string
-    surface_area: number
-    municipality: string
-    postal_code: string
-  }>
-  hasSales?: boolean
-  salesCount?: number
-}
-
+import { PropertyInfo, DpeCandidate, Transaction } from '../types';
 
 interface DataLayers {
   cadastral: boolean

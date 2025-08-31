@@ -65,7 +65,7 @@ body.map-page-lock #__next > div {
 @layer base {
   body {
     @apply bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700;
-    @apply text-text-primary font-body;
+    /* @apply text-text-primary font-body; */
   }
 }
 
