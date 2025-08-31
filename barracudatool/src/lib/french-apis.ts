@@ -1,6 +1,5 @@
 // barracudatool/src/lib/french-apis.ts
 
-import { BanAPI, type BanAddress } from './ban-api';
 import { DpeAPI, type DpeData } from './dpe-api';
 
 export class FrenchCadastralAPI {
@@ -15,7 +14,7 @@ export class FrenchCadastralAPI {
     try {
       const commune = cadastralId.slice(0, 5);
       const section = cadastralId.slice(8, 10);
-      const numero = cadastralId.slice(10);
+      const numero = cadastralId.slice(10); 
       
       console.log(`🗺️ Fetching real coordinates for parcel ${cadastralId} (commune: ${commune}, section: ${section}, numero: ${numero})`);
       
