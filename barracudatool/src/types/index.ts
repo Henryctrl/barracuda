@@ -26,12 +26,14 @@ export interface PropertyInfo {
       dpeId?: string;
       address?: string;
       isActive?: boolean;
-    };
+
+    }| null;
     nearbyDpeCount?: number;
     allDpeCandidates?: DpeCandidate[];
     transactions?: Transaction[];
     hasSales?: boolean;
     salesCount?: number;
+    
   }
   
   export interface DpeCandidate {
