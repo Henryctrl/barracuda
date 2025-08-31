@@ -7,10 +7,12 @@ import { Loader2, X } from 'lucide-react';
 
 // Define an interface for the expected parcel data
 interface ParcelData {
-  commune: string;
-  section: string;
-  numero: string;
+  idu: string;
   contenance: number;
+  code_insee: string;
+  section: string;
+  code_dep: string;
+  nom_com: string;
   [key: string]: any; // Allow other properties
 }
 
@@ -18,7 +20,6 @@ export function MapComponent() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maptilersdk.Map | null>(null);
   const [mapStyle, setMapStyle] = useState('basic-v2');
-
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [parcelData, setParcelData] = useState<ParcelData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,7 +42,7 @@ export function MapComponent() {
         setParcelData(data);
       } catch (error) {
         console.error("Failed to fetch parcel details:", error);
-        setParcelData(null); // Clear data on error
+        setParcelData(null);
       } finally {
         setIsLoading(false);
       }
@@ -54,7 +55,6 @@ export function MapComponent() {
     if (map.current || !mapContainer.current) return;
 
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!;
-
     map.current = new maptilersdk.Map({
       container: mapContainer.current,
       style: maptilersdk.MapStyle[mapStyle === 'basic-v2' ? 'BASIC' : 'SATELLITE'],
@@ -64,12 +64,7 @@ export function MapComponent() {
 
     map.current.on('load', () => {
       const currentMap = map.current!;
-
-      currentMap.addSource('cadastre-parcelles', {
-        type: 'vector',
-        url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json`,
-      });
-
+      currentMap.addSource('cadastre-parcelles', { type: 'vector', url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json` });
       currentMap.addLayer({ id: 'parcelles-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': 'rgba(0,0,0,0)' } });
       currentMap.addLayer({ id: 'parcelles-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 1, 'line-opacity': 0.5 } });
       currentMap.addLayer({ id: 'parcelles-hover', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#00ffff', 'line-width': 3 }, filter: ['==', 'id', ''] });
@@ -79,22 +74,15 @@ export function MapComponent() {
         currentMap.getCanvas().style.cursor = 'pointer';
         if (e.features && e.features.length > 0) {
           const newHoveredId = e.features[0].properties.id;
-          if (newHoveredId !== undefined) {
-             hoveredParcelId = newHoveredId;
-             if (String(newHoveredId) !== selectedParcelId) {
-                 // The fix is to ensure we pass a valid value, not the potentially undefined variable
-                 currentMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
-             }
+          if (newHoveredId !== undefined && String(newHoveredId) !== selectedParcelId) {
+             currentMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
           }
         }
       });
 
       currentMap.on('mouseleave', 'parcelles-fill', () => {
         currentMap.getCanvas().style.cursor = '';
-        if (hoveredParcelId !== undefined) {
-          currentMap.setFilter('parcelles-hover', ['==', 'id', '']);
-        }
-        hoveredParcelId = undefined;
+        currentMap.setFilter('parcelles-hover', ['==', 'id', '']);
       });
 
       currentMap.on('click', 'parcelles-fill', (e) => {
@@ -115,6 +103,14 @@ export function MapComponent() {
     map.current.setStyle(mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.SATELLITE);
   }, [mapStyle]);
 
+  // --- THIS IS THE FIX (Part 1) ---
+  // This new formatting function now removes all numbers from the section string.
+  const formatSection = (section: string) => {
+    if (!section) return 'N/A';
+    // Use replace with a regular expression to strip all digits (0-9)
+    return section.replace(/[0-9]/g, '');
+  };
+
   return (
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="absolute h-full w-full" />
@@ -134,11 +130,14 @@ export function MapComponent() {
                 <span>INTERROGATING GRID...</span>
               </div>
             ) : parcelData ? (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <span className="text-text-primary/80">COMMUNE:</span><span className="font-bold text-white">{parcelData.commune}</span>
-                <span className="text-text-primary/80">SECTION:</span><span className="font-bold text-white">{parcelData.section}</span>
-                <span className="text-text-primary/80">NUMERO:</span><span className="font-bold text-white">{parcelData.numero}</span>
-                <span className="text-text-primary/80">AREA:</span><span className="font-bold text-white">{parcelData.contenance} m²</span>
+              // --- THIS IS THE FIX (Part 2) ---
+              // The INSEE line has been removed.
+              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span>
+                <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span>
+                <span className="font-semibold text-text-primary/80">SECTION:</span><span className="font-bold text-white text-right">{formatSection(parcelData.section)}</span>
+                <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span>
+                <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span>
               </div>
             ) : (
                  <div className="text-center text-red-400">DATA NOT FOUND</div>
