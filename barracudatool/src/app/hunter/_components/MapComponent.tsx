@@ -27,20 +27,81 @@ export function MapComponent() {
 
   let hoveredParcelId: string | number | undefined = undefined;
 
+  // --- THIS IS THE FIX (Part 2) ---
+  // This function adds the data layers. It will be called every time the style changes.
+  const addDataLayers = () => {
+    const currentMap = map.current;
+    if (!currentMap) return;
+
+    // Check if the source already exists before adding
+    if (!currentMap.getSource('cadastre-parcelles')) {
+      currentMap.addSource('cadastre-parcelles', { type: 'vector', url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json` });
+    }
+
+    // A helper to prevent errors if a layer already exists
+    const addLayerSafely = (layer: any) => {
+        if (!currentMap.getLayer(layer.id)) {
+            currentMap.addLayer(layer);
+        }
+    };
+    
+    addLayerSafely({ id: 'parcelles-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': 'rgba(0,0,0,0)' } });
+    addLayerSafely({ id: 'parcelles-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 1, 'line-opacity': 0.5 } });
+    addLayerSafely({ id: 'parcelles-hover', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#00ffff', 'line-width': 3 }, filter: ['==', 'id', ''] });
+    
+    // --- THIS IS THE FIX (Part 1) ---
+    // Add two layers for the click effect: a fill and a line.
+    addLayerSafely({
+      id: 'parcelles-click-fill',
+      type: 'fill',
+      source: 'cadastre-parcelles',
+      'source-layer': 'parcelles',
+      paint: {
+        'fill-color': '#00ffff', // Opaque cyan fill
+        'fill-opacity': 0.3      // Make it semi-transparent
+      },
+      filter: ['==', 'id', selectedParcelId || '']
+    });
+    
+    addLayerSafely({
+      id: 'parcelles-click-line',
+      type: 'line',
+      source: 'cadastre-parcelles',
+      'source-layer': 'parcelles',
+      paint: {
+        'line-color': '#ff00ff', // Vibrant pink outline
+        'line-width': 3,
+        'line-opacity': 0.9,
+      },
+      filter: ['==', 'id', selectedParcelId || '']
+    });
+    // -------------------------------
+  };
+
   // Fetch parcel data when a parcel is selected
   useEffect(() => {
-    if (!selectedParcelId) return;
+    if (!selectedParcelId) {
+      // Clear highlights when no parcel is selected
+      if (map.current) {
+        map.current.setFilter('parcelles-click-fill', ['==', 'id', '']);
+        map.current.setFilter('parcelles-click-line', ['==', 'id', '']);
+      }
+      return;
+    }
 
     const fetchParcelData = async () => {
       setIsLoading(true);
       setParcelData(null);
       try {
         const response = await fetch(`/api/cadastre/${selectedParcelId}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch parcel data.');
-        }
+        if (!response.ok) throw new Error('Failed to fetch parcel data.');
         const data = await response.json();
         setParcelData(data);
+        // Update the filter for the clicked layers
+        if (map.current) {
+          map.current.setFilter('parcelles-click-fill', ['==', 'id', selectedParcelId]);
+          map.current.setFilter('parcelles-click-line', ['==', 'id', selectedParcelId]);
+        }
       } catch (error) {
         console.error("Failed to fetch parcel details:", error);
         setParcelData(null);
@@ -58,19 +119,15 @@ export function MapComponent() {
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!;
     map.current = new maptilersdk.Map({
       container: mapContainer.current,
-      style: maptilersdk.MapStyle[mapStyle === 'basic-v2' ? 'BASIC' : 'SATELLITE'],
+      style: maptilersdk.MapStyle.BASIC,
       center: [2.3522, 48.8566],
       zoom: 15,
     });
 
     map.current.on('load', () => {
-      const currentMap = map.current!;
-      currentMap.addSource('cadastre-parcelles', { type: 'vector', url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json` });
-      currentMap.addLayer({ id: 'parcelles-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': 'rgba(0,0,0,0)' } });
-      currentMap.addLayer({ id: 'parcelles-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 1, 'line-opacity': 0.5 } });
-      currentMap.addLayer({ id: 'parcelles-hover', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#00ffff', 'line-width': 3 }, filter: ['==', 'id', ''] });
-      currentMap.addLayer({ id: 'parcelles-click', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff80ed', 'line-width': 3.5 }, filter: ['==', 'id', ''] });
+      addDataLayers();
 
+      const currentMap = map.current!;
       currentMap.on('mousemove', 'parcelles-fill', (e) => {
         currentMap.getCanvas().style.cursor = 'pointer';
         if (e.features && e.features.length > 0) {
@@ -90,37 +147,39 @@ export function MapComponent() {
          if (e.features && e.features.length > 0) {
            const parcelId = e.features[0].properties.id;
            if (parcelId !== undefined) {
-             currentMap.setFilter('parcelles-click', ['==', 'id', parcelId]);
              currentMap.setFilter('parcelles-hover', ['==', 'id', '']);
              setSelectedParcelId(String(parcelId));
            }
          }
+      });
+
+      // Listen for style changes to re-apply layers
+      currentMap.on('style.load', () => {
+        addDataLayers();
       });
     });
   }, []);
 
   useEffect(() => {
     if (!map.current) return;
-    map.current.setStyle(mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.SATELLITE);
+    const newStyle = mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.HYBRID;
+    map.current.setStyle(newStyle);
   }, [mapStyle]);
 
-  // --- THIS IS THE FIX (Part 1) ---
-  // This new formatting function now removes all numbers from the section string.
   const formatSection = (section: string) => {
     if (!section) return 'N/A';
-    // Use replace with a regular expression to strip all digits (0-9)
-    return section.replace(/[0-9]/g, '');
+    return section.replace(/[0-9-]/g, ''); // Also remove dashes
   };
 
   return (
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="absolute h-full w-full" />
-
+      
       {(isLoading || parcelData) && (
         <div className="absolute top-4 left-4 z-10 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">PARCEL DETAILS</h3>
-            <button onClick={() => { setParcelData(null); setSelectedParcelId(null); map.current?.setFilter('parcelles-click', ['==', 'id', '']); }} className="text-accent-cyan/70 hover:text-accent-cyan">
+            <button onClick={() => { setParcelData(null); setSelectedParcelId(null); }} className="text-accent-cyan/70 hover:text-accent-cyan">
               <X size={20} />
             </button>
           </div>
@@ -131,8 +190,6 @@ export function MapComponent() {
                 <span>INTERROGATING GRID...</span>
               </div>
             ) : parcelData ? (
-              // --- THIS IS THE FIX (Part 2) ---
-              // The INSEE line has been removed.
               <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
                 <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span>
                 <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span>
