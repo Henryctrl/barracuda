@@ -148,7 +148,7 @@ export function MapComponent() {
 
       <button
         onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')}
-        className="absolute top-4 right-4 z-10 rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark"
+        className="absolute top-4 right-12 z-10 rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark"
       >
         {mapStyle === 'basic-v2' ? 'Satellite' : 'Basic'} View
       </button>
