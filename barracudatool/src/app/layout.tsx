@@ -1,3 +1,5 @@
+// app/layout.tsx
+
 import './globals.css'
 import { Inter } from 'next/font/google'
 import { ToastContainer } from 'react-toastify'
@@ -6,7 +8,7 @@ import 'react-toastify/dist/ReactToastify.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'Barracuda - Property Tool',
+  title: 'Barracuda',
   description: 'Discover French real estate with retro arcade style',
 }
 
@@ -17,6 +19,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/* Favicon */}
+        <link rel="icon" href="/BARRACUDAFAV.png" sizes="any" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+      </head>
       <body>
         {children}
         {/* Toast notifications container */}
