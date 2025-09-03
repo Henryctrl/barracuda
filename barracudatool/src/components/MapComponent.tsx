@@ -6,9 +6,8 @@ import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { FrenchCadastralAPI } from '../lib/french-apis'
 import { EnhancedDPEForCadastral } from '../services/enhancedDpeForCadastral'
 
-import { PropertyInfo, DpeCandidate, Transaction } from '../types';
+import { PropertyInfo } from '../types';
 
-// --- Interfaces ---
 interface DataLayers {
   cadastral: boolean
   dvf: boolean
@@ -21,7 +20,6 @@ interface MapComponentProps {
   viewMode?: 'cadastral' | 'market'
 }
 
-// --- Component ---
 const MapComponent: React.FC<MapComponentProps> = ({ 
   onPropertySelect,
   dataLayers
@@ -30,8 +28,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const map = useRef<maptilersdk.Map | null>(null)
   const [loading, setLoading] = useState(false)
   const [currentZoom, setCurrentZoom] = useState(12)
-  const [cadastralLayersLoaded, setCadastralLayersLoaded] = useState(false)
-
+  
   const onPropertySelectRef = useRef(onPropertySelect);
   useEffect(() => {
     onPropertySelectRef.current = onPropertySelect;
@@ -50,12 +47,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
       maxBounds: [[-5, 42], [10, 52]],
       renderWorldCopies: false,
       interactive: true,
-      scrollZoom: false,
+      scrollZoom: true, // Re-enabled for better UX
       dragPan: true,
-      boxZoom: false,
+      boxZoom: true,
       dragRotate: false,
-      keyboard: false,
-      doubleClickZoom: false,
+      keyboard: true,
+      doubleClickZoom: true,
       touchZoomRotate: false
     });
 
@@ -68,11 +65,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const addCadastralLayers = async () => {
         try {
           mapInstance.addSource('french-cadastral-parcels', { type: 'vector', url: `https://api.maptiler.com/tiles/fr-cadastre/tiles.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`, attribution: '© DGFiP' });
-          const addLayerSafely = (layerConfig: any) => { try { mapInstance.addLayer(layerConfig); } catch (e) { console.warn(`Layer failed: ${layerConfig.id}`); }};
+          const addLayerSafely = (layerConfig: maptilersdk.LayerSpecification) => { 
+            try { mapInstance.addLayer(layerConfig); } catch { console.warn(`Layer failed: ${layerConfig.id}`); }
+          };
           addLayerSafely({ id: 'cadastral-parcel-lines', type: 'line', source: 'french-cadastral-parcels', 'source-layer': 'parcelles', minzoom: 15, paint: { 'line-color': '#00ffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 15, 1, 18, 3], 'line-opacity': 0.8 } });
           addLayerSafely({ id: 'cadastral-parcel-fills', type: 'fill', source: 'french-cadastral-parcels', 'source-layer': 'parcelles', minzoom: 16, paint: { 'fill-color': ['case', ['boolean', ['feature-state', 'hover'], false], '#ff00ff', '#00ffff'], 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.4, 0.1] } });
           addLayerSafely({ id: 'cadastral-parcel-labels', type: 'symbol', source: 'french-cadastral-parcels', 'source-layer': 'parcelles', minzoom: 17, layout: { 'text-field': ['get', 'numero'], 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'], 'text-size': 10 }, paint: { 'text-color': '#fff', 'text-halo-color': '#000', 'text-halo-width': 1 } });
-          setCadastralLayersLoaded(true);
         } catch (error) { console.error('❌ Failed to setup cadastral layers:', error); }
       };
       addCadastralLayers();
@@ -96,10 +94,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const features = mapInstance.queryRenderedFeatures(e.point, { layers: ['cadastral-parcel-fills'] });
       const cadastralFeature = features.find(f => f.source === 'french-cadastral-parcels');
       
-      const source = mapInstance.getSource('clicked-points') as any;
+      // Corrected: Cast the source to GeoJSONSource to access setData
+      const source = mapInstance.getSource('clicked-points') as maptilersdk.GeoJSONSource;
       
       if (!cadastralFeature) {
-        source?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ Click a parcel' } }] });
+        if (source) {
+          source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ Click a parcel' } }] });
+        }
         setLoading(false);
         return;
       }
@@ -132,9 +133,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
           transactions: transactions || [],
           hasSales: has_sales ?? false,
           salesCount: sales_count ?? 0,
-          // --- THIS IS THE FIX ---
           coordinates: { lat, lon: lng },
-          // ----------------------
           ...dpeData,
         };
         
@@ -142,14 +141,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
         if (fullPropertyInfo.hasSales) labelParts.push(`✅ SOLD: €${fullPropertyInfo.lastSalePrice?.toLocaleString()}`);
         if (fullPropertyInfo.dpeRating) labelParts.push(`⚡ DPE: ${fullPropertyInfo.dpeRating.energy}`);
         
-        source?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: labelParts.join('\n') } }] });
+        if (source) {
+          source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: labelParts.join('\n') } }] });
+        }
 
         if (onPropertySelectRef.current) {
           onPropertySelectRef.current(fullPropertyInfo);
         }
       } catch (error) {
         console.error('❌ Error checking plot:', error);
-        source?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ No data found' } }] });
+        if (source) {
+          source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ No data found' } }] });
+        }
       } finally {
         setLoading(false);
       }
@@ -160,7 +163,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       mapInstance.remove();
       map.current = null;
     };
-  }, []);
+  }, [dataLayers]);
 
   return (
     <div className="map-wrapper" style={{width: '100%', height: '100%'}}>

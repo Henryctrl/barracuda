@@ -5,11 +5,8 @@ import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import { useScrollLock } from '../../hooks/useScrollLock'
 
-// --- THIS IS THE FIX ---
-// We import all types from your single source of truth and delete the duplicate
-// definitions that were causing the error.
-import { PropertyInfo, DpeCandidate, Transaction } from '../../types'
-// ----------------------
+// Corrected: Removed the unused 'Transaction' import
+import { PropertyInfo, DpeCandidate } from '../../types'
 
 interface DataLayers {
   cadastral: boolean
@@ -82,7 +79,8 @@ export default function Page() {
       
       const candidates: DpeCandidate[] = data.results.map((record: DpeApiRecord) => {
         let score = 0;
-        let reason = [];
+        // Corrected: Use 'const' as 'reason' is never reassigned
+        const reason = [];
         let distance = -1;
 
         if (record._geopoint) {
@@ -139,13 +137,15 @@ export default function Page() {
         };
       });
 
-    } catch (err: any) {
-      console.error("DPE Search failed:", err);
+    // Corrected: Removed ': any' and handle error type safely
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("DPE Search failed:", errorMessage);
     } finally {
       setIsLoadingDpe(false);
     }
   }
-
+  // ... (The rest of the component remains unchanged)
   const handlePropertySelect = (property: PropertyInfo | null) => {
     if (property) {
       setSelectedProperty(property);
@@ -155,6 +155,7 @@ export default function Page() {
       setSelectedProperty(null);
     }
   }
+
 
   const formatEnergyClass = (energyClass: string) => {
     const colors: { [key: string]: string } = {
@@ -169,6 +170,7 @@ export default function Page() {
       </span>
     );
   };
+
 
   return (
     <div 
@@ -201,6 +203,7 @@ export default function Page() {
             </div>
           </div>
         </Card>
+
 
         <Card neonColor="cyan" className="backdrop-blur-md flex-shrink-0">
           <div className="text-center mb-4">
@@ -245,6 +248,7 @@ export default function Page() {
           </div>
         </Card>
 
+
         {selectedProperty && (
           <Card neonColor="yellow" className="backdrop-blur-md flex-shrink-0">
             <div className="text-center mb-3">
@@ -268,6 +272,7 @@ export default function Page() {
             </div>
           </Card>
         )}
+
 
         <Card neonColor="green" className="backdrop-blur-md flex-1 min-h-0">
           <div className="text-center mb-4">
@@ -318,6 +323,7 @@ export default function Page() {
                     </div>
                   </div>
                 )}
+
 
                 {activeSection === 'cadastral' && (
                     <div className="bg-surface/50 p-3 rounded border border-neon-green/50">
@@ -393,6 +399,7 @@ export default function Page() {
                     </div>
                 )}
 
+
                 {activeSection === 'sales' && (
                      <div className="space-y-4">
                         {selectedProperty.hasSales && selectedProperty.transactions && selectedProperty.transactions.length > 0 ? (
@@ -443,6 +450,7 @@ export default function Page() {
           </div>
         </Card>
 
+
         <Card neonColor="purple" className="backdrop-blur-md flex-shrink-0">
           <div className="space-y-2">
             <Button neonColor="purple" size="sm" className="w-full" onClick={() => console.log('Export property analysis')}>📋 Export Analysis</Button>
@@ -450,6 +458,7 @@ export default function Page() {
           </div>
         </Card>
       </div>
+
 
       <div className="flex-1 flex flex-col p-5 min-w-0">
         <div className="flex-1 min-h-0 relative">
@@ -478,6 +487,7 @@ export default function Page() {
           </div>
         </Card>
       </div>
+
 
       {isDvfModalOpen && selectedProperty && selectedProperty.hasSales && selectedProperty.transactions && selectedProperty.transactions.length > 0 && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style={{ fontFamily: 'Orbitron, monospace' }} onClick={() => setIsDvfModalOpen(false)}>

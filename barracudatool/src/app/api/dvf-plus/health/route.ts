@@ -26,10 +26,15 @@ export async function GET() {
     const text = await resp.text();
 
     // Try parse JSON; if fails, return raw
-    let payload: any = null;
-    try { payload = JSON.parse(text); } catch {}
+    let payload: { data?: unknown[] } | unknown[] | null = null;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // If parsing fails, payload remains null
+    }
 
-    const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+    const rows = Array.isArray(payload) ? payload : payload?.data ?? [];
+
     const sample = rows?.slice?.(0, 1) ?? [];
 
     return NextResponse.json({
@@ -42,11 +47,12 @@ export async function GET() {
       sample,
       raw_preview: payload ? undefined : text?.slice(0, 500),
     }, { status: 200 });
-  } catch (e: any) {
+  } catch (e) {
     clearTimeout(timeoutId);
+    const errorMessage = e instanceof Error ? e.message : String(e);
     return NextResponse.json({
       ok: false,
-      error: e?.message || String(e),
+      error: errorMessage,
       endpoint: url,
       hint: 'If this is ECONNREFUSED/ENOTFOUND, check network/DNS/TLS and confirm base path.',
     }, { status: 200 });

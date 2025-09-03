@@ -1,5 +1,3 @@
-// barracudatool/src/app/api/cadastre/[id]/route.ts
-
 import { NextResponse } from 'next/server';
 
 interface IgnParcelProperties {
@@ -11,12 +9,13 @@ interface IgnParcelProperties {
 }
 
 // This API route handles GET requests to /api/cadastre/[id]
-// It now includes a fallback to the geo.api.gouv.fr service.
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  // The 'params' object is now a Promise and must be awaited
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const parcelId = params.id;
+  // Corrected: Await the params to get the id
+  const { id: parcelId } = await params;
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get('lat');
   const lon = searchParams.get('lon');
@@ -51,8 +50,6 @@ export async function GET(
   try {
     const response = await fetch(apiUrl);
 
-    // --- FALLBACK LOGIC ---
-    // If the primary API fails with a 404, we try the fallback.
     if (response.status === 404) {
       console.log(`IGN API returned 404. Attempting fallback to geo.api.gouv.fr`);
       
@@ -73,14 +70,12 @@ export async function GET(
 
       const fallbackData = await fallbackResponse.json();
       
-      // Return the data from the successful fallback API call
       return NextResponse.json(fallbackData[0] || { message: "Fallback successful but returned no data." });
     }
 
     if (!response.ok) {
         throw new Error(`Primary API (apicarto.ign.fr) failed with status: ${response.status}`);
     }
-    // --- END FALLBACK LOGIC ---
 
     const data = await response.json();
 
@@ -94,10 +89,11 @@ export async function GET(
       );
     }
 
-  } catch (error: any) {
-    console.error('Cadastre API backend error:', error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Cadastre API backend error:', errorMessage);
     return NextResponse.json(
-      { error: 'Internal Server Error', details: error.message },
+      { error: 'Internal Server Error', details: errorMessage },
       { status: 500 }
     );
   }

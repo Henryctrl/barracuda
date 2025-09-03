@@ -91,8 +91,9 @@ export default function DpeSearchPage() {
 
       setResults(recordsWithDistance);
       setSearchInfo(`ANALYSIS COMPLETE. ${recordsWithDistance.length} VALID ASSETS. CLOSEST TARGET: ${Math.round(recordsWithDistance[0]._distance!)}m`);
-    } catch (err: any) {
-      setError(`SYSTEM FAILURE: ${err.message}`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`SYSTEM FAILURE: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

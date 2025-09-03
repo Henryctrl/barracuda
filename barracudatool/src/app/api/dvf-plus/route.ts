@@ -1,4 +1,3 @@
-// barracudatool/src/app/api/dvf-plus/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 interface DVFRecord {
@@ -11,7 +10,21 @@ interface DVFRecord {
   nom_commune: string | null;
   code_postal: string | null;
   code_parcelle: string | null;
-  raw: any;
+  raw: unknown; // Corrected: Replaced 'any' with 'unknown' for type safety
+}
+
+// Added interface to describe the shape of the API response item
+interface QuestApiRecord {
+  id_mutation: string | null;
+  date_mutation: string | null;
+  valeur_fonciere: number | null;
+  type_local: string | null;
+  surface_reelle_bati: number | null;
+  surface_terrain: number | null;
+  nom_commune: string | null;
+  code_postal: string | null;
+  id_parcelle?: string | null;
+  code_parcelle?: string | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -32,7 +45,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid lat/lng/rayon parameters', resultats: [] }, { status: 400 });
   }
 
-  // CHRISTIAN QUEST DVF API (Recommended by Etalab)
   const API_URL = 'https://dvf.api.cquest.org/dvf/transactions';
   
   const params = new URLSearchParams({
@@ -71,14 +83,12 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = await resp.json();
-    
-    // Christian Quest API returns array of transactions
     const rows = Array.isArray(payload) ? payload : (payload?.results || []);
 
     console.log(`📍 Christian Quest API returned ${rows.length} transactions`);
 
-    // Process Christian Quest DVF results
-    const allResults: DVFRecord[] = rows.map((record: any): DVFRecord => {
+    // Corrected: Use the new QuestApiRecord interface instead of 'any'
+    const allResults: DVFRecord[] = rows.map((record: QuestApiRecord): DVFRecord => {
       return {
         id_mutation: record.id_mutation || null,
         date_mutation: record.date_mutation || null,
@@ -93,7 +103,6 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Enhanced filtering for exact parcel match
     let filteredResults: DVFRecord[] = allResults;
     
     if (exactCadastralId) {
@@ -101,14 +110,12 @@ export async function GET(request: NextRequest) {
       console.log(`🔍 QUEST API: Looking for parcel ${exactCadastralId} in commune ${expectedCommune}`);
       console.log(`📍 Found ${allResults.length} total sales in search area`);
       
-      // Get unique communes found in results
       const foundCommunes = [...new Set(allResults
         .map(r => r.code_postal?.slice(0, 5) || '')
         .filter(code => code.length === 5)
       )];
       console.log(`📍 Communes in Quest API results:`, foundCommunes.sort());
       
-      // Filter by commune first
       const sameCommune = allResults.filter((result: DVFRecord) => {
         const resultCommune = result.code_postal?.slice(0, 5) || '';
         return resultCommune === expectedCommune;
@@ -117,11 +124,9 @@ export async function GET(request: NextRequest) {
       console.log(`📍 Found ${sameCommune.length} sales in target commune ${expectedCommune}`);
       
       if (sameCommune.length > 0) {
-        // Look for exact parcel match within the commune
         filteredResults = sameCommune.filter((result: DVFRecord) => {
           const parcelCode = result.code_parcelle || '';
           
-          // Try different matching strategies
           const exactMatch = parcelCode === exactCadastralId;
           const partialMatch = parcelCode.includes(exactCadastralId.slice(-8)) || 
                               exactCadastralId.includes(parcelCode);
@@ -148,7 +153,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Sort by date (most recent first)
     const sortedResults: DVFRecord[] = filteredResults
       .filter((r: DVFRecord): boolean => r.date_mutation !== null && r.valeur_fonciere !== null)
       .sort((a: DVFRecord, b: DVFRecord): number => {
@@ -171,16 +175,18 @@ export async function GET(request: NextRequest) {
       api_used: 'christian_quest'
     });
 
-  } catch (e: any) {
+  // Corrected: Replaced 'any' with safe error handling
+  } catch (e) {
     clearTimeout(timeoutId);
-    console.error('Christian Quest DVF API failed', e?.message || e);
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error('Christian Quest DVF API failed', errorMessage);
     
-    if (e.name === 'AbortError') {
+    if (e instanceof Error && e.name === 'AbortError') {
       return NextResponse.json({ error: 'Request timeout', resultats: [] }, { status: 200 });
     }
     
     return NextResponse.json({ 
-      error: e?.message || 'Christian Quest API failed', 
+      error: errorMessage || 'Christian Quest API failed', 
       resultats: [],
       debug_url: dvfUrl 
     }, { status: 200 });

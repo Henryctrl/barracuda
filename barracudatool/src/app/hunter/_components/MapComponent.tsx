@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X } from 'lucide-react';
@@ -14,7 +14,7 @@ interface ParcelData {
   code_dep: string;
   numero: string;
   nom_com: string;
-  [key: string]: any; // Allow other properties
+  [key: string]: unknown;
 }
 
 export function MapComponent() {
@@ -25,67 +25,39 @@ export function MapComponent() {
   const [parcelData, setParcelData] = useState<ParcelData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  let hoveredParcelId: string | number | undefined = undefined;
-
-  // --- THIS IS THE FIX (Part 2) ---
-  // This function adds the data layers. It will be called every time the style changes.
-  const addDataLayers = () => {
+  const addDataLayers = useCallback(() => {
     const currentMap = map.current;
     if (!currentMap) return;
 
-    // Check if the source already exists before adding
     if (!currentMap.getSource('cadastre-parcelles')) {
       currentMap.addSource('cadastre-parcelles', { type: 'vector', url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json` });
     }
+    
+    const layers: maptilersdk.LayerSpecification[] = [
+        { id: 'parcelles-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': 'rgba(0,0,0,0)' } },
+        { id: 'parcelles-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 1, 'line-opacity': 0.5 } },
+        { id: 'parcelles-hover', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#00ffff', 'line-width': 3 }, filter: ['==', 'id', ''] },
+        { id: 'parcelles-click-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': '#00ffff', 'fill-opacity': 0.3 }, filter: ['==', 'id', ''] },
+        { id: 'parcelles-click-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 3, 'line-opacity': 0.9 }, filter: ['==', 'id', ''] }
+    ];
 
-    // A helper to prevent errors if a layer already exists
-    const addLayerSafely = (layer: any) => {
+    layers.forEach(layer => {
         if (!currentMap.getLayer(layer.id)) {
+            // FINAL FIX: Remove the incorrect type assertion. The 'layer' object is already the correct type.
             currentMap.addLayer(layer);
         }
-    };
-    
-    addLayerSafely({ id: 'parcelles-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': 'rgba(0,0,0,0)' } });
-    addLayerSafely({ id: 'parcelles-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 1, 'line-opacity': 0.5 } });
-    addLayerSafely({ id: 'parcelles-hover', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#00ffff', 'line-width': 3 }, filter: ['==', 'id', ''] });
-    
-    // --- THIS IS THE FIX (Part 1) ---
-    // Add two layers for the click effect: a fill and a line.
-    addLayerSafely({
-      id: 'parcelles-click-fill',
-      type: 'fill',
-      source: 'cadastre-parcelles',
-      'source-layer': 'parcelles',
-      paint: {
-        'fill-color': '#00ffff', // Opaque cyan fill
-        'fill-opacity': 0.3      // Make it semi-transparent
-      },
-      filter: ['==', 'id', selectedParcelId || '']
     });
-    
-    addLayerSafely({
-      id: 'parcelles-click-line',
-      type: 'line',
-      source: 'cadastre-parcelles',
-      'source-layer': 'parcelles',
-      paint: {
-        'line-color': '#ff00ff', // Vibrant pink outline
-        'line-width': 3,
-        'line-opacity': 0.9,
-      },
-      filter: ['==', 'id', selectedParcelId || '']
-    });
-    // -------------------------------
-  };
+  }, []);
 
-  // Fetch parcel data when a parcel is selected
+  // ... the rest of the file remains the same ...
+
   useEffect(() => {
+    const currentMap = map.current;
+    if (!currentMap) return;
+
     if (!selectedParcelId) {
-      // Clear highlights when no parcel is selected
-      if (map.current) {
-        map.current.setFilter('parcelles-click-fill', ['==', 'id', '']);
-        map.current.setFilter('parcelles-click-line', ['==', 'id', '']);
-      }
+      if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', '']);
+      if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', '']);
       return;
     }
 
@@ -97,11 +69,8 @@ export function MapComponent() {
         if (!response.ok) throw new Error('Failed to fetch parcel data.');
         const data = await response.json();
         setParcelData(data);
-        // Update the filter for the clicked layers
-        if (map.current) {
-          map.current.setFilter('parcelles-click-fill', ['==', 'id', selectedParcelId]);
-          map.current.setFilter('parcelles-click-line', ['==', 'id', selectedParcelId]);
-        }
+        if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', selectedParcelId]);
+        if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', selectedParcelId]);
       } catch (error) {
         console.error("Failed to fetch parcel details:", error);
         setParcelData(null);
@@ -117,48 +86,48 @@ export function MapComponent() {
     if (map.current || !mapContainer.current) return;
 
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!;
-    map.current = new maptilersdk.Map({
+    const newMap = new maptilersdk.Map({
       container: mapContainer.current,
       style: maptilersdk.MapStyle.BASIC,
       center: [2.3522, 48.8566],
       zoom: 15,
     });
+    map.current = newMap;
 
-    map.current.on('load', () => {
+    newMap.on('load', () => {
       addDataLayers();
 
-      const currentMap = map.current!;
-      currentMap.on('mousemove', 'parcelles-fill', (e) => {
-        currentMap.getCanvas().style.cursor = 'pointer';
-        if (e.features && e.features.length > 0) {
+      newMap.on('mousemove', 'parcelles-fill', (e) => {
+        newMap.getCanvas().style.cursor = 'pointer';
+        if (e.features?.length) {
           const newHoveredId = e.features[0].properties.id;
-          if (newHoveredId !== undefined && String(newHoveredId) !== selectedParcelId) {
-             currentMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
-          }
+          newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
         }
       });
 
-      currentMap.on('mouseleave', 'parcelles-fill', () => {
-        currentMap.getCanvas().style.cursor = '';
-        currentMap.setFilter('parcelles-hover', ['==', 'id', '']);
+      newMap.on('mouseleave', 'parcelles-fill', () => {
+        newMap.getCanvas().style.cursor = '';
+        newMap.setFilter('parcelles-hover', ['==', 'id', '']);
       });
 
-      currentMap.on('click', 'parcelles-fill', (e) => {
-         if (e.features && e.features.length > 0) {
+      newMap.on('click', 'parcelles-fill', (e) => {
+         if (e.features?.length) {
            const parcelId = e.features[0].properties.id;
            if (parcelId !== undefined) {
-             currentMap.setFilter('parcelles-hover', ['==', 'id', '']);
+             newMap.setFilter('parcelles-hover', ['==', 'id', '']);
              setSelectedParcelId(String(parcelId));
            }
          }
       });
 
-      // Listen for style changes to re-apply layers
-      currentMap.on('style.load', () => {
-        addDataLayers();
-      });
+      newMap.on('style.load', addDataLayers);
     });
-  }, []);
+
+    return () => {
+      newMap.remove();
+      map.current = null;
+    };
+  }, [addDataLayers]);
 
   useEffect(() => {
     if (!map.current) return;
@@ -168,7 +137,7 @@ export function MapComponent() {
 
   const formatSection = (section: string) => {
     if (!section) return 'N/A';
-    return section.replace(/[0-9-]/g, ''); // Also remove dashes
+    return section.replace(/[0-9-]/g, '');
   };
 
   return (

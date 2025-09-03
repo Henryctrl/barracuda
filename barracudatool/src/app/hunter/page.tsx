@@ -1,6 +1,6 @@
 'use client'    
 
-import { MapPin, Layers, FileText, Building, Briefcase } from 'lucide-react';
+import { Layers, FileText } from 'lucide-react';
 import { MapComponent } from './_components/MapComponent';
 
 // This is the main component for the /hunter route.

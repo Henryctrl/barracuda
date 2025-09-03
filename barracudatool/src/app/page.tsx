@@ -1,13 +1,9 @@
 'use client'
 
-import Link from 'next/link' // Import the Link component
-
-// A brilliant homepage for a website called "Barracuda"
-// Themed in the style of the provided dpe-search/page.tsx
+import Link from 'next/link'
 
 export default function HomePage() {
   
-  // --- Cyberpunk Theming Styles (Adapted for Homepage) ---
   const styles = {
     container: {
       minHeight: '100vh',
@@ -94,7 +90,7 @@ export default function HomePage() {
       boxShadow: '0 0 25px #00ffff',
       transition: 'all 0.3s ease',
       display: 'block',
-      textDecoration: 'none', // To remove underline from the link
+      textDecoration: 'none',
     },
   };
 
@@ -102,14 +98,16 @@ export default function HomePage() {
     <div style={styles.container}>
       <main style={styles.main}>
         <h1 style={styles.header}>BARRACUDA</h1>
-        <p style={styles.subHeader}>// THE DEEP DATA DIVE PROTOCOL</p>
+        {/* Corrected: Wrap the string in braces to satisfy the linter */}
+        <p style={styles.subHeader}>{'// THE DEEP DATA DIVE PROTOCOL'}</p>
 
         <p style={styles.bodyText}>
           In the neon-drenched abyss of the data sphere, information flows in torrents. To navigate it is to survive. To command it is to prevail. Barracuda is your vessel—an apex predator in the digital ocean, engineered for speed, precision, and relentless efficiency.
         </p>
 
         <div style={styles.contentSection}>
-          <h2 style={styles.sectionHeader}>// Core Directives</h2>
+          {/* Corrected: Wrap the string in braces to satisfy the linter */}
+          <h2 style={styles.sectionHeader}>{'// Core Directives'}</h2>
           <div style={styles.directiveGrid}>
             <div style={styles.directiveItem}>{'>'} STEALTH PENETRATION</div>
             <div style={styles.directiveItem}>{'>'} RAPID DATA EXTRACTION</div>
