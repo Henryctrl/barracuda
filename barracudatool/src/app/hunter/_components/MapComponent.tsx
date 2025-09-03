@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
-import { Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
-import type { Polygon } from 'geojson';
+import { Loader2, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import type { Polygon, Position } from 'geojson';
 
 // Define interfaces
 interface ParcelData {
@@ -19,9 +19,14 @@ interface ParcelData {
 }
 
 interface BanFeature {
+  geometry: {
+    coordinates: [number, number];
+  };
   properties: {
     label: string;
     housenumber?: string;
+    postcode?: string;
+    city?: string;
   };
 }
 
@@ -35,6 +40,55 @@ export function MapComponent() {
   const [banAddress, setBanAddress] = useState<BanFeature | null>(null);
   const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
   const [showOtherAddresses, setShowOtherAddresses] = useState(false);
+
+  // State for the custom search bar
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Fetch search suggestions from BAN API
+  const fetchSuggestions = useCallback(async (query: string) => {
+    if (query.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      const response = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`);
+      const data = await response.json();
+      setSuggestions(data.features || []);
+    } catch (error) {
+      console.error("Failed to fetch suggestions:", error);
+      setSuggestions([]);
+    }
+  }, []);
+
+  // Handle search input change with debounce
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+    searchTimeout.current = setTimeout(() => {
+      fetchSuggestions(query);
+    }, 300); // 300ms debounce
+  };
+
+  // Handle suggestion selection
+  const handleSuggestionClick = (feature: BanFeature) => {
+    setSearchQuery(feature.properties.label);
+    setSuggestions([]);
+    if (map.current) {
+      const [lon, lat] = feature.geometry.coordinates;
+      map.current.flyTo({ center: [lon, lat], zoom: 16 });
+    }
+  };
+
+  // FIX: Add a handler to clear the search
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSuggestions([]);
+  };
 
   // Throttle function
   const throttle = useCallback(<T extends unknown[]>(
@@ -105,12 +159,12 @@ export function MapComponent() {
       zoom: 15,
     });
     map.current = newMap;
-
+    
     newMap.on('load', () => {
       addDataLayers();
 
       const throttledHoverHandler = throttle((e: maptilersdk.MapMouseEvent & { features?: maptilersdk.MapGeoJSONFeature[] }) => {
-        if (e.features?.length) {
+        if (e.features && e.features.length > 0) {
             newMap.getCanvas().style.cursor = 'pointer';
             const newHoveredId = e.features[0].properties?.id as string;
             newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId || '']);
@@ -125,16 +179,16 @@ export function MapComponent() {
       });
 
       newMap.on('click', 'parcelles-fill', async (e) => {
-         if (e.features?.length) {
-           const parcelId = e.features[0].properties?.id as string;
+         if (e.features && e.features.length > 0) {
            const parcelFeature = e.features[0];
+           const parcelId = parcelFeature.properties?.id as string;
            
            if (parcelId !== undefined) {
              newMap.setFilter('parcelles-hover', ['==', 'id', '']);
              setSelectedParcelId(String(parcelId));
              
              const bounds = new maptilersdk.LngLatBounds();
-             const coordinates = (parcelFeature.geometry as Polygon).coordinates[0];
+             const coordinates = (parcelFeature.geometry as Polygon).coordinates[0] as Position[];
              coordinates.forEach((coord) => bounds.extend(coord as [number, number]));
              const center = bounds.getCenter().toArray() as [number, number];
 
@@ -178,7 +232,7 @@ export function MapComponent() {
     return () => { newMap.remove(); map.current = null; };
   }, [addDataLayers, throttle]);
 
-  // FIX: Restore the useEffect hook for map style changes
+  // Effect for changing map style
   useEffect(() => {
     if (!map.current) return;
     
@@ -223,6 +277,49 @@ export function MapComponent() {
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="absolute h-full w-full" />
       
+      {/* Custom BAN Search Bar */}
+      <div className="absolute top-4 left-4 z-10 w-72">
+        <div className="relative flex items-center">
+          <Search className="absolute left-3 text-accent-cyan/70" size={20} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={handleSearchChange}
+            placeholder="Search for an address in France..."
+            className="w-full pl-10 pr-10 py-2 bg-container-bg border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan"
+          />
+          {/* FIX: Add clear button */}
+          {searchQuery.length > 0 && (
+            <button 
+              onClick={handleClearSearch} 
+              className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan"
+              aria-label="Clear search"
+            >
+              <X size={20} />
+            </button>
+          )}
+        </div>
+        {suggestions.length > 0 && (
+          <div className="absolute mt-2 w-full bg-container-bg border border-accent-cyan rounded-md shadow-lg max-h-60 overflow-y-auto">
+            {suggestions.map((feature, index) => (
+              <div
+                key={index}
+                onClick={() => handleSuggestionClick(feature)}
+                className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer"
+              >
+                {feature.properties.label}
+                {feature.properties.postcode && (
+                  <span className="text-accent-cyan/70 ml-2">
+                    ({feature.properties.postcode})
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+
       {(isLoading || parcelData) && (
         <div className="absolute top-4 left-4 z-20 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
@@ -245,6 +342,7 @@ export function MapComponent() {
                 <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span>
                 <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span>
                 <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span>
+
 
                 {banAddress && (
                   <>
@@ -278,6 +376,7 @@ export function MapComponent() {
           </div>
         </div>
       )}
+
 
       <button
         onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')}
