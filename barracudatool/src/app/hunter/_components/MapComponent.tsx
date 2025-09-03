@@ -4,9 +4,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
-import type { Polygon } from 'geojson'; // Import Polygon type for geometry
+import type { Polygon } from 'geojson';
 
-// Define an interface for the expected parcel data
+// Define interfaces
 interface ParcelData {
   idu: string;
   contenance: number;
@@ -18,7 +18,6 @@ interface ParcelData {
   [key: string]: unknown;
 }
 
-// Define interface for BAN API address results
 interface BanFeature {
   properties: {
     label: string;
@@ -84,14 +83,13 @@ export function MapComponent() {
     const currentMap = map.current;
     if (!currentMap) return;
 
-    // Reset states when no parcel is selected
     if (!selectedParcelId) {
       if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', '']);
       if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', '']);
+      setParcelData(null); // Ensure parcel data is also cleared
       setBanAddress(null);
       setOtherAddresses([]);
       setShowOtherAddresses(false);
-      return;
     }
   }, [selectedParcelId]);
 
@@ -111,7 +109,6 @@ export function MapComponent() {
     newMap.on('load', () => {
       addDataLayers();
 
-      // Mousemove handler
       const throttledHoverHandler = throttle((e: maptilersdk.MapMouseEvent & { features?: maptilersdk.MapGeoJSONFeature[] }) => {
         if (e.features?.length) {
             newMap.getCanvas().style.cursor = 'pointer';
@@ -127,7 +124,6 @@ export function MapComponent() {
         newMap.setFilter('parcelles-hover', ['==', 'id', '']);
       });
 
-      // Click handler to select parcel and fetch data
       newMap.on('click', 'parcelles-fill', async (e) => {
          if (e.features?.length) {
            const parcelId = e.features[0].properties?.id as string;
@@ -137,14 +133,11 @@ export function MapComponent() {
              newMap.setFilter('parcelles-hover', ['==', 'id', '']);
              setSelectedParcelId(String(parcelId));
              
-             // Get the center of the clicked parcel to use for the BAN API call
              const bounds = new maptilersdk.LngLatBounds();
-             // FIX 2: Correctly type the geometry as a Polygon
              const coordinates = (parcelFeature.geometry as Polygon).coordinates[0];
              coordinates.forEach((coord) => bounds.extend(coord as [number, number]));
              const center = bounds.getCenter().toArray() as [number, number];
 
-             // Now call the fetch function with the coordinates
              setIsLoading(true);
              setParcelData(null);
              setBanAddress(null);
@@ -185,11 +178,6 @@ export function MapComponent() {
     return () => { newMap.remove(); map.current = null; };
   }, [addDataLayers, throttle]);
 
-  // Effect for changing map style
-  useEffect(() => {
-    // ... (This effect remains unchanged)
-  }, [mapStyle]);
-
   const formatSection = (section: string) => {
     if (!section) return 'N/A';
     return section.replace(/[0-9-]/g, '');
@@ -207,7 +195,8 @@ export function MapComponent() {
         <div className="absolute top-4 left-4 z-20 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">PARCEL DETAILS</h3>
-            <button onClick={() => { setSelectedParcelId(null); }} className="text-accent-cyan/70 hover:text-accent-cyan">
+            {/* FIX: Set selectedParcelId to null to close the window completely */}
+            <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan">
               <X size={20} />
             </button>
           </div>
@@ -226,7 +215,6 @@ export function MapComponent() {
                 <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span>
                 <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span>
 
-                {/* BAN Address Display */}
                 {banAddress && (
                   <>
                     <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span>
@@ -243,7 +231,6 @@ export function MapComponent() {
                     )}
                   </>
                 )}
-                {/* Other Possible Addresses */}
                 {showOtherAddresses && otherAddresses.length > 0 && (
                   <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2">
                     {otherAddresses.map((addr, index) => (
@@ -261,7 +248,6 @@ export function MapComponent() {
         </div>
       )}
 
-      {/* Map Style Button */}
       <button
         onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')}
         className="absolute top-4 right-12 z-10 rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark"
