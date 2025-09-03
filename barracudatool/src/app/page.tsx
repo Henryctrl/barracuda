@@ -15,7 +15,7 @@ export default function HomePage() {
       alignItems: 'center',
       justifyContent: 'center',
       // Mobile-first responsive padding
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         padding: '40px', // Original padding for SM and up
       },
     },
@@ -30,7 +30,7 @@ export default function HomePage() {
       boxShadow: '0 0 35px rgba(255, 0, 255, 0.6)',
       textAlign: 'center' as const,
       // Mobile-first responsive padding
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         padding: '40px', // Original padding for SM and up
       },
     },
@@ -42,7 +42,7 @@ export default function HomePage() {
       marginBottom: '10px',
       letterSpacing: '2px', // Reduced from 4px for mobile
       // Mobile-first responsive sizing
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         fontSize: '4.5rem', // Original size for SM and up
         letterSpacing: '4px', // Original letter spacing for SM and up
       },
@@ -54,7 +54,7 @@ export default function HomePage() {
       marginBottom: '30px', // Reduced from 40px for mobile
       fontStyle: 'italic',
       // Mobile-first responsive sizing
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         fontSize: '1.2rem', // Original size for SM and up
         marginBottom: '40px', // Original margin for SM and up
       },
@@ -64,7 +64,7 @@ export default function HomePage() {
       paddingTop: '20px', // Reduced from 30px for mobile
       marginTop: '20px', // Reduced from 30px for mobile
       // Mobile-first responsive spacing
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         paddingTop: '30px', // Original padding for SM and up
         marginTop: '30px', // Original margin for SM and up
       },
@@ -75,7 +75,7 @@ export default function HomePage() {
       textTransform: 'uppercase' as const,
       marginBottom: '15px',
       // Mobile-first responsive sizing
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         fontSize: '1.5rem', // Original size for SM and up
       },
     },
@@ -86,7 +86,7 @@ export default function HomePage() {
       maxWidth: '700px',
       margin: '0 auto 20px auto', // Reduced bottom margin from 30px for mobile
       // Mobile-first responsive sizing
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         fontSize: '1rem', // Original size for SM and up
         margin: '0 auto 30px auto', // Original margin for SM and up
       },
@@ -98,7 +98,7 @@ export default function HomePage() {
       textAlign: 'left' as const,
       marginTop: '15px', // Reduced from 20px for mobile
       // Mobile-first responsive grid
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', // Original grid for SM and up
         gap: '20px', // Original gap for SM and up
         marginTop: '20px', // Original margin for SM and up
@@ -134,7 +134,7 @@ export default function HomePage() {
       display: 'block',
       textDecoration: 'none',
       // Mobile-first responsive sizing
-      '@media (min-width: 576px)': {
+      '@media (minWidth: 576px)': {
         width: '60%', // Original width for SM and up
         margin: '40px auto 0 auto', // Original margin for SM and up
         padding: '18px', // Original padding for SM and up
