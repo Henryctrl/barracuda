@@ -1,20 +1,15 @@
 const CADASTRAL_API = 'https://apicarto.ign.fr/api/cadastre';
-const GEOPORTAIL_API = 'https://wxs.ign.fr/choisirgeoportail/geoportail/ols/apis/completion';
+// Corrected: Removed unused GEOPORTAIL_API constant
 
 export class EnhancedPropertyService {
   
-  /**
-   * MAIN FUNCTION: Address → Complete Property Intelligence
-   */
   static async getPropertyIntelligence(address) {
     console.log('🏠 Starting property intelligence search for:', address);
     
     try {
-      // Step 1: Address → Coordinates
       const coordinates = await this.geocodeAddress(address);
       console.log('📍 Coordinates found:', coordinates);
       
-      // Step 2: Coordinates → Cadastral Parcel ID
       const parcelData = await this.getParcelAtCoordinates(coordinates.lat, coordinates.lon);
       console.log('🗺️ Parcel data:', parcelData);
       
@@ -22,7 +17,6 @@ export class EnhancedPropertyService {
         throw new Error('No cadastral parcel found at this location');
       }
       
-      // Step 3: Get complete property data
       const [dpeRecords, buildingInfo, planningZone] = await Promise.all([
         this.getDPEByParcel(parcelData.parcelId, coordinates),
         this.getBuildingInfo(parcelData),
@@ -63,12 +57,8 @@ export class EnhancedPropertyService {
     }
   }
   
-  /**
-   * Convert address to coordinates using French geocoding
-   */
   static async geocodeAddress(address) {
     try {
-      // Use French national address API (BAN)
       const params = new URLSearchParams({
         q: address,
         type: 'housenumber',
@@ -100,9 +90,6 @@ export class EnhancedPropertyService {
     }
   }
   
-  /**
-   * Get cadastral parcel at specific coordinates
-   */
   static async getParcelAtCoordinates(lat, lon) {
     try {
       const params = new URLSearchParams({
@@ -125,12 +112,12 @@ export class EnhancedPropertyService {
       const parcel = data.features[0].properties;
       
       return {
-        parcelId: parcel.id,  // e.g., "24037000DM0316"
+        parcelId: parcel.id,
         section: parcel.section,
         numero: parcel.numero,
         commune: parcel.commune,
         departement: parcel.departement,
-        contenance: parcel.contenance, // Area in m²
+        contenance: parcel.contenance,
         geometry: data.features[0].geometry
       };
       
@@ -139,26 +126,20 @@ export class EnhancedPropertyService {
     }
   }
   
-  /**
-   * Get DPE records linked to cadastral parcel
-   */
   static async getDPEByParcel(parcelId, coordinates) {
     try {
-      // Import your existing DPE service
       const { StructuredDPESearchService } = await import('./structuredDpeSearchService');
       
-      // Search DPE records near the parcel coordinates
       const dpeResult = await StructuredDPESearchService.searchByCoordinates(
         coordinates.lat,
         coordinates.lon,
-        100 // 100m radius to catch nearby properties
+        100
       );
       
       if (!dpeResult.success) {
         return [];
       }
       
-      // Enhance DPE records with parcel information
       return dpeResult.results.map(dpe => ({
         id: dpe['N°DPE'],
         is_live: this.isDPELive(dpe['Date_fin_validité_DPE']),
@@ -180,9 +161,6 @@ export class EnhancedPropertyService {
     }
   }
   
-  /**
-   * Check if DPE certificate is still valid
-   */
   static isDPELive(expirationDate) {
     if (!expirationDate) return false;
     
@@ -192,12 +170,8 @@ export class EnhancedPropertyService {
     return expiry > now;
   }
   
-  /**
-   * Get building information from cadastral data
-   */
   static async getBuildingInfo(parcelData) {
     try {
-      // Get building footprints from cadastral API
       const params = new URLSearchParams({
         code_insee: parcelData.commune,
         section: parcelData.section,
@@ -207,7 +181,7 @@ export class EnhancedPropertyService {
       const response = await fetch(`${CADASTRAL_API}/batiment?${params}`);
       
       if (!response.ok) {
-        return []; // No building data available
+        return [];
       }
       
       const data = await response.json();
@@ -224,12 +198,9 @@ export class EnhancedPropertyService {
     }
   }
   
-  /**
-   * Get urban planning zone (PLU) information
-   */
-  static async getPlanningInfo(lat, lon) {
+  // Corrected: Removed unused 'lat' and 'lon' parameters
+  static async getPlanningInfo() {
     try {
-      // Note: This would need a PLU/POS API - placeholder for now
       return {
         name: "Zone information not available",
         description: "Urban planning data requires additional API access",
@@ -242,13 +213,9 @@ export class EnhancedPropertyService {
     }
   }
   
-  /**
-   * Helper: Calculate polygon area (rough estimate)
-   */
   static calculatePolygonArea(geometry) {
     if (geometry.type !== 'Polygon') return null;
     
-    // Simplified area calculation - for demo purposes
     const coords = geometry.coordinates[0];
     let area = 0;
     
