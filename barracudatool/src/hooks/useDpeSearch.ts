@@ -1,4 +1,3 @@
-// src/hooks/useDpeSearch.ts
 import { useState, useCallback } from 'react';
 import { DPERecord } from '../types/dpe'; // We'll centralize types
 
@@ -11,6 +10,13 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
+
+// Added interface to describe the raw API record structure
+interface AdemeApiRecordWrapper {
+  record: {
+    fields: DPERecord;
+  };
+}
 
 export const useDpeSearch = () => {
   const [results, setResults] = useState<DPERecord[]>([]);
@@ -38,7 +44,7 @@ export const useDpeSearch = () => {
       const dataset = 'dpe-v2-logements-existants';
       const queryParams = new URLSearchParams({
           where: `code_postal_ban = "${postalCode}"`,
-          limit: '1000', // Using a reasonable limit
+          limit: '1000',
           select: 'numero_dpe, adresse_ban as adresse_brut, nom_commune_ban, code_postal_ban, etiquette_dpe, etiquette_ges, geopoint'
       }).toString();
       
@@ -48,7 +54,8 @@ export const useDpeSearch = () => {
       if (!response.ok) throw new Error(`GRID OFFLINE: HTTP ${response.status}`);
       
       const data = await response.json();
-      const records = data.records?.map((r: any) => r.record.fields) || [];
+      // Corrected: Use the new AdemeApiRecordWrapper interface instead of 'any'
+      const records = data.records?.map((r: AdemeApiRecordWrapper) => r.record.fields) || [];
 
       if (!records || records.length === 0) {
         setSearchInfo(`NO ASSETS FOUND IN SECTOR ${postalCode}.`);
@@ -79,12 +86,14 @@ export const useDpeSearch = () => {
 
       setResults(recordsWithDistance);
       setSearchInfo(`ANALYSIS COMPLETE. ${recordsWithDistance.length} VALID ASSETS. CLOSEST TARGET: ${Math.round(recordsWithDistance[0]._distance!)}m`);
-    } catch (err: any) {
-      setError(`SYSTEM FAILURE: ${err.message}`);
+    // Corrected: Removed ': any' and handle error type safely
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`SYSTEM FAILURE: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
-  }, []); // useCallback ensures the function reference is stable
+  }, []);
 
   return { results, loading, error, searchInfo, searchDPE };
 };

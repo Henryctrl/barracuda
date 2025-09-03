@@ -47,7 +47,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       maxBounds: [[-5, 42], [10, 52]],
       renderWorldCopies: false,
       interactive: true,
-      scrollZoom: true, // Re-enabled for better UX
+      scrollZoom: true,
       dragPan: true,
       boxZoom: true,
       dragRotate: false,
@@ -59,7 +59,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     map.current = mapInstance;
 
     mapInstance.on('load', () => {
-      console.log('✅ Map loaded - Adding controls and all layers');
       mapInstance.addControl(new maptilersdk.NavigationControl(), 'top-right');
       
       const addCadastralLayers = async () => {
@@ -94,13 +93,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const features = mapInstance.queryRenderedFeatures(e.point, { layers: ['cadastral-parcel-fills'] });
       const cadastralFeature = features.find(f => f.source === 'french-cadastral-parcels');
       
-      // Corrected: Cast the source to GeoJSONSource to access setData
       const source = mapInstance.getSource('clicked-points') as maptilersdk.GeoJSONSource;
       
       if (!cadastralFeature) {
-        if (source) {
-          source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ Click a parcel' } }] });
-        }
+        if (source) source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ Click a parcel' } }] });
         setLoading(false);
         return;
       }
@@ -118,21 +114,23 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
         
         const fullPropertyInfo: PropertyInfo = {
-          cadastralId: parcel.cadastral_id ?? null,
-          size: parcel.surface_area ?? null,
+          cadastralId: parcel.cadastral_id,
+          size: parcel.surface_area,
+          // Corrected: Ensure 'zone' is 'string | null'
           zone: parcel.zone_type ?? null,
           commune: parcel.commune_name,
           department: `Dept. ${parcel.department}`,
-          population: parcel.population,
-          section: parcel.section,
-          numero: parcel.numero,
+          // Corrected: Convert null to undefined where needed
+          population: parcel.population ?? undefined,
+          section: parcel.section ?? undefined,
+          numero: parcel.numero ?? undefined,
           lastSaleDate: latest_sale?.sale_date,
           lastSalePrice: latest_sale?.sale_price,
           pricePerSqm: latest_sale?.surface_area ? Math.round(latest_sale.sale_price / latest_sale.surface_area) : undefined,
           dataSource: 'real_cadastral',
           transactions: transactions || [],
-          hasSales: has_sales ?? false,
-          salesCount: sales_count ?? 0,
+          hasSales: has_sales,
+          salesCount: sales_count,
           coordinates: { lat, lon: lng },
           ...dpeData,
         };
@@ -141,25 +139,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
         if (fullPropertyInfo.hasSales) labelParts.push(`✅ SOLD: €${fullPropertyInfo.lastSalePrice?.toLocaleString()}`);
         if (fullPropertyInfo.dpeRating) labelParts.push(`⚡ DPE: ${fullPropertyInfo.dpeRating.energy}`);
         
-        if (source) {
-          source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: labelParts.join('\n') } }] });
-        }
+        if (source) source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: labelParts.join('\n') } }] });
 
         if (onPropertySelectRef.current) {
           onPropertySelectRef.current(fullPropertyInfo);
         }
       } catch (error) {
         console.error('❌ Error checking plot:', error);
-        if (source) {
-          source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ No data found' } }] });
-        }
+        if (source) source.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { label: '❌ No data found' } }] });
       } finally {
         setLoading(false);
       }
     });
 
     return () => {
-      console.log('🧹 CLEANING UP MAP');
       mapInstance.remove();
       map.current = null;
     };

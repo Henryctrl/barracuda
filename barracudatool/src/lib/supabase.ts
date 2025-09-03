@@ -14,7 +14,8 @@ export interface CadastralParcel {
   parcel_number: string
   surface_area: number
   zone_type?: string
-  geometry: any // PostGIS geometry
+  // Corrected: Replaced 'any' with 'unknown' for type safety
+  geometry: unknown // PostGIS geometry
   created_at: string
   updated_at: string
 }
