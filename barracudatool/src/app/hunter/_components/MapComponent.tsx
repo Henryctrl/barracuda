@@ -86,7 +86,7 @@ export function MapComponent() {
     if (!selectedParcelId) {
       if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', '']);
       if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', '']);
-      setParcelData(null); // Ensure parcel data is also cleared
+      setParcelData(null); 
       setBanAddress(null);
       setOtherAddresses([]);
       setShowOtherAddresses(false);
@@ -178,6 +178,38 @@ export function MapComponent() {
     return () => { newMap.remove(); map.current = null; };
   }, [addDataLayers, throttle]);
 
+  // FIX: Restore the useEffect hook for map style changes
+  useEffect(() => {
+    if (!map.current) return;
+    
+    const newStyle = mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.HYBRID;
+    
+    map.current.setStyle(newStyle, {
+      transformStyle: (previousStyle, nextStyle) => {
+        if (!previousStyle || !previousStyle.layers || !previousStyle.sources) {
+          return nextStyle;
+        }
+
+        const customLayers = previousStyle.layers.filter(layer => 
+          layer.id && layer.id.startsWith('parcelles-')
+        );
+
+        const customSources: { [key: string]: maptilersdk.SourceSpecification } = {};
+        for (const [key, value] of Object.entries(previousStyle.sources)) {
+          if (key === 'cadastre-parcelles') {
+            customSources[key] = value as maptilersdk.SourceSpecification;
+          }
+        }
+
+        return {
+          ...nextStyle,
+          sources: { ...nextStyle.sources, ...customSources },
+          layers: [...nextStyle.layers, ...customLayers]
+        };
+      }
+    });
+  }, [mapStyle]);
+
   const formatSection = (section: string) => {
     if (!section) return 'N/A';
     return section.replace(/[0-9-]/g, '');
@@ -195,7 +227,6 @@ export function MapComponent() {
         <div className="absolute top-4 left-4 z-20 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">PARCEL DETAILS</h3>
-            {/* FIX: Set selectedParcelId to null to close the window completely */}
             <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan">
               <X size={20} />
             </button>
