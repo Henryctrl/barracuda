@@ -25,6 +25,18 @@ export function MapComponent() {
   const [parcelData, setParcelData] = useState<ParcelData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Throttle function to limit how often hover updates occur
+  const throttle = useCallback((func: Function, limit: number) => {
+    let inThrottle: boolean = false;
+    return function(this: any, ...args: any[]) {
+      if (!inThrottle) {
+        func.apply(this, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    }
+  }, []);
+
   const addDataLayers = useCallback(() => {
     const currentMap = map.current;
     if (!currentMap) return;
@@ -97,13 +109,16 @@ export function MapComponent() {
     newMap.on('load', () => {
       addDataLayers();
 
-      newMap.on('mousemove', 'parcelles-fill', (e) => {
+      // Throttled hover handler - updates every 100ms maximum
+      const throttledHoverHandler = throttle((e: any) => {
         newMap.getCanvas().style.cursor = 'pointer';
         if (e.features?.length) {
           const newHoveredId = e.features[0].properties.id;
           newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
         }
-      });
+      }, 100); // 100ms throttle - adjust this value as needed
+
+      newMap.on('mousemove', 'parcelles-fill', throttledHoverHandler);
 
       newMap.on('mouseleave', 'parcelles-fill', () => {
         newMap.getCanvas().style.cursor = '';
@@ -125,7 +140,7 @@ export function MapComponent() {
       newMap.remove();
       map.current = null;
     };
-  }, [addDataLayers]);
+  }, [addDataLayers, throttle]);
 
   useEffect(() => {
     if (!map.current) return;
