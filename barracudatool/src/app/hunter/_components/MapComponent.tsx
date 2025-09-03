@@ -25,10 +25,13 @@ export function MapComponent() {
   const [parcelData, setParcelData] = useState<ParcelData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Throttle function to limit how often hover updates occur
-  const throttle = useCallback((func: Function, limit: number) => {
+  // Throttle function with proper TypeScript types
+  const throttle = useCallback(<T extends unknown[]>(
+    func: (...args: T) => void, 
+    limit: number
+  ) => {
     let inThrottle: boolean = false;
-    return function(this: any, ...args: any[]) {
+    return function(this: unknown, ...args: T) {
       if (!inThrottle) {
         func.apply(this, args);
         inThrottle = true;
@@ -109,12 +112,14 @@ export function MapComponent() {
     newMap.on('load', () => {
       addDataLayers();
 
-      // Throttled hover handler - updates every 100ms maximum
-      const throttledHoverHandler = throttle((e: any) => {
+      // Throttled hover handler - using proper MapTiler event types
+      const throttledHoverHandler = throttle((e: maptilersdk.MapMouseEvent & { features?: maptilersdk.MapGeoJSONFeature[] }) => {
         newMap.getCanvas().style.cursor = 'pointer';
         if (e.features?.length) {
-          const newHoveredId = e.features[0].properties.id;
-          newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
+          const newHoveredId = e.features[0].properties?.id as string;
+          if (newHoveredId) {
+            newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
+          }
         }
       }, 100); // 100ms throttle - adjust this value as needed
 
@@ -127,7 +132,7 @@ export function MapComponent() {
 
       newMap.on('click', 'parcelles-fill', (e) => {
          if (e.features?.length) {
-           const parcelId = e.features[0].properties.id;
+           const parcelId = e.features[0].properties?.id as string;
            if (parcelId !== undefined) {
              newMap.setFilter('parcelles-hover', ['==', 'id', '']);
              setSelectedParcelId(String(parcelId));
@@ -156,15 +161,15 @@ export function MapComponent() {
         }
 
         // Get all custom layers (cadastre layers)
-        const customLayers = previousStyle.layers.filter((layer: any) => {
+        const customLayers = previousStyle.layers.filter((layer) => {
           return layer.id && layer.id.startsWith('parcelles-');
         });
 
-        // Get all custom sources
-        const customSources: any = {};
+        // Get all custom sources - properly typed as SourceSpecification
+        const customSources: { [key: string]: maptilersdk.SourceSpecification } = {};
         for (const [key, value] of Object.entries(previousStyle.sources)) {
           if (key === 'cadastre-parcelles') {
-            customSources[key] = value;
+            customSources[key] = value as maptilersdk.SourceSpecification;
           }
         }
 
