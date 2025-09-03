@@ -199,7 +199,7 @@ export function MapComponent() {
       <div ref={mapContainer} className="absolute h-full w-full" />
       
       {(isLoading || parcelData) && (
-        <div className="absolute top-4 left-4 z-10 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
+        <div className="absolute top-4 left-4 z-20 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">PARCEL DETAILS</h3>
             <button onClick={() => { setParcelData(null); setSelectedParcelId(null); }} className="text-accent-cyan/70 hover:text-accent-cyan">
