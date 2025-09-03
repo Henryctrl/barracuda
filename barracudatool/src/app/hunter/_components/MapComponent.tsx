@@ -30,7 +30,10 @@ export function MapComponent() {
     if (!currentMap) return;
 
     if (!currentMap.getSource('cadastre-parcelles')) {
-      currentMap.addSource('cadastre-parcelles', { type: 'vector', url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json` });
+      currentMap.addSource('cadastre-parcelles', { 
+        type: 'vector', 
+        url: `https://openmaptiles.geo.data.gouv.fr/data/cadastre.json` 
+      });
     }
     
     const layers: maptilersdk.LayerSpecification[] = [
@@ -43,13 +46,10 @@ export function MapComponent() {
 
     layers.forEach(layer => {
         if (!currentMap.getLayer(layer.id)) {
-            // FINAL FIX: Remove the incorrect type assertion. The 'layer' object is already the correct type.
             currentMap.addLayer(layer);
         }
     });
   }, []);
-
-  // ... the rest of the file remains the same ...
 
   useEffect(() => {
     const currentMap = map.current;
@@ -119,8 +119,6 @@ export function MapComponent() {
            }
          }
       });
-
-      newMap.on('style.load', addDataLayers);
     });
 
     return () => {
@@ -131,8 +129,44 @@ export function MapComponent() {
 
   useEffect(() => {
     if (!map.current) return;
+    
     const newStyle = mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.HYBRID;
-    map.current.setStyle(newStyle);
+    
+    // Use transformStyle to preserve custom sources and layers
+    map.current.setStyle(newStyle, {
+      transformStyle: (previousStyle, nextStyle) => {
+        // Check if previousStyle exists and has the required properties
+        if (!previousStyle || !previousStyle.layers || !previousStyle.sources) {
+          return nextStyle;
+        }
+
+        // Get all custom layers (cadastre layers)
+        const customLayers = previousStyle.layers.filter((layer: any) => {
+          return layer.id && layer.id.startsWith('parcelles-');
+        });
+
+        // Get all custom sources
+        const customSources: any = {};
+        for (const [key, value] of Object.entries(previousStyle.sources)) {
+          if (key === 'cadastre-parcelles') {
+            customSources[key] = value;
+          }
+        }
+
+        // Merge custom sources and layers with the new style
+        return {
+          ...nextStyle,
+          sources: {
+            ...nextStyle.sources,
+            ...customSources
+          },
+          layers: [
+            ...nextStyle.layers,
+            ...customLayers
+          ]
+        };
+      }
+    });
   }, [mapStyle]);
 
   const formatSection = (section: string) => {
