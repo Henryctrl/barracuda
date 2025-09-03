@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
+import type { Polygon } from 'geojson'; // Import Polygon type for geometry
 
 // Define an interface for the expected parcel data
 interface ParcelData {
@@ -78,7 +79,7 @@ export function MapComponent() {
     });
   }, []);
 
-  // Effect to fetch parcel data and address when a parcel is selected
+  // Effect to reset states when a parcel is deselected
   useEffect(() => {
     const currentMap = map.current;
     if (!currentMap) return;
@@ -92,53 +93,6 @@ export function MapComponent() {
       setShowOtherAddresses(false);
       return;
     }
-
-    const fetchParcelDataAndAddress = async (center: [number, number]) => {
-      setIsLoading(true);
-      setParcelData(null);
-      setBanAddress(null);
-      setOtherAddresses([]);
-
-      try {
-        // Fetch parcel details from your API
-        const parcelResponse = await fetch(`/api/cadastre/${selectedParcelId}`);
-        if (!parcelResponse.ok) throw new Error('Failed to fetch parcel data.');
-        const parcelJson = await parcelResponse.json();
-        setParcelData(parcelJson);
-
-        // Fetch address from BAN API using parcel coordinates
-        const [lon, lat] = center;
-        const banResponse = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${lon}&lat=${lat}&limit=6`);
-        if (!banResponse.ok) throw new Error('Failed to fetch address from BAN API.');
-        const banJson = await banResponse.json();
-        
-        const features = banJson.features as BanFeature[];
-
-        if (features && features.length > 0) {
-          // Find the best result (first with a housenumber, otherwise the first result)
-          const bestResult = features.find(f => f.properties.housenumber) || features[0];
-          setBanAddress(bestResult);
-
-          // Set other results (up to 5)
-          const otherResults = features.filter(f => f.properties.label !== bestResult.properties.label).slice(0, 5);
-          setOtherAddresses(otherResults);
-        }
-
-        // Apply visual filter to the map
-        if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', selectedParcelId]);
-        if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', selectedParcelId]);
-      } catch (error) {
-        console.error("Failed to fetch details:", error);
-        setParcelData(null);
-        setBanAddress(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    // We need the coordinates to fetch the address. This will be triggered from the map's 'click' event.
-    // This effect now mainly handles resetting the state. The actual fetching is triggered by the click handler.
-
   }, [selectedParcelId]);
 
   // Map initialization and event handlers
@@ -185,8 +139,9 @@ export function MapComponent() {
              
              // Get the center of the clicked parcel to use for the BAN API call
              const bounds = new maptilersdk.LngLatBounds();
-             const coordinates = (parcelFeature.geometry as any).coordinates[0];
-             coordinates.forEach((coord: [number, number]) => bounds.extend(coord));
+             // FIX 2: Correctly type the geometry as a Polygon
+             const coordinates = (parcelFeature.geometry as Polygon).coordinates[0];
+             coordinates.forEach((coord) => bounds.extend(coord as [number, number]));
              const center = bounds.getCenter().toArray() as [number, number];
 
              // Now call the fetch function with the coordinates
