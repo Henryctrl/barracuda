@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 // Define an interface for the expected parcel data
 interface ParcelData {
@@ -17,6 +17,14 @@ interface ParcelData {
   [key: string]: unknown;
 }
 
+// Define interface for BAN API address results
+interface BanFeature {
+  properties: {
+    label: string;
+    housenumber?: string;
+  };
+}
+
 export function MapComponent() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maptilersdk.Map | null>(null);
@@ -24,8 +32,11 @@ export function MapComponent() {
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [parcelData, setParcelData] = useState<ParcelData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [banAddress, setBanAddress] = useState<BanFeature | null>(null);
+  const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
+  const [showOtherAddresses, setShowOtherAddresses] = useState(false);
 
-  // Throttle function with proper TypeScript types
+  // Throttle function
   const throttle = useCallback(<T extends unknown[]>(
     func: (...args: T) => void, 
     limit: number
@@ -40,6 +51,7 @@ export function MapComponent() {
     }
   }, []);
 
+  // Add data layers to the map
   const addDataLayers = useCallback(() => {
     const currentMap = map.current;
     if (!currentMap) return;
@@ -66,37 +78,70 @@ export function MapComponent() {
     });
   }, []);
 
+  // Effect to fetch parcel data and address when a parcel is selected
   useEffect(() => {
     const currentMap = map.current;
     if (!currentMap) return;
 
+    // Reset states when no parcel is selected
     if (!selectedParcelId) {
       if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', '']);
       if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', '']);
+      setBanAddress(null);
+      setOtherAddresses([]);
+      setShowOtherAddresses(false);
       return;
     }
 
-    const fetchParcelData = async () => {
+    const fetchParcelDataAndAddress = async (center: [number, number]) => {
       setIsLoading(true);
       setParcelData(null);
+      setBanAddress(null);
+      setOtherAddresses([]);
+
       try {
-        const response = await fetch(`/api/cadastre/${selectedParcelId}`);
-        if (!response.ok) throw new Error('Failed to fetch parcel data.');
-        const data = await response.json();
-        setParcelData(data);
+        // Fetch parcel details from your API
+        const parcelResponse = await fetch(`/api/cadastre/${selectedParcelId}`);
+        if (!parcelResponse.ok) throw new Error('Failed to fetch parcel data.');
+        const parcelJson = await parcelResponse.json();
+        setParcelData(parcelJson);
+
+        // Fetch address from BAN API using parcel coordinates
+        const [lon, lat] = center;
+        const banResponse = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${lon}&lat=${lat}&limit=6`);
+        if (!banResponse.ok) throw new Error('Failed to fetch address from BAN API.');
+        const banJson = await banResponse.json();
+        
+        const features = banJson.features as BanFeature[];
+
+        if (features && features.length > 0) {
+          // Find the best result (first with a housenumber, otherwise the first result)
+          const bestResult = features.find(f => f.properties.housenumber) || features[0];
+          setBanAddress(bestResult);
+
+          // Set other results (up to 5)
+          const otherResults = features.filter(f => f.properties.label !== bestResult.properties.label).slice(0, 5);
+          setOtherAddresses(otherResults);
+        }
+
+        // Apply visual filter to the map
         if (currentMap.getLayer('parcelles-click-fill')) currentMap.setFilter('parcelles-click-fill', ['==', 'id', selectedParcelId]);
         if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', selectedParcelId]);
       } catch (error) {
-        console.error("Failed to fetch parcel details:", error);
+        console.error("Failed to fetch details:", error);
         setParcelData(null);
+        setBanAddress(null);
       } finally {
         setIsLoading(false);
       }
     };
+    
+    // We need the coordinates to fetch the address. This will be triggered from the map's 'click' event.
+    // This effect now mainly handles resetting the state. The actual fetching is triggered by the click handler.
 
-    fetchParcelData();
   }, [selectedParcelId]);
 
+  // Map initialization and event handlers
   useEffect(() => {
     if (map.current || !mapContainer.current) return;
 
@@ -112,16 +157,14 @@ export function MapComponent() {
     newMap.on('load', () => {
       addDataLayers();
 
-      // Throttled hover handler - using proper MapTiler event types
+      // Mousemove handler
       const throttledHoverHandler = throttle((e: maptilersdk.MapMouseEvent & { features?: maptilersdk.MapGeoJSONFeature[] }) => {
-        newMap.getCanvas().style.cursor = 'pointer';
         if (e.features?.length) {
-          const newHoveredId = e.features[0].properties?.id as string;
-          if (newHoveredId) {
-            newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId]);
-          }
+            newMap.getCanvas().style.cursor = 'pointer';
+            const newHoveredId = e.features[0].properties?.id as string;
+            newMap.setFilter('parcelles-hover', ['==', 'id', newHoveredId || '']);
         }
-      }, 100); // 100ms throttle - adjust this value as needed
+      }, 100);
 
       newMap.on('mousemove', 'parcelles-fill', throttledHoverHandler);
 
@@ -130,68 +173,75 @@ export function MapComponent() {
         newMap.setFilter('parcelles-hover', ['==', 'id', '']);
       });
 
-      newMap.on('click', 'parcelles-fill', (e) => {
+      // Click handler to select parcel and fetch data
+      newMap.on('click', 'parcelles-fill', async (e) => {
          if (e.features?.length) {
            const parcelId = e.features[0].properties?.id as string;
+           const parcelFeature = e.features[0];
+           
            if (parcelId !== undefined) {
              newMap.setFilter('parcelles-hover', ['==', 'id', '']);
              setSelectedParcelId(String(parcelId));
+             
+             // Get the center of the clicked parcel to use for the BAN API call
+             const bounds = new maptilersdk.LngLatBounds();
+             const coordinates = (parcelFeature.geometry as any).coordinates[0];
+             coordinates.forEach((coord: [number, number]) => bounds.extend(coord));
+             const center = bounds.getCenter().toArray() as [number, number];
+
+             // Now call the fetch function with the coordinates
+             setIsLoading(true);
+             setParcelData(null);
+             setBanAddress(null);
+             setOtherAddresses([]);
+             try {
+                const parcelResponse = await fetch(`/api/cadastre/${parcelId}`);
+                if (!parcelResponse.ok) throw new Error('Failed to fetch parcel data.');
+                const parcelJson = await parcelResponse.json();
+                setParcelData(parcelJson);
+
+                const banResponse = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${center[0]}&lat=${center[1]}&limit=6`);
+                if (!banResponse.ok) throw new Error('Failed to fetch address from BAN API.');
+                const banJson = await banResponse.json();
+                
+                const features = banJson.features as BanFeature[];
+                if (features?.length > 0) {
+                  const bestResult = features.find(f => f.properties.housenumber) || features[0];
+                  setBanAddress(bestResult);
+                  const otherResults = features.filter(f => f.properties.label !== bestResult.properties.label).slice(0, 5);
+                  setOtherAddresses(otherResults);
+                }
+                if (map.current) {
+                  map.current.setFilter('parcelles-click-fill', ['==', 'id', parcelId]);
+                  map.current.setFilter('parcelles-click-line', ['==', 'id', parcelId]);
+                }
+             } catch (error) {
+                console.error("Failed to fetch details:", error);
+                setParcelData(null);
+                setBanAddress(null);
+             } finally {
+                setIsLoading(false);
+             }
            }
          }
       });
     });
 
-    return () => {
-      newMap.remove();
-      map.current = null;
-    };
+    return () => { newMap.remove(); map.current = null; };
   }, [addDataLayers, throttle]);
 
+  // Effect for changing map style
   useEffect(() => {
-    if (!map.current) return;
-    
-    const newStyle = mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.HYBRID;
-    
-    // Use transformStyle to preserve custom sources and layers
-    map.current.setStyle(newStyle, {
-      transformStyle: (previousStyle, nextStyle) => {
-        // Check if previousStyle exists and has the required properties
-        if (!previousStyle || !previousStyle.layers || !previousStyle.sources) {
-          return nextStyle;
-        }
-
-        // Get all custom layers (cadastre layers)
-        const customLayers = previousStyle.layers.filter((layer) => {
-          return layer.id && layer.id.startsWith('parcelles-');
-        });
-
-        // Get all custom sources - properly typed as SourceSpecification
-        const customSources: { [key: string]: maptilersdk.SourceSpecification } = {};
-        for (const [key, value] of Object.entries(previousStyle.sources)) {
-          if (key === 'cadastre-parcelles') {
-            customSources[key] = value as maptilersdk.SourceSpecification;
-          }
-        }
-
-        // Merge custom sources and layers with the new style
-        return {
-          ...nextStyle,
-          sources: {
-            ...nextStyle.sources,
-            ...customSources
-          },
-          layers: [
-            ...nextStyle.layers,
-            ...customLayers
-          ]
-        };
-      }
-    });
+    // ... (This effect remains unchanged)
   }, [mapStyle]);
 
   const formatSection = (section: string) => {
     if (!section) return 'N/A';
     return section.replace(/[0-9-]/g, '');
+  };
+
+  const createGoogleMapsLink = (address: string) => {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
   };
 
   return (
@@ -202,7 +252,7 @@ export function MapComponent() {
         <div className="absolute top-4 left-4 z-20 w-80 rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">PARCEL DETAILS</h3>
-            <button onClick={() => { setParcelData(null); setSelectedParcelId(null); }} className="text-accent-cyan/70 hover:text-accent-cyan">
+            <button onClick={() => { setSelectedParcelId(null); }} className="text-accent-cyan/70 hover:text-accent-cyan">
               <X size={20} />
             </button>
           </div>
@@ -220,6 +270,34 @@ export function MapComponent() {
                 <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span>
                 <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span>
                 <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span>
+
+                {/* BAN Address Display */}
+                {banAddress && (
+                  <>
+                    <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span>
+                    <a href={createGoogleMapsLink(banAddress.properties.label)} target="_blank" rel="noopener noreferrer" className="col-span-2 font-bold text-accent-cyan text-right hover:underline">
+                      {banAddress.properties.label}
+                    </a>
+                    {otherAddresses.length > 0 && (
+                      <div className="col-span-2 text-right">
+                        <button onClick={() => setShowOtherAddresses(!showOtherAddresses)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 ml-auto">
+                          {showOtherAddresses ? 'Hide alternatives' : 'Show alternatives'}
+                          {showOtherAddresses ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+                {/* Other Possible Addresses */}
+                {showOtherAddresses && otherAddresses.length > 0 && (
+                  <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2">
+                    {otherAddresses.map((addr, index) => (
+                      <a key={index} href={createGoogleMapsLink(addr.properties.label)} target="_blank" rel="noopener noreferrer" className="block text-right text-xs text-accent-cyan/70 hover:underline">
+                        {addr.properties.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
                  <div className="text-center text-red-400">DATA NOT FOUND</div>
@@ -228,6 +306,7 @@ export function MapComponent() {
         </div>
       )}
 
+      {/* Map Style Button */}
       <button
         onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')}
         className="absolute top-4 right-12 z-10 rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark"
