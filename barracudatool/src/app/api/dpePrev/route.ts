@@ -6,7 +6,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get('lat');
     const lng = searchParams.get('lng');
-    const radius = parseFloat(searchParams.get('radius') || '1.0'); // Default 1km
     
     if (!lat || !lng) {
       return NextResponse.json(
@@ -15,12 +14,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`🔍 API: FIXED DPE search at ${lat}, ${lng} within ${radius * 1000}m`);
+    console.log(`🔍 API: FIXED DPE search at ${lat}, ${lng}`);
     
+    // Corrected: Removed the third 'radius' argument from the function call
     const dpeData = await DpeAPI.getDpeNearCoordinates(
       parseFloat(lng),
-      parseFloat(lat),
-      radius
+      parseFloat(lat)
     );
 
     if (dpeData.length === 0) {
@@ -42,7 +41,8 @@ export async function GET(request: NextRequest) {
       closest: dpeData[0] // Most relevant certificate
     });
   } catch (error) {
-    console.error('❌ DPE API route error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('❌ DPE API route error:', errorMessage);
     return NextResponse.json({
       found: false,
       error: 'Failed to fetch DPE data',
