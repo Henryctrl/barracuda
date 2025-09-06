@@ -1,12 +1,33 @@
-// File: src/app/api/dvf/route.ts (Corrected)
+// File: src/app/api/dvf/route.ts
 import { NextResponse } from 'next/server';
+
+// Define a specific type for the sale properties
+interface DVFProperties {
+  idmutinvar: string;
+  datemut: string;
+  valeurfonc: string;
+  coddep: string;
+  codcom: string;
+  l_idpar: string[];
+  l_addr: string;
+  libtypbien: string;
+  sbati: string;
+  sterr: string;
+}
+
+// Interface for each feature in the GeoJSON response
+interface DVFFeature {
+  type: 'Feature';
+  properties: DVFProperties;
+  geometry: object; // The geometry can be complex, so 'object' is acceptable here
+}
 
 // Interface to type the API's paginated response structure
 interface DVFApiResponse {
   count: number;
   next: string | null;
   previous: string | null;
-  features: any[]; 
+  features: DVFFeature[]; 
 }
 
 export async function GET(request: Request) {
@@ -15,15 +36,14 @@ export async function GET(request: Request) {
   const targetParcelId = searchParams.get('targetParcelId');
 
   if (!inseeCode || !targetParcelId) {
-    return NextResponse.json({ error: 'Missing required query parameters: inseeCode and targetParcelId' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing required query parameters' }, { status: 400 });
   }
 
   try {
-    let allSales: any[] = [];
+    let allSales: DVFFeature[] = [];
     let nextUrl: string | null = `https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/?code_insee=${inseeCode}`;
     
     while (nextUrl) {
-      // FIX: Added 'Response' type
       const apiResponse: Response = await fetch(nextUrl, {
         headers: { 'Accept': 'application/json' },
         redirect: 'follow' 
@@ -33,7 +53,6 @@ export async function GET(request: Request) {
         throw new Error(`Failed to fetch DVF data: ${apiResponse.status} ${apiResponse.statusText}`);
       }
       
-      // FIX: Added 'DVFApiResponse' type
       const data: DVFApiResponse = await apiResponse.json();
       allSales = allSales.concat(data.features);
       nextUrl = data.next;
@@ -52,6 +71,6 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('DVF API Route Error:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    return NextResponse.json({ error: 'Failed to fetch or process DVF data', details: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch DVF data', details: errorMessage }, { status: 500 });
   }
 }
