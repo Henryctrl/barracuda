@@ -50,7 +50,8 @@ export async function GET(request: Request) {
     }
     
     const banJson = await banResponse.json();
-    let features: BanFeature[] = banJson.features || [];
+    // FIX: Changed 'let' to 'const'
+    const features: BanFeature[] = banJson.features || [];
 
     // 1. Calculate distance for each address from the parcel's center point
     features.forEach(feature => {
@@ -79,6 +80,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to fetch address data', details: errorMessage }, { status: 500 });
   }
 }
+
 
 //OLD CODE THAT ALSO WORKED??????
 // // File: src/app/api/address/route.ts
