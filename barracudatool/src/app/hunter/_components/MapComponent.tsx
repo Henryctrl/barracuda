@@ -5,7 +5,6 @@ import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import type { Polygon, Position } from 'geojson';
 
-
 // Define interfaces
 interface ParcelData {
   idu: string;
@@ -17,7 +16,6 @@ interface ParcelData {
   nom_com: string;
   [key: string]: unknown;
 }
-
 
 interface BanFeature {
   geometry: {
@@ -31,8 +29,6 @@ interface BanFeature {
   };
 }
 
-
-// Interface for DPE records from the ADEME API
 interface DPERecord {
   'numero_dpe': string;
   'adresse_brut': string;
@@ -44,12 +40,26 @@ interface DPERecord {
   '_distance'?: number;
 }
 
+// CORRECTED DVFRecord Interface to match API response
+interface DVFRecord {
+    idmutinvar: string;
+    datemut: string;
+    valeurfonc: string; // The API returns it as a string
+    libtypbien: string;
+    sbati: string;
+    sterr: string;
+    l_addr: string; // This property is not in the API response, but we keep it for potential future use
+    geom: {
+      coordinates: number[][][][]; // MultiPolygon coordinates
+    };
+    _distance?: number;
+}
+
 
 // Component Props
 interface MapComponentProps {
-  activeView: 'cadastre' | 'dpe';
+  activeView: 'cadastre' | 'dpe' | 'sales';
 }
-
 
 export function MapComponent({ activeView }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -63,13 +73,18 @@ export function MapComponent({ activeView }: MapComponentProps) {
   const [banAddress, setBanAddress] = useState<BanFeature | null>(null);
   const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
   const [showOtherAddresses, setShowOtherAddresses] = useState(false);
-
-
+  
   // State for DPE data
   const [dpeResults, setDpeResults] = useState<DPERecord[]>([]);
   const [isDpeLoading, setIsDpeLoading] = useState(false);
   const [dpeError, setDpeError] = useState('');
   const [dpeSearchInfo, setDpeSearchInfo] = useState('');
+
+  // State for DVF (Sales) data
+  const [dvfResults, setDvfResults] = useState<DVFRecord[]>([]);
+  const [isDvfLoading, setIsDvfLoading] = useState(false);
+  const [dvfError, setDvfError] = useState('');
+  const [dvfSearchInfo, setDvfSearchInfo] = useState('');
 
 
   // State for the custom search bar
@@ -77,8 +92,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
   const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
-
-  // --- DPE Search Logic (Corrected) ---
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -86,9 +99,9 @@ export function MapComponent({ activeView }: MapComponentProps) {
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
-  }
-
-
+  };
+  
+  // --- DPE Search Logic ---
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => {
     setIsDpeLoading(true);
     setDpeError('');
@@ -100,8 +113,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
       setIsDpeLoading(false);
       return;
     }
-
-
     try {
       setDpeSearchInfo(`QUERYING ADEME GRID FOR SECTOR ${postalCode}...`);
       const dataset = 'dpe03existant';
@@ -138,13 +149,13 @@ export function MapComponent({ activeView }: MapComponentProps) {
         })
         .filter((record: DPERecord | null): record is DPERecord => record !== null && record._distance !== undefined)
         .sort((a: DPERecord, b: DPERecord) => a._distance! - b._distance!);
-
-
+      
       if (recordsWithDistance.length === 0) {
         setDpeSearchInfo(`DPE ASSET DATA CORRUPTED. CANNOT CALCULATE PROXIMITY.`);
         setIsDpeLoading(false);
         return;
       }
+
       setDpeResults(recordsWithDistance);
       setDpeSearchInfo(`ANALYSIS COMPLETE. ${recordsWithDistance.length} VALID ASSETS. CLOSEST TARGET: ${Math.round(recordsWithDistance[0]._distance!)}m`);
     } catch (err) {
@@ -153,6 +164,73 @@ export function MapComponent({ activeView }: MapComponentProps) {
       setDpeSearchInfo('');
     } finally {
       setIsDpeLoading(false);
+    }
+  }, []);
+
+  // --- CORRECTED DVF (Sales) Search Logic ---
+  const findDVF = useCallback(async (inseeCode: string, lat: number, lon: number) => {
+    setIsDvfLoading(true);
+    setDvfError('');
+    setDvfResults([]);
+    setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...');
+
+    if (!inseeCode || isNaN(lat) || isNaN(lon)) {
+        setDvfError('CRITICAL ERROR: INVALID INSEE CODE OR COORDINATES FOR DVF SCAN');
+        setIsDvfLoading(false);
+        return;
+    }
+
+    try {
+        setDvfSearchInfo(`QUERYING CEREMA GRID FOR SECTOR ${inseeCode}...`);
+        const url = `https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/?code_insee=${inseeCode}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`GRID OFFLINE: HTTP ${response.status}`);
+        
+        const data = await response.json();
+        const sales = data.features;
+        
+        if (!sales || sales.length === 0) {
+            setDvfSearchInfo(`NO DVF ASSETS FOUND IN SECTOR ${inseeCode}.`);
+            setIsDvfLoading(false);
+            return;
+        }
+
+        setDvfSearchInfo(`GRID RESPONSE: ${sales.length} ASSETS DETECTED. PROCESSING...`);
+
+        const recordsWithDistance = sales
+            .map((feature: any) => {
+                const record = { ...feature.properties }; // Copy properties
+                
+                // Extract coordinate from MultiPolygon
+                const geometry = feature.geometry;
+                if (geometry && geometry.type === 'MultiPolygon' && geometry.coordinates && geometry.coordinates[0][0][0]) {
+                    const [recordLon, recordLat] = geometry.coordinates[0][0][0];
+                    if (!isNaN(recordLat) && !isNaN(recordLon)) {
+                        record._distance = calculateDistance(lat, lon, recordLat, recordLon);
+                        return record;
+                    }
+                }
+                return null;
+            })
+            .filter((record: DVFRecord | null): record is DVFRecord => record !== null && record._distance !== undefined)
+            .sort((a: DVFRecord, b: DVFRecord) => new Date(b.datemut).getTime() - new Date(a.datemut).getTime()); // Sort by most recent sale
+
+        if (recordsWithDistance.length === 0) {
+            setDvfSearchInfo(`DVF ASSET DATA CORRUPTED OR NO VALID GEOMETRY. CANNOT CALCULATE PROXIMITY.`);
+            setIsDvfLoading(false);
+            return;
+        }
+        
+        setDvfResults(recordsWithDistance);
+        setDvfSearchInfo(`ANALYSIS COMPLETE. ${recordsWithDistance.length} VALID ASSETS FOUND.`);
+
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setDvfError(`DVF SYSTEM FAILURE: ${errorMessage}`);
+        setDvfSearchInfo('');
+    } finally {
+        setIsDvfLoading(false);
     }
   }, []);
 
@@ -170,8 +248,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
     }
   };
 
-
-  // Fetch search suggestions from BAN API
   const fetchSuggestions = useCallback(async (query: string) => {
     if (query.length < 3) {
       setSuggestions([]);
@@ -187,14 +263,12 @@ export function MapComponent({ activeView }: MapComponentProps) {
     }
   }, []);
 
-
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => { fetchSuggestions(query); }, 300);
   };
-
 
   const handleSuggestionClick = (feature: BanFeature) => {
     setSearchQuery(feature.properties.label);
@@ -205,12 +279,10 @@ export function MapComponent({ activeView }: MapComponentProps) {
     }
   };
 
-
   const handleClearSearch = () => {
     setSearchQuery('');
     setSuggestions([]);
   };
-
 
   const throttle = useCallback(<T extends unknown[]>(func: (...args: T) => void, limit: number) => {
     let inThrottle: boolean = false;
@@ -222,7 +294,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
       }
     }
   }, []);
-
 
   const addDataLayers = useCallback(() => {
     const currentMap = map.current;
@@ -245,7 +316,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
     });
   }, []);
   
-  // Effect to reset states when a parcel is deselected
   useEffect(() => {
     const currentMap = map.current;
     if (!currentMap) return;
@@ -256,15 +326,15 @@ export function MapComponent({ activeView }: MapComponentProps) {
       setBanAddress(null);
       setOtherAddresses([]);
       setShowOtherAddresses(false);
-      // Also reset DPE data
       setDpeResults([]);
       setDpeError('');
       setDpeSearchInfo('');
+      setDvfResults([]);
+      setDvfError('');
+      setDvfSearchInfo('');
     }
   }, [selectedParcelId]);
 
-
-  // Map initialization and event handlers
   useEffect(() => {
     if (map.current || !mapContainer.current) return;
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!;
@@ -289,8 +359,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
         newMap.getCanvas().style.cursor = '';
         newMap.setFilter('parcelles-hover', ['==', 'id', '']);
       });
-
-
       newMap.on('click', 'parcelles-fill', async (e) => {
          if (e.features && e.features.length > 0) {
            const parcelFeature = e.features[0];
@@ -309,7 +377,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
              setParcelData(null);
              setBanAddress(null);
              setOtherAddresses([]);
-             setDpeResults([]); // Clear previous DPE results
+             setDpeResults([]);
+             setDvfResults([]);
              
              try {
                 const parcelResponse = await fetch(`/api/cadastre/${parcelId}`);
@@ -317,6 +386,15 @@ export function MapComponent({ activeView }: MapComponentProps) {
                 const parcelJson = await parcelResponse.json();
                 setParcelData(parcelJson);
 
+                const [lon, lat] = center;
+                const inseeCode = parcelJson.code_insee;
+                if(inseeCode && lat && lon){
+                    // *** TRIGGER DVF SEARCH ***
+                    findDVF(inseeCode, lat, lon);
+                } else {
+                    setDvfError('INSEE code or coordinates missing for DVF scan.');
+                    setDvfSearchInfo('');
+                }
 
                 const banResponse = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${center[0]}&lat=${center[1]}&limit=6`);
                 if (!banResponse.ok) throw new Error('Failed to fetch address from BAN API.');
@@ -330,21 +408,17 @@ export function MapComponent({ activeView }: MapComponentProps) {
                   
                   // *** TRIGGER DPE SEARCH ***
                   const postalCode = bestResult.properties.postcode;
-                  const [lon, lat] = bestResult.geometry.coordinates;
-                  if (postalCode && lat && lon) {
-                    findDPE(postalCode, lat, lon);
+                  const [banLon, banLat] = bestResult.geometry.coordinates;
+                  if (postalCode && banLat && banLon) {
+                    findDPE(postalCode, banLat, banLon);
                   } else {
                     setDpeError('Postal code or coordinates missing for DPE scan.');
                     setDpeSearchInfo('');
                   }
-
-
                 } else {
                    setDpeError('No address found for parcel, cannot perform DPE scan.');
                    setDpeSearchInfo('');
                 }
-
-
                 if (map.current) {
                   map.current.setFilter('parcelles-click-fill', ['==', 'id', parcelId]);
                   map.current.setFilter('parcelles-click-line', ['==', 'id', parcelId]);
@@ -354,6 +428,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
                 setParcelData(null);
                 setBanAddress(null);
                 setDpeError(error instanceof Error ? error.message : 'Unknown error');
+                setDvfError(error instanceof Error ? error.message : 'Unknown error');
              } finally {
                 setIsLoading(false);
              }
@@ -362,8 +437,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
       });
     });
     return () => { newMap.remove(); map.current = null; };
-  }, [addDataLayers, throttle, findDPE]);
-
+  }, [addDataLayers, throttle, findDPE, findDVF]);
 
   useEffect(() => {
     if (!map.current) return;
@@ -381,9 +455,105 @@ export function MapComponent({ activeView }: MapComponentProps) {
     });
   }, [mapStyle]);
 
-
   const formatSection = (section: string) => section ? section.replace(/[0-9-]/g, '') : 'N/A';
   const createGoogleMapsLink = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  
+  const renderPanelContent = () => {
+    if (isLoading) {
+      return <div className="flex items-center justify-center gap-2 text-text-primary"><Loader2 className="animate-spin" size={16} /><span>INTERROGATING GRID...</span></div>;
+    }
+
+    switch (activeView) {
+      case 'cadastre':
+        return parcelData ? (
+          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span>
+            <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span>
+            <span className="font-semibold text-text-primary/80">SECTION:</span><span className="font-bold text-white text-right">{formatSection(parcelData.section)}</span>
+            <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span>
+            <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span>
+            <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span>
+            {banAddress && (
+              <>
+                <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span>
+                <a href={createGoogleMapsLink(banAddress.properties.label)} target="_blank" rel="noopener noreferrer" className="col-span-2 font-bold text-accent-cyan text-right hover:underline">{banAddress.properties.label}</a>
+                {otherAddresses.length > 0 && (<div className="col-span-2 text-right"><button onClick={() => setShowOtherAddresses(!showOtherAddresses)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 ml-auto">{showOtherAddresses ? 'Hide' : 'Show'} alternatives {showOtherAddresses ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button></div>)}
+              </>
+            )}
+            {showOtherAddresses && otherAddresses.length > 0 && (
+              <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2">
+                {otherAddresses.map((addr, index) => (<a key={index} href={createGoogleMapsLink(addr.properties.label)} target="_blank" rel="noopener noreferrer" className="block text-right text-xs text-accent-cyan/70 hover:underline">{addr.properties.label}</a>))}
+              </div>
+            )}
+          </div>
+        ) : <div className="text-center text-text-primary/70">Click on a parcel to see details.</div>;
+
+      case 'dpe':
+        return (
+          <div>
+            {isDpeLoading && <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DPE GRID...</span></div>}
+            {dpeError && <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dpeError}</div>}
+            {dpeSearchInfo && !isDpeLoading && <div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>}
+            {dpeResults.length > 0 && (
+              <div className="space-y-3">
+                {dpeResults.slice(0, 5).map((dpe, index) => (
+                  <div key={dpe.numero_dpe} className={`pt-3 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}>
+                    <div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}>
+                      TARGET #{index + 1}: {dpe.adresse_brut || 'Address not available'}
+                    </div>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                      <span className="font-semibold text-text-primary/80">PROXIMITY:</span><span className="font-bold text-white text-right">{Math.round(dpe._distance ?? 0)} meters</span>
+                      <span className="font-semibold text-text-primary/80">ENERGY:</span><span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_dpe) }}>{dpe.etiquette_dpe}</span>
+                      <span className="font-semibold text-text-primary/80">GHG:</span><span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_ges) }}>{dpe.etiquette_ges}</span>
+                      <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{dpe.nom_commune_ban}</span>
+                      <span className="font-semibold text-text-primary/80">ID:</span><span className="font-mono text-white text-right text-xs">{dpe.numero_dpe}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+
+        case 'sales':
+            return (
+                <div>
+                  {isDvfLoading && <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DVF GRID...</span></div>}
+                  {dvfError && <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dvfError}</div>}
+                  {dvfSearchInfo && !isDvfLoading && <div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dvfSearchInfo}</div>}
+                  {dvfResults.length > 0 && (
+                    <div className="space-y-3">
+                      {dvfResults.slice(0, 10).map((sale, index) => (
+                        <div key={sale.idmutinvar} className={`pt-3 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}>
+                          <div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}>
+                            SALE: {new Date(sale.datemut).toLocaleDateString()}
+                          </div>
+                          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                            <span className="font-semibold text-text-primary/80">PRICE:</span><span className="font-bold text-white text-right">{parseFloat(sale.valeurfonc).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) || 'N/A'}</span>
+                            <span className="font-semibold text-text-primary/80">TYPE:</span><span className="font-bold text-white text-right">{sale.libtypbien || 'N/A'}</span>
+                            <span className="font-semibold text-text-primary/80">BUILT AREA:</span><span className="font-bold text-white text-right">{sale.sbati ? `${parseFloat(sale.sbati)} m²` : 'N/A'}</span>
+                            <span className="font-semibold text-text-primary/80">LAND AREA:</span><span className="font-bold text-white text-right">{sale.sterr ? `${parseFloat(sale.sterr)} m²` : 'N/A'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+            );
+        
+      default:
+        return null;
+    }
+  };
+
+  const getPanelTitle = () => {
+    switch(activeView) {
+      case 'cadastre': return 'PARCEL DETAILS';
+      case 'dpe': return 'DPE SCAN RESULTS';
+      case 'sales': return 'SALES HISTORY';
+      default: return 'DETAILS';
+    }
+  };
 
 
   return (
@@ -411,83 +581,20 @@ export function MapComponent({ activeView }: MapComponentProps) {
         )}
       </div>
 
-
       {/* Main Info Panel */}
-      {(isLoading || parcelData) && (
+      {(selectedParcelId) && (
         <div className="absolute top-20 sm:top-4 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">
-              {activeView === 'cadastre' ? 'PARCEL DETAILS' : 'DPE SCAN RESULTS'}
+              {getPanelTitle()}
             </h3>
             <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan"><X size={20} /></button>
           </div>
           <div className="mt-4 border-t border-dashed border-accent-cyan/50 pt-4">
-            {isLoading ? (
-              <div className="flex items-center justify-center gap-2 text-text-primary"><Loader2 className="animate-spin" size={16} /><span>INTERROGATING GRID...</span></div>
-            ) : activeView === 'cadastre' ? (
-              // CADASTRE VIEW
-              parcelData ? (
-                <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                    <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span>
-                    <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span>
-                    <span className="font-semibold text-text-primary/80">SECTION:</span><span className="font-bold text-white text-right">{formatSection(parcelData.section)}</span>
-                    <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span>
-                    <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span>
-                    <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span>
-                    {banAddress && (
-                      <>
-                        <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span>
-                        <a href={createGoogleMapsLink(banAddress.properties.label)} target="_blank" rel="noopener noreferrer" className="col-span-2 font-bold text-accent-cyan text-right hover:underline">{banAddress.properties.label}</a>
-                        {otherAddresses.length > 0 && (<div className="col-span-2 text-right"><button onClick={() => setShowOtherAddresses(!showOtherAddresses)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 ml-auto">{showOtherAddresses ? 'Hide' : 'Show'} alternatives {showOtherAddresses ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button></div>)}
-                      </>
-                    )}
-                    {showOtherAddresses && otherAddresses.length > 0 && (
-                      <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2">
-                        {otherAddresses.map((addr, index) => (<a key={index} href={createGoogleMapsLink(addr.properties.label)} target="_blank" rel="noopener noreferrer" className="block text-right text-xs text-accent-cyan/70 hover:underline">{addr.properties.label}</a>))}
-                      </div>
-                    )}
-                </div>
-              ) : <div className="text-center text-red-400">PARCEL DATA NOT FOUND</div>
-            ) : (
-              // DPE VIEW - REFACTORED
-              <div>
-                {isDpeLoading && <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DPE GRID...</span></div>}
-                {dpeError && <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dpeError}</div>}
-                {dpeSearchInfo && !isDpeLoading && <div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>}
-                
-                {dpeResults.length > 0 && (
-                  <div className="space-y-3">
-                    {dpeResults.slice(0, 5).map((dpe, index) => ( // Show top 5 results
-                      <div key={dpe.numero_dpe} className={`pt-3 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}>
-                        <div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}>
-                          TARGET #{index + 1}: {dpe.adresse_brut || 'Address not available'}
-                        </div>
-                        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-                          <span className="font-semibold text-text-primary/80">PROXIMITY:</span>
-                          <span className="font-bold text-white text-right">{Math.round(dpe._distance ?? 0)} meters</span>
-                          
-                          <span className="font-semibold text-text-primary/80">ENERGY:</span>
-                          <span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_dpe) }}>{dpe.etiquette_dpe}</span>
-
-                          <span className="font-semibold text-text-primary/80">GHG:</span>
-                          <span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_ges) }}>{dpe.etiquette_ges}</span>
-
-                          <span className="font-semibold text-text-primary/80">COMMUNE:</span>
-                          <span className="font-bold text-white text-right">{dpe.nom_commune_ban}</span>
-
-                           <span className="font-semibold text-text-primary/80">ID:</span>
-                          <span className="font-mono text-white text-right text-xs">{dpe.numero_dpe}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {renderPanelContent()}
           </div>
         </div>
       )}
-
 
       {/* Map Style Toggle Button */}
       <button onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')} className="absolute top-4 right-12 z-10 rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark">
