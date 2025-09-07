@@ -36,8 +36,6 @@ const RETRY_DELAY_MS = 1000;
 // Helper function to perform fetch with retries on network/server errors
 async function fetchWithRetry(url: string, options: RequestInit, retries = RETRY_COUNT, delay = RETRY_DELAY_MS): Promise<Response> {
   try {
-    // Vercel's fetch has a default timeout, which is what's causing the error.
-    // This wrapper handles retrying if that timeout or another server error occurs.
     const response = await fetch(url, options);
     if (!response.ok && response.status >= 500 && retries > 0) {
       console.warn(`Request failed with status ${response.status}. Retrying in ${delay}ms... (${retries} retries left)`);
@@ -45,17 +43,19 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = RETRY
       return fetchWithRetry(url, options, retries - 1, delay * 2); // Exponential backoff
     }
     return response;
-  } catch (error: any) {
-    // Specifically catch the timeout error and retry
-    if (error.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' && retries > 0) {
-      console.warn(`Connection timeout. Retrying in ${delay}ms... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return fetchWithRetry(url, options, retries - 1, delay * 2);
+  } catch (error: unknown) { // Changed 'any' to 'unknown' for type safety
+    // Type guard to safely inspect the error object
+    if (error && typeof error === 'object' && 'cause' in error) {
+      const cause = (error as { cause?: { code?: string } }).cause;
+      if (cause?.code === 'UND_ERR_CONNECT_TIMEOUT' && retries > 0) {
+        console.warn(`Connection timeout. Retrying in ${delay}ms... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithRetry(url, options, retries - 1, delay * 2);
+      }
     }
     throw error; // Re-throw if it's not a retryable error or retries are exhausted
   }
 }
-
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -71,7 +71,6 @@ export async function GET(request: Request) {
     let nextUrl: string | null = `https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/?code_insee=${inseeCode}`;
     let pagesFetched = 0;
     
-    // Loop through pages with a safety limit to avoid timeouts
     while (nextUrl && pagesFetched < MAX_PAGES_TO_FETCH) {
       const apiResponse: Response = await fetchWithRetry(nextUrl, {
         headers: { 'Accept': 'application/json' },
@@ -84,7 +83,6 @@ export async function GET(request: Request) {
       
       const data: DVFApiResponse = await apiResponse.json();
 
-      // Filter this page's features and add them to our results immediately
       const salesOnPage = data.features
         .filter(feature => {
           const parcelList = feature.properties?.l_idpar;
@@ -100,12 +98,10 @@ export async function GET(request: Request) {
       pagesFetched++;
     }
 
-    // Warn if we hit the page limit, as data might be incomplete for very large communes
     if (pagesFetched >= MAX_PAGES_TO_FETCH && nextUrl) {
       console.warn(`Reached max page limit (${MAX_PAGES_TO_FETCH}) for INSEE code: ${inseeCode}. Data may be incomplete.`);
     }
 
-    // Sort the final aggregated results by date, descending
     const sortedSales = foundSales.sort((a, b) => new Date(b.datemut).getTime() - new Date(a.datemut).getTime());
 
     return NextResponse.json(sortedSales);
