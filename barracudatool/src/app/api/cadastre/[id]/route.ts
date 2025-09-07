@@ -1,3 +1,5 @@
+// barracudatool/src/app/api/cadastre/[id]/route.ts
+
 import { NextResponse } from 'next/server';
 
 interface IgnParcelProperties {
