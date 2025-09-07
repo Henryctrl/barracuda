@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 
 // --- Interfaces ---
-// Your original DVFRecord interface is what your component expects. We will adapt the new API response to fit it.
 interface DVFRecord {
   idmutinvar: string;
   datemut: string;
@@ -14,7 +13,6 @@ interface DVFRecord {
   l_addr: string;
 }
 
-// Interface for the new API's response format
 interface DataGouvMutation {
   id_mutation: string;
   date_mutation: string;
@@ -24,25 +22,21 @@ interface DataGouvMutation {
   surface_reelle_bati: number | null;
   surface_terrain: number | null;
   id_parcelle: string;
-  // This API groups by mutation, so we'll need to extract all parcels from a single mutation event
 }
 
 interface DataGouvApiResponse {
   data: DataGouvMutation[];
 }
 
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const inseeCode = searchParams.get('inseeCode');
-  const targetParcelId = searchParams.get('targetParcelId'); // e.g., "871080000E0813"
+  const targetParcelId = searchParams.get('targetParcelId');
 
   if (!inseeCode || !targetParcelId) {
     return NextResponse.json({ error: 'Missing required query parameters' }, { status: 400 });
   }
 
-  // Extract the section from the parcel ID (e.g., "0000E" from "871080000E0813")
-  // The parcel ID format is {inseeCode}{section}{numero}
   const section = targetParcelId.substring(5, 10);
   if (!section) {
     return NextResponse.json({ error: 'Could not extract section from parcel ID' }, { status: 400 });
@@ -51,52 +45,61 @@ export async function GET(request: Request) {
   try {
     const apiUrl = `https://dvf-api.data.gouv.fr/mutations/${inseeCode}/${section}`;
     
+    console.log(`Fetching DVF data from: ${apiUrl}`);
+    
     const apiResponse = await fetch(apiUrl, {
       headers: { 'Accept': 'application/json' },
     });
 
     if (!apiResponse.ok) {
-      // Handle cases where a section might have no data, which can return a 404
       if (apiResponse.status === 404) {
-        return NextResponse.json([]); // Return an empty array, as it's not an error
+        return NextResponse.json([]);
       }
       throw new Error(`Failed to fetch DVF data: ${apiResponse.status} ${apiResponse.statusText}`);
     }
     
     const responseData: DataGouvApiResponse = await apiResponse.json();
 
-    // The data needs to be grouped by mutation ID to find all parcels involved in a single sale
-    const mutations = new Map<string, DVFRecord>();
-
+    // Group all data by mutation ID to process sales as single events
+    const mutationsData = new Map<string, DataGouvMutation[]>();
     responseData.data.forEach(item => {
-      // Find all sales involving the target parcel
-      if (item.id_parcelle === targetParcelId) {
-        // If this mutation ID is new, create a record
-        if (!mutations.has(item.id_mutation)) {
-          mutations.set(item.id_mutation, {
-            idmutinvar: item.id_mutation,
-            datemut: item.date_mutation,
-            valeurfonc: String(item.valeur_fonciere),
-            libtypbien: item.type_local,
-            sbati: String(item.surface_reelle_bati ?? ''),
-            sterr: String(item.surface_terrain ?? ''),
-            l_addr: item.adresse_nom_voie,
-            l_idpar: [], // We will populate this next
-          });
-        }
-      }
+      const mutationGroup = mutationsData.get(item.id_mutation) || [];
+      mutationGroup.push(item);
+      mutationsData.set(item.id_mutation, mutationGroup);
     });
 
-    // Now, for each relevant mutation, find all its associated parcels
-    responseData.data.forEach(item => {
-      const mutation = mutations.get(item.id_mutation);
-      if (mutation && !mutation.l_idpar.includes(item.id_parcelle)) {
-        mutation.l_idpar.push(item.id_parcelle);
-      }
-    });
+    // Find mutations that involve the target parcel and create the final records
+    const relevantMutations = new Map<string, DVFRecord>();
+    for (const [mutationId, items] of mutationsData.entries()) {
+      const includesTarget = items.some(item => item.id_parcelle === targetParcelId);
 
-    // Convert the map to an array and sort by date
-    const filteredSales = Array.from(mutations.values())
+      if (includesTarget) {
+        let totalLandArea = 0;
+        let totalHabitableArea = 0;
+        const allParcelsInMutation = new Set<string>();
+        let primaryItem = items[0];
+
+        // This loop is scoped to a single mutation event (all items share the same mutationId)
+        items.forEach(item => {
+          totalLandArea += item.surface_terrain ?? 0;
+          totalHabitableArea += item.surface_reelle_bati ?? 0;
+          allParcelsInMutation.add(item.id_parcelle);
+        });
+
+        relevantMutations.set(mutationId, {
+          idmutinvar: mutationId,
+          datemut: primaryItem.date_mutation,
+          valeurfonc: String(primaryItem.valeur_fonciere),
+          libtypbien: primaryItem.type_local || 'Multiple',
+          sbati: String(totalHabitableArea),
+          sterr: String(totalLandArea), // Use the correctly summed total land area
+          l_addr: primaryItem.adresse_nom_voie,
+          l_idpar: Array.from(allParcelsInMutation),
+        });
+      }
+    }
+
+    const filteredSales = Array.from(relevantMutations.values())
       .sort((a, b) => new Date(b.datemut).getTime() - new Date(a.datemut).getTime());
 
     return NextResponse.json(filteredSales);
