@@ -2,6 +2,11 @@
 import { NextResponse } from 'next/server';
 
 // --- Interfaces ---
+interface ParcelInfo {
+  id: string;
+  sterr: number;
+}
+
 interface DVFRecord {
   idmutinvar: string;
   datemut: string;
@@ -9,7 +14,7 @@ interface DVFRecord {
   libtypbien: string;
   sbati: string;
   sterr: string;
-  l_idpar: string[];
+  l_idpar: ParcelInfo[];
   l_addr: string;
 }
 
@@ -60,7 +65,6 @@ export async function GET(request: Request) {
     
     const responseData: DataGouvApiResponse = await apiResponse.json();
 
-    // Group all data by mutation ID to process sales as single events
     const mutationsData = new Map<string, DataGouvMutation[]>();
     responseData.data.forEach(item => {
       const mutationGroup = mutationsData.get(item.id_mutation) || [];
@@ -68,7 +72,6 @@ export async function GET(request: Request) {
       mutationsData.set(item.id_mutation, mutationGroup);
     });
 
-    // Find mutations that involve the target parcel and create the final records
     const relevantMutations = new Map<string, DVFRecord>();
     for (const [mutationId, items] of mutationsData.entries()) {
       const includesTarget = items.some(item => item.id_parcelle === targetParcelId);
@@ -76,14 +79,18 @@ export async function GET(request: Request) {
       if (includesTarget) {
         let totalLandArea = 0;
         let totalHabitableArea = 0;
-        const allParcelsInMutation = new Set<string>();
+        const uniqueParcels = new Map<string, ParcelInfo>();
         let primaryItem = items[0];
 
-        // This loop is scoped to a single mutation event (all items share the same mutationId)
         items.forEach(item => {
-          totalLandArea += item.surface_terrain ?? 0;
-          totalHabitableArea += item.surface_reelle_bati ?? 0;
-          allParcelsInMutation.add(item.id_parcelle);
+          if (!uniqueParcels.has(item.id_parcelle)) {
+            uniqueParcels.set(item.id_parcelle, {
+              id: item.id_parcelle,
+              sterr: item.surface_terrain ?? 0,
+            });
+            totalLandArea += item.surface_terrain ?? 0;
+            totalHabitableArea += item.surface_reelle_bati ?? 0;
+          }
         });
 
         relevantMutations.set(mutationId, {
@@ -92,9 +99,9 @@ export async function GET(request: Request) {
           valeurfonc: String(primaryItem.valeur_fonciere),
           libtypbien: primaryItem.type_local || 'Multiple',
           sbati: String(totalHabitableArea),
-          sterr: String(totalLandArea), // Use the correctly summed total land area
+          sterr: String(totalLandArea),
           l_addr: primaryItem.adresse_nom_voie,
-          l_idpar: Array.from(allParcelsInMutation),
+          l_idpar: Array.from(uniqueParcels.values()),
         });
       }
     }
