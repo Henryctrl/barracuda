@@ -1,11 +1,13 @@
 // File: src/app/hunter/_components/MapComponent.tsx
 'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import type { FilterSpecification } from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import type { Polygon, Position } from 'geojson';
+
+
 
 // --- Interfaces ---
 interface ParcelData {
@@ -36,9 +38,13 @@ interface DVFRecord {
   l_idpar: string[]; l_addr: string; geom: { coordinates: number[][][][]; }; _distance?: number;
 }
 
+
+
 interface MapComponentProps {
   activeView: 'cadastre' | 'dpe' | 'sales';
 }
+
+
 
 export function MapComponent({ activeView }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -52,7 +58,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
   const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
   const [showOtherAddresses, setShowOtherAddresses] = useState(false);
   const [dpeResults, setDpeResults] = useState<DPERecord[]>([]);
-  const [sortedDpeResults, setSortedDpeResults] = useState<DPERecord[]>([]);
   const [isDpeLoading, setIsDpeLoading] = useState(false);
   const [dpeError, setDpeError] = useState('');
   const [dpeSearchInfo, setDpeSearchInfo] = useState('');
@@ -67,6 +72,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [highlightedSaleParcels, setHighlightedSaleParcels] = useState<string[]>([]);
 
+
+
   // API Call Functions
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => {
     setIsDpeLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...');
@@ -75,12 +82,27 @@ export function MapComponent({ activeView }: MapComponentProps) {
       const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`);
       if (!response.ok) throw new Error('DPE data fetch failed');
       const data: DPERecord[] = await response.json();
-      if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; }
+      if (data.length === 0) { 
+        setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); 
+        return; 
+      }
+      
+      // Secondary sort to prioritize newest reports at same distance
+      data.sort((a, b) => {
+        const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity);
+        if (distanceDiff !== 0) return distanceDiff;
+        const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0;
+        const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0;
+        return dateB - dateA;
+      });
+
       setDpeResults(data);
       setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} VALID ASSETS FOUND.`);
     } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg);
     } finally { setIsDpeLoading(false); }
   }, []);
+
+
 
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => {
     setIsDvfLoading(true); setDvfError(''); setDvfResults([]); setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...');
@@ -94,6 +116,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
     } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DVF Error'; setDvfError(msg);
     } finally { setIsDvfLoading(false); }
   }, []);
+
+
 
   // Helper Functions
   const getDpeColor = useCallback((rating: string) => { switch (rating) { case 'A': return '#00ff00'; case 'B': return '#adff2f'; case 'C': return '#ffff00'; case 'D': return '#ffd700'; case 'E': return '#ffa500'; case 'F': return '#ff4500'; case 'G': return '#ff0000'; default: return '#808080'; } }, []);
@@ -132,7 +156,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
       dpeMarkers.current.forEach(marker => marker.remove());
       dpeMarkers.current = [];
       setHighlightedSaleParcels([]);
-      setParcelData(null); setBanAddress(null); setOtherAddresses([]); setShowOtherAddresses(false); setDpeResults([]); setSortedDpeResults([]); setDpeError(''); setDpeSearchInfo(''); setExpandedDpeId(null); setShowOtherDpeResults(false); setDvfResults([]); setDvfError(''); setDvfSearchInfo('');
+      setParcelData(null); setBanAddress(null); setOtherAddresses([]); setShowOtherAddresses(false); setDpeResults([]); setDpeError(''); setDpeSearchInfo(''); setExpandedDpeId(null); setShowOtherDpeResults(false); setDvfResults([]); setDvfError(''); setDvfSearchInfo('');
     }
   }, [selectedParcelId]);
   
@@ -174,41 +198,26 @@ export function MapComponent({ activeView }: MapComponentProps) {
     return () => { newMap.remove(); map.current = null; };
   }, [addDataLayers, throttle, findDPE, findDVF]);
 
-  useEffect(() => {
-    if (dpeResults.length > 0 && banAddress) {
-        const allParcelAddresses = [
-            banAddress.properties.label, 
-            ...otherAddresses.map(a => a.properties.label)
-        ].filter((label): label is string => !!label);
 
-        const matches = dpeResults
-            .filter(dpe => allParcelAddresses.some(addr => addr === dpe.adresse_ban && dpe.date_etablissement_dpe))
-            .sort((a, b) => new Date(b.date_etablissement_dpe).getTime() - new Date(a.date_etablissement_dpe).getTime());
-
-        if (matches.length > 0) {
-            const primaryMatch = matches[0];
-            const otherResults = dpeResults.filter(dpe => dpe.numero_dpe !== primaryMatch.numero_dpe);
-            setSortedDpeResults([primaryMatch, ...otherResults]);
-        } else {
-            setSortedDpeResults(dpeResults);
-        }
-    } else {
-        setSortedDpeResults(dpeResults);
-    }
-  }, [dpeResults, banAddress, otherAddresses]);
 
   useEffect(() => {
     const currentMap = map.current;
     if (!currentMap?.isStyleLoaded()) return;
 
+
+
     dpeMarkers.current.forEach(marker => marker.remove());
     dpeMarkers.current = [];
 
-    if (sortedDpeResults.length > 0 && activeView === 'dpe') {
-        sortedDpeResults.slice(0, 100).forEach((dpe) => {
+
+
+    if (dpeResults.length > 0 && activeView === 'dpe') {
+        dpeResults.slice(0, 100).forEach((dpe) => {
             if (!dpe._geopoint) return;
             const [lat, lon] = dpe._geopoint.split(',').map(Number);
             if (isNaN(lat) || isNaN(lon)) return;
+
+
 
             const el = document.createElement('div');
             el.innerText = dpe.etiquette_dpe;
@@ -225,11 +234,13 @@ export function MapComponent({ activeView }: MapComponentProps) {
             el.style.boxShadow = '0 0 5px black';
             el.style.cursor = 'pointer';
 
+
+
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const dpeElement = document.getElementById(`dpe-${dpe.numero_dpe}`);
                 if (dpeElement) {
-                  const isHidden = !showOtherDpeResults && sortedDpeResults.findIndex(r => r.numero_dpe === dpe.numero_dpe) > 0;
+                  const isHidden = !showOtherDpeResults && dpeResults.findIndex(r => r.numero_dpe === dpe.numero_dpe) > 0;
                   if (isHidden) {
                       setShowOtherDpeResults(true);
                   }
@@ -240,6 +251,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
                 }
             });
 
+
+
             const marker = new maptilersdk.Marker({ element: el })
                 .setLngLat([lon, lat])
                 .addTo(currentMap);
@@ -247,7 +260,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
             dpeMarkers.current.push(marker);
         });
     }
-  }, [sortedDpeResults, activeView, getDpeColor, showOtherDpeResults]);
+  }, [dpeResults, activeView, getDpeColor, showOtherDpeResults]);
   
   useEffect(() => {
     if (map.current) {
@@ -261,6 +274,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
     }
   }, [highlightedSaleParcels]);
 
+
+
   useEffect(() => {
     if (activeView === 'sales' && dvfResults.length > 0) {
       setHighlightedSaleParcels(dvfResults[0].l_idpar);
@@ -268,6 +283,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
       setHighlightedSaleParcels([]);
     }
   }, [activeView, dvfResults]);
+
+
 
   useEffect(() => {
     if (!map.current) return; const newStyle = mapStyle === 'basic-v2' ? maptilersdk.MapStyle.BASIC : maptilersdk.MapStyle.HYBRID;
@@ -278,6 +295,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
       }
     });
   }, [mapStyle]);
+
+
 
   // Render Functions
   const formatSection = (section: string) => section ? section.replace(/[0-9-]/g, '') : 'N/A';
@@ -292,32 +311,54 @@ export function MapComponent({ activeView }: MapComponentProps) {
       case 'dpe':
         if (isDpeLoading) { return <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DPE GRID...</span></div>; }
         if (dpeError) { return <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dpeError}</div>; }
-        if (sortedDpeResults.length === 0) { return dpeSearchInfo && !isDpeLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No DPE results available.</div>); }
+        if (dpeResults.length === 0) { return dpeSearchInfo && !isDpeLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No DPE results available.</div>); }
 
-        const topResult = sortedDpeResults[0];
-        const otherResults = sortedDpeResults.slice(1, 100);
+
+
+        const topResult = dpeResults[0];
+        const otherResults = dpeResults.slice(1, 100);
+
+
 
         const allParcelAddresses = [banAddress?.properties.label, ...otherAddresses.map(a => a.properties.label)].filter((label): label is string => !!label);
         
-        const allMatches = dpeResults
-            .filter(dpe => allParcelAddresses.some(addr => addr === dpe.adresse_ban && dpe.date_etablissement_dpe))
-            .sort((a, b) => new Date(b.date_etablissement_dpe).getTime() - new Date(a.date_etablissement_dpe).getTime());
-        
-        const primaryMatch = allMatches.length > 0 ? allMatches[0] : null;
+        const dpeAddressGroups = dpeResults.reduce((acc, dpe) => {
+            if(dpe.adresse_ban) {
+                acc[dpe.adresse_ban] = acc[dpe.adresse_ban] || [];
+                acc[dpe.adresse_ban].push(dpe);
+            }
+            return acc;
+        }, {} as Record<string, DPERecord[]>);
+
+
+        for (const address in dpeAddressGroups) {
+            dpeAddressGroups[address].sort((a, b) => new Date(b.date_etablissement_dpe).getTime() - new Date(a.date_etablissement_dpe).getTime());
+        }
+
+
 
         const renderDpeItem = (dpe: DPERecord, index: number) => {
             const isExpanded = expandedDpeId === dpe.numero_dpe;
-            const isPrimaryMatch = dpe.numero_dpe === primaryMatch?.numero_dpe;
-            const isPrevMatch = !isPrimaryMatch && allParcelAddresses.some(addr => addr === dpe.adresse_ban && dpe.date_etablissement_dpe);
+            
+            // "ADDRESS MATCH" criteria: DPE address matches one of the parcel's addresses
+            const isAddressMatch = allParcelAddresses.some(addr => addr === dpe.adresse_ban);
+
+
+
+            // "PREV. REPORT" criteria: More than one DPE exists for this exact adresse_ban, and this is not the most recent one.
+            const group = dpeAddressGroups[dpe.adresse_ban] || [];
+            const isPrevMatch = group.length > 1 && group[0].numero_dpe !== dpe.numero_dpe;
+
+
 
             return (
                 <div key={dpe.numero_dpe} id={`dpe-${dpe.numero_dpe}`} className={`p-3 rounded-lg transition-all ${expandedDpeId === dpe.numero_dpe ? 'bg-accent-cyan/10' : ''}`}>
                     <div className="flex justify-between items-start mb-2">
                         <div className={`text-sm font-bold ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}>
-                            {index === 0 ? (isPrimaryMatch ? 'Primary Match' : 'Closest Result') : `Result #${index + 1}`}: ~{Math.round(dpe._distance ?? 0)}m
+                            {index === 0 ? 'Closest Result' : `Result #${index + 1}`}: ~{Math.round(dpe._distance ?? 0)}m
                         </div>
-                        <div className="flex gap-2">
-                            {isPrimaryMatch && <span className="text-xs font-bold bg-green-500/30 text-green-300 px-2 py-1 rounded-full">ADDRESS MATCH</span>}
+                        <div className="flex flex-col items-end gap-1">
+                            {isAddressMatch && <span className="text-xs font-bold bg-green-500/30 text-green-300 px-2 py-1 rounded-full">ADDRESS MATCH</span>}
                             {isPrevMatch && <span className="text-xs font-bold bg-yellow-500/30 text-yellow-300 px-2 py-1 rounded-full">PREV. REPORT</span>}
                         </div>
                     </div>
@@ -330,10 +371,14 @@ export function MapComponent({ activeView }: MapComponentProps) {
                         <span className="font-semibold text-text-primary/80">ID:</span><span className="font-mono text-white text-right text-xs">{dpe.numero_dpe}</span>
                     </div>
 
+
+
                     <button onClick={() => setExpandedDpeId(isExpanded ? null : dpe.numero_dpe)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 mt-3">
                         {isExpanded ? 'Hide Details' : 'Show Details'}
                         {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
+
+
 
                     {isExpanded && (
                         <div className="mt-3 pt-3 border-t border-dashed border-accent-cyan/20 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -349,6 +394,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
             );
         };
 
+
+
         return (
             <div>
                 {dpeSearchInfo && !isDpeLoading && (<div className="p-3 mb-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>)}
@@ -357,7 +404,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
                     {otherResults.length > 0 && (
                         <div className="pt-3 mt-3 border-t border-accent-cyan/50">
                             <button onClick={() => setShowOtherDpeResults(!showOtherDpeResults)} className="w-full text-center text-accent-cyan hover:text-accent-magenta flex items-center justify-center gap-2 font-bold">
-                                {showOtherDpeResults ? 'Hide Other Results' : `Show Prev/Other Results`}
+                                {showOtherDpeResults ? 'Hide Other Results' : `Show ${otherResults.length} Other Nearby Results`}
                                 {showOtherDpeResults ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                             </button>
                             {showOtherDpeResults && (
@@ -375,10 +422,14 @@ export function MapComponent({ activeView }: MapComponentProps) {
             </div>
         );
 
+
+
       case 'sales': return ( <div> {isDvfLoading && <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DVF GRID...</span></div>} {dvfError && <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dvfError}</div>} {dvfSearchInfo && !isDvfLoading && <div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dvfSearchInfo}</div>} {dvfResults.length > 0 && ( <div className="space-y-2"> {dvfResults.slice(0, 10).map((sale, index) => { const isHighlighted = highlightedSaleParcels.join(',') === sale.l_idpar.join(','); return ( <div key={sale.idmutinvar} onClick={() => setHighlightedSaleParcels(sale.l_idpar)} className={`w-full text-left p-2 rounded-md transition-all cursor-pointer hover:bg-accent-yellow/20 focus:outline-none focus:ring-2 focus:ring-accent-yellow ${isHighlighted ? 'bg-accent-yellow/20 ring-2 ring-accent-yellow' : ''}`} role="button" tabIndex={0} > <div className={`pt-2 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}> <div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}> SALE: {new Date(sale.datemut).toLocaleDateString()} </div> <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"> <span className="font-semibold text-text-primary/80">PRICE:</span><span className="font-bold text-white text-right">{parseFloat(sale.valeurfonc).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) || 'N/A'}</span> <span className="font-semibold text-text-primary/80">HABITABLE AREA:</span><span className="font-bold text-white text-right">{sale.sbati ? `${parseFloat(sale.sbati)} m²` : 'N/A'}</span> <span className="font-semibold text-text-primary/80">LAND AREA:</span><span className="font-bold text-white text-right">{sale.sterr ? `${parseFloat(sale.sterr)} m²` : 'N/A'}</span> <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/20 pt-2">CADASTRAL PARCELS ({sale.l_idpar.length}):</span> <div className="col-span-2 text-right font-mono text-xs text-accent-cyan/80 space-y-1"> {sale.l_idpar.map(id => <div key={id}>{id}</div>)} </div> </div> </div> </div> ); })} </div> )} </div> );
       default: return null;
     }
   };
+
+
 
   return (
     <div className="relative h-full w-full">
