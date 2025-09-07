@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import type { FilterSpecification } from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
-import { Loader2, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus } from 'lucide-react'; // Added Minus and Plus icons
 import type { Polygon, Position } from 'geojson';
 
 // --- Interfaces ---
@@ -69,6 +69,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
   const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const [highlightedSaleParcels, setHighlightedSaleParcels] = useState<ParcelInfo[]>([]);
+  // ADDED: State to manage the panel's minimized/maximized view
+  const [isPanelMinimized, setIsPanelMinimized] = useState(false);
 
   // API Call Functions
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => {
@@ -147,6 +149,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
       dpeMarkers.current = [];
       setHighlightedSaleParcels([]);
       setParcelData(null); setBanAddress(null); setOtherAddresses([]); setShowOtherAddresses(false); setDpeResults([]); setDpeError(''); setDpeSearchInfo(''); setExpandedDpeId(null); setShowOtherDpeResults(false); setDvfResults([]); setDvfError(''); setDvfSearchInfo('');
+      // ADDED: Reset panel view state when closed
+      setIsPanelMinimized(false);
     }
   }, [selectedParcelId]);
   
@@ -161,7 +165,8 @@ export function MapComponent({ activeView }: MapComponentProps) {
          if (e.features && e.features.length > 0) {
            const parcelFeature = e.features[0]; const parcelId = parcelFeature.properties?.id as string;
            if (parcelId) {
-             setHighlightedSaleParcels([]); setShowOtherDpeResults(false); setExpandedDpeId(null);
+             // Reset state for new selection
+             setHighlightedSaleParcels([]); setShowOtherDpeResults(false); setExpandedDpeId(null); setIsPanelMinimized(false);
              newMap.setFilter('parcelles-hover', ['==', 'id', '']); setSelectedParcelId(String(parcelId)); const bounds = new maptilersdk.LngLatBounds();
              const coordinates = (parcelFeature.geometry as Polygon).coordinates[0] as Position[]; coordinates.forEach((coord) => bounds.extend(coord as [number, number])); const center = bounds.getCenter().toArray() as [number, number];
              setIsLoading(true); setParcelData(null); setBanAddress(null); setOtherAddresses([]); setDpeResults([]); setDvfResults([]);
@@ -373,7 +378,6 @@ export function MapComponent({ activeView }: MapComponentProps) {
                 <span className="font-semibold text-text-primary/80">PROPERTY TYPE:</span><span className="font-bold text-white text-right">{sale.libtypbien || 'N/A'}</span>
                 <span className="font-semibold text-text-primary/80">HABITABLE AREA:</span><span className="font-bold text-white text-right">{sale.sbati ? `${parseFloat(sale.sbati)} m²` : 'N/A'}</span> 
                 
-                {/* UPDATED: Display total area ONLY if there's more than one parcel */}
                 {sale.l_idpar.length <= 1 && (
                     <span className="font-semibold text-text-primary/80">LAND AREA:</span>
                 )}
@@ -412,8 +416,24 @@ export function MapComponent({ activeView }: MapComponentProps) {
       </div>
       {(selectedParcelId) && (
         <div className="absolute top-20 sm:top-4 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
-          <div className="flex items-center justify-between"> <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]"> {getPanelTitle()} </h3> <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan"><X size={20} /></button> </div>
-          <div className="mt-4 border-t border-dashed border-accent-cyan/50 pt-4"> {renderPanelContent()} </div>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]"> {getPanelTitle()} </h3>
+            {/* ADDED: Group of control buttons */}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setIsPanelMinimized(!isPanelMinimized)} className="text-accent-cyan/70 hover:text-accent-cyan">
+                {isPanelMinimized ? <Plus size={20} /> : <Minus size={20} />}
+              </button>
+              <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+          {/* ADDED: Conditional rendering for the panel content */}
+          {!isPanelMinimized && (
+            <div className="mt-4 border-t border-dashed border-accent-cyan/50 pt-4"> 
+              {renderPanelContent()} 
+            </div>
+          )}
         </div>
       )}
       <button onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')} className="absolute top-4 right-12 z-10 rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark">
