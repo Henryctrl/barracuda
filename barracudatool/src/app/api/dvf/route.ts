@@ -80,7 +80,8 @@ export async function GET(request: Request) {
         let totalLandArea = 0;
         let totalHabitableArea = 0;
         const uniqueParcels = new Map<string, ParcelInfo>();
-        let primaryItem = items[0];
+        // CORRECTED: Changed 'let' to 'const' as 'primaryItem' is never reassigned
+        const primaryItem = items[0];
 
         items.forEach(item => {
           if (!uniqueParcels.has(item.id_parcelle)) {
