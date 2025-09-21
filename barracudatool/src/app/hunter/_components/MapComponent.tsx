@@ -6,6 +6,7 @@ import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus } from 'lucide-react'; // Added Minus and Plus icons
 import type { Polygon, Position } from 'geojson';
 
+
 // --- Interfaces ---
 interface ParcelData {
   idu: string; contenance: number; code_insee: string; section: string; code_dep: string; numero: string; nom_com: string; [key: string]: unknown;
@@ -40,9 +41,11 @@ interface DVFRecord {
   l_addr: string; geom: { coordinates: number[][][][]; }; _distance?: number;
 }
 
+
 interface MapComponentProps {
   activeView: 'cadastre' | 'dpe' | 'sales';
 }
+
 
 export function MapComponent({ activeView }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -71,6 +74,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
   const [highlightedSaleParcels, setHighlightedSaleParcels] = useState<ParcelInfo[]>([]);
   // ADDED: State to manage the panel's minimized/maximized view
   const [isPanelMinimized, setIsPanelMinimized] = useState(false);
+
 
   // API Call Functions
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => {
@@ -182,7 +186,37 @@ export function MapComponent({ activeView }: MapComponentProps) {
                   setBanAddress(bestResult); setOtherAddresses(addressFeatures.slice(1, 6));
                   const postalCode = bestResult.properties.postcode; const [banLon, banLat] = bestResult.geometry.coordinates;
                   if (postalCode && banLat && banLon) { findDPE(postalCode, banLat, banLon); } else { setDpeError('Address data incomplete for DPE scan.'); }
-                } else { setDpeError('No address found for parcel.'); }
+                } else {
+                  // No address found, but try to get DPE results using the parcel's INSEE code.
+                  setDpeSearchInfo('No address found. Attempting DPE scan via geographic area...');
+                  const parcelInseeCode = parcelJson.code_insee;
+                  if (parcelInseeCode) {
+                    try {
+                      // Use the geo.api.gouv.fr to find postal codes for the given INSEE code.
+                      const geoResponse = await fetch(`https://geo.api.gouv.fr/communes/${parcelInseeCode}?fields=codesPostaux`);
+                      if (geoResponse.ok) {
+                        const geoData = await geoResponse.json();
+                        const postalCode = geoData.codesPostaux?.[0]; // Use the first postal code found.
+                        if (postalCode) {
+                          // If a postal code is found, perform the DPE search using the parcel's center coordinates.
+                          findDPE(postalCode, center[1], center[0]);
+                        } else {
+                          // Inform the user if no postal code could be found for the area.
+                          setDpeSearchInfo('Could not find a postal code for this parcel to perform DPE scan.');
+                        }
+                      } else {
+                        // Handle cases where the Geo API call fails.
+                        throw new Error(`Geo API failed with status ${geoResponse.status}`);
+                      }
+                    } catch (geoError) {
+                      console.error("Fallback DPE search failed:", geoError);
+                      setDpeError('An error occurred while trying to find a postal code for DPE scan.');
+                    }
+                  } else {
+                    // Inform the user if the parcel data itself is missing the necessary INSEE code.
+                    setDpeSearchInfo('INSEE code is missing for this parcel, cannot perform DPE scan.');
+                  }
+                }
                 if (map.current) { map.current.setFilter('parcelles-click-fill', ['==', 'id', parcelId]); map.current.setFilter('parcelles-click-line', ['==', 'id', parcelId]); }
              } catch (error) { console.error("Failed to fetch details:", error); const msg = error instanceof Error ? error.message : 'Unknown error'; setParcelData(null); setBanAddress(null); setDpeError(msg); setDvfError(msg);
              } finally { setIsLoading(false); }
@@ -274,7 +308,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
   // Render Functions
   const formatSection = (section: string) => section ? section.replace(/[0-9-]/g, '') : 'N/A';
   const createGoogleMapsLink = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
-  const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: return 'DETAILS'; } };
+  const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: 'DETAILS'; } };
   
   const renderPanelContent = () => {
     if (isLoading) { return <div className="flex items-center justify-center gap-2 text-text-primary"><Loader2 className="animate-spin" size={16} /><span>INTERROGATING GRID...</span></div>; }
@@ -384,6 +418,7 @@ export function MapComponent({ activeView }: MapComponentProps) {
                 {sale.l_idpar.length <= 1 && (
                     <span className="font-bold text-white text-right">{sale.sterr ? `${parseFloat(sale.sterr)} m²` : 'N/A'}</span> 
                 )}
+
 
                 <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/20 pt-2">CADASTRAL PARCELS ({sale.l_idpar.length}):</span> 
                 <div className="col-span-2 text-right font-mono text-xs text-accent-cyan/80 space-y-1"> 
