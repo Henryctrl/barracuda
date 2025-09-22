@@ -1,4 +1,3 @@
-// src/app/hunter/page.tsx
 'use client';
 import { useState } from 'react';
 import { Layers, FileText, Home, DollarSign, Search } from 'lucide-react';
@@ -8,6 +7,17 @@ import { MapComponent } from './_components/MapComponent';
 export default function HunterPage() {
   const [activeView, setActiveView] = useState<'cadastre' | 'dpe' | 'sales'>('cadastre');
   const [isSearchMode, setIsSearchMode] = useState(false);
+
+  // CORRECTED: Added event parameter and preventDefault()
+  const handleToggleSearchMode = (e: React.MouseEvent) => {
+    e.preventDefault(); // This stops the page refresh
+    setIsSearchMode(true); // Always enter search mode when this button is clicked
+  };
+
+  const handleViewChange = (view: 'cadastre' | 'dpe' | 'sales') => {
+    setActiveView(view);
+    setIsSearchMode(false); // Exit search mode when changing main views
+  };
 
   return (
     <div className="flex flex-col sm:flex-row h-screen w-full bg-background-dark font-sans text-text-primary">
@@ -23,7 +33,7 @@ export default function HunterPage() {
         <nav className="flex flex-row sm:flex-col items-center justify-center gap-4 sm:gap-8">
           
           <button
-            onClick={() => { setActiveView('cadastre'); setIsSearchMode(false); }}
+            onClick={() => handleViewChange('cadastre')}
             title="Cadastre"
             className={`group relative rounded-lg p-3 transition-all hover:scale-110 ${
               activeView === 'cadastre' && !isSearchMode
@@ -38,7 +48,7 @@ export default function HunterPage() {
           </button>
           
           <button
-            onClick={() => { setActiveView('dpe'); setIsSearchMode(false); }}
+            onClick={() => handleViewChange('dpe')}
             title="DPE"
             className={`group relative rounded-lg p-3 transition-all hover:scale-110 ${
               activeView === 'dpe' && !isSearchMode
@@ -64,7 +74,7 @@ export default function HunterPage() {
           </Link>
           
           <button
-            onClick={() => { setActiveView('sales'); setIsSearchMode(false); }}
+            onClick={() => handleViewChange('sales')}
             title="Sales Data"
             className={`group relative rounded-lg p-3 transition-all hover:scale-110 ${
               activeView === 'sales' && !isSearchMode
@@ -79,7 +89,7 @@ export default function HunterPage() {
           </button>
 
           <button
-            onClick={() => setIsSearchMode(true)}
+            onClick={handleToggleSearchMode}
             title="Area Search"
             className={`group relative rounded-lg p-3 transition-all hover:scale-110 ${
               isSearchMode
