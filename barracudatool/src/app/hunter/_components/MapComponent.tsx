@@ -6,9 +6,8 @@ import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus } from 'lucide-react';
 import type { Polygon, Position } from 'geojson';
 
-// Import new components and types
-import { SearchControl, SearchParams } from './SearchControl';
-import { SearchResultsPanel } from './SearchResultsPanel';
+// Import NEW unified panel and types
+import { SearchPanel, SearchParams } from './SearchPanel';
 import { useSearchCircle } from '../../../hooks/useSearchCircle';
 import { ParcelSearchResult, DPERecord as DpeSearchResult } from '../types';
 
@@ -64,13 +63,12 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [isPanelMinimized, setIsPanelMinimized] = useState(false);
   
   const [searchCenter, setSearchCenter] = useState<[number, number]>([2.3522, 48.8566]);
-  const [searchRadiusKm, setSearchRadiusKm] = useState(2);
-
-  // New state for search results
+  
+  // State for search logic
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<(DpeSearchResult | ParcelSearchResult)[]>([]);
-  const [searchType, setSearchType] = useState<'landSize' | 'dpe'>('landSize');
   const [resultMarkers, setResultMarkers] = useState<maptilersdk.Marker[]>([]);
+  const [searchRadiusKm, setSearchRadiusKm] = useState(2); // Radius now managed here
 
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => { setIsLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...'); try { setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`); const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`); if (!response.ok) throw new Error('DPE data fetch failed'); const data: DPERecord[] = await response.json(); if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; } data.sort((a, b) => { const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity); if (distanceDiff !== 0) return distanceDiff; const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0; const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0; return dateB - dateA; }); setDpeResults(data); setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} VALID ASSETS FOUND.`); } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg); } finally { setIsLoading(false); } }, []);
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => { setIsDvfLoading(true); setDvfError(''); setDvfResults([]); setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...'); try { setDvfSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR PARCEL ${targetParcelId}...`); const response = await fetch(`/api/dvf?inseeCode=${inseeCode}&targetParcelId=${targetParcelId}`); if (!response.ok) throw new Error('DVF data fetch failed'); const filteredSales: DVFRecord[] = await response.json(); if (filteredSales.length === 0) { setDvfSearchInfo(`NO SALES HISTORY FOUND FOR THIS SPECIFIC PARCEL.`); } else { setDvfResults(filteredSales); setDvfSearchInfo(`ANALYSIS COMPLETE. ${filteredSales.length} HISTORICAL SALES FOUND.`); } } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DVF Error'; setDvfError(msg); } finally { setIsDvfLoading(false); } }, []);
@@ -95,15 +93,13 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     layers.forEach(layer => { if (!currentMap.getLayer(layer.id)) currentMap.addLayer(layer); });
   }, []);
   
-  const resetSearchCenter = () => { if (map.current) { const currentCenter = map.current.getCenter(); setSearchCenter([currentCenter.lng, currentCenter.lat]); map.current.flyTo({ center: currentCenter, zoom: map.current.getZoom() }); } };
-  
   useSearchCircle(map.current, isSearchMode, searchCenter, searchRadiusKm, setSearchCenter);
   
   const handleApiSearch = async (params: SearchParams) => {
     if (!map.current) return;
     setIsSearching(true);
     setSearchResults([]);
-    setSearchType(params.type);
+    setSearchRadiusKm(params.radiusKm); // Update circle radius from search panel
     resultMarkers.forEach(marker => marker.remove());
     setResultMarkers([]);
 
@@ -135,20 +131,13 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
 
         const newMarkers: maptilersdk.Marker[] = [];
         data.forEach((res: any) => {
-            // **FIXED**: Initialize lng/lat as undefined
-            let lng: number | undefined;
-            let lat: number | undefined;
-
-            if (res.center) { 
-                [lng, lat] = res.center;
-            } else if (res._geopoint) { 
+            let lng: number | undefined, lat: number | undefined;
+            if (res.center) { [lng, lat] = res.center; } 
+            else if (res._geopoint) { 
                 const parts = res._geopoint.split(',').map(Number);
-                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                    [lat, lng] = parts;
-                }
+                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { [lat, lng] = parts; }
             }
 
-            // **FIXED**: Check that lng/lat are defined before using
             if (lng !== undefined && lat !== undefined) {
                 const marker = new maptilersdk.Marker({ color: '#ff00ff' }).setLngLat([lng, lat]).addTo(map.current!);
                 newMarkers.push(marker);
@@ -164,24 +153,13 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   
   const handleResultClick = (result: DpeSearchResult | ParcelSearchResult) => {
     if (!map.current) return;
-    
-    // **FIXED**: Initialize lng/lat as undefined
-    let lng: number | undefined;
-    let lat: number | undefined;
-
-    if ('center' in result) { 
-        [lng, lat] = result.center;
-    } else if ('_geopoint' in result) { 
+    let lng: number | undefined, lat: number | undefined;
+    if ('center' in result) { [lng, lat] = result.center; } 
+    else if ('_geopoint' in result) { 
         const parts = result._geopoint.split(',').map(Number);
-        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            [lat, lng] = parts;
-        }
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { [lat, lng] = parts; }
     }
-    
-    // **FIXED**: Check that lng/lat are defined before using
-    if(lng !== undefined && lat !== undefined) { 
-        map.current.flyTo({ center: [lng, lat], zoom: 18 }); 
-    }
+    if(lng !== undefined && lat !== undefined) { map.current.flyTo({ center: [lng, lat], zoom: 18 }); }
   };
   
   useEffect(() => { if (isSearchMode) setSelectedParcelId(null); }, [isSearchMode]);
@@ -320,24 +298,19 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         </div>
       )}
 
-      {isSearchMode && !isSearching && searchResults.length === 0 && (
-        <SearchControl
-          radiusKm={searchRadiusKm}
-          setRadiusKm={setSearchRadiusKm}
-          resetCenter={resetSearchCenter}
-          onClose={() => setIsSearchMode(false)}
+      {isSearchMode && (
+        <SearchPanel
+          onClose={() => {
+            setIsSearchMode(false);
+            setSearchResults([]);
+            resultMarkers.forEach(marker => marker.remove());
+            setResultMarkers([]);
+          }}
           onSearch={handleApiSearch}
           center={searchCenter}
-        />
-      )}
-      
-      {(isSearching || searchResults.length > 0) && isSearchMode && (
-        <SearchResultsPanel 
-            isLoading={isSearching}
-            results={searchResults}
-            onClose={() => setSearchResults([])}
-            onResultClick={handleResultClick}
-            searchType={searchType}
+          results={searchResults}
+          isLoading={isSearching}
+          onResultClick={handleResultClick}
         />
       )}
 
