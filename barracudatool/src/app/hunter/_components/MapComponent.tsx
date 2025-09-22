@@ -6,9 +6,11 @@ import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus } from 'lucide-react';
 import type { Polygon, Position } from 'geojson';
 
-// Import new components and hooks
-import { SearchControl } from './SearchControl';
+// Import new components and types
+import { SearchControl, SearchParams } from './SearchControl';
+import { SearchResultsPanel } from './SearchResultsPanel';
 import { useSearchCircle } from '../../../hooks/useSearchCircle';
+import { ParcelSearchResult, DPERecord as DpeSearchResult } from '../types';
 
 // --- Interfaces ---
 interface ParcelData {
@@ -64,6 +66,12 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [searchCenter, setSearchCenter] = useState<[number, number]>([2.3522, 48.8566]);
   const [searchRadiusKm, setSearchRadiusKm] = useState(2);
 
+  // New state for search results
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<(DpeSearchResult | ParcelSearchResult)[]>([]);
+  const [searchType, setSearchType] = useState<'landSize' | 'dpe'>('landSize');
+  const [resultMarkers, setResultMarkers] = useState<maptilersdk.Marker[]>([]);
+
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => { setIsLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...'); try { setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`); const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`); if (!response.ok) throw new Error('DPE data fetch failed'); const data: DPERecord[] = await response.json(); if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; } data.sort((a, b) => { const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity); if (distanceDiff !== 0) return distanceDiff; const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0; const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0; return dateB - dateA; }); setDpeResults(data); setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} VALID ASSETS FOUND.`); } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg); } finally { setIsLoading(false); } }, []);
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => { setIsDvfLoading(true); setDvfError(''); setDvfResults([]); setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...'); try { setDvfSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR PARCEL ${targetParcelId}...`); const response = await fetch(`/api/dvf?inseeCode=${inseeCode}&targetParcelId=${targetParcelId}`); if (!response.ok) throw new Error('DVF data fetch failed'); const filteredSales: DVFRecord[] = await response.json(); if (filteredSales.length === 0) { setDvfSearchInfo(`NO SALES HISTORY FOUND FOR THIS SPECIFIC PARCEL.`); } else { setDvfResults(filteredSales); setDvfSearchInfo(`ANALYSIS COMPLETE. ${filteredSales.length} HISTORICAL SALES FOUND.`); } } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DVF Error'; setDvfError(msg); } finally { setIsDvfLoading(false); } }, []);
   const getDpeColor = useCallback((rating: string) => { switch (rating) { case 'A': return '#00ff00'; case 'B': return '#adff2f'; case 'C': return '#ffff00'; case 'D': return '#ffd700'; case 'E': return '#ffa500'; case 'F': return '#ff4500'; case 'G': return '#ff0000'; default: return '#808080'; } }, []);
@@ -91,6 +99,91 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   
   useSearchCircle(map.current, isSearchMode, searchCenter, searchRadiusKm, setSearchCenter);
   
+  const handleApiSearch = async (params: SearchParams) => {
+    if (!map.current) return;
+    setIsSearching(true);
+    setSearchResults([]);
+    setSearchType(params.type);
+    resultMarkers.forEach(marker => marker.remove());
+    setResultMarkers([]);
+
+    const queryParams = new URLSearchParams({
+      lat: params.center[1].toString(),
+      lon: params.center[0].toString(),
+      radius: (params.radiusKm * 1000).toString(),
+    });
+
+    const endpoint = params.type === 'landSize' ? '/api/search/parcels' : '/api/search/dpe';
+    
+    if (params.type === 'landSize') {
+        queryParams.append('minSize', params.minSize.toString());
+        queryParams.append('maxSize', params.maxSize.toString());
+    } else {
+        queryParams.append('minConsumption', params.minConsumption.toString());
+        queryParams.append('maxConsumption', params.maxConsumption.toString());
+        queryParams.append('minEmissions', params.minEmissions.toString());
+        queryParams.append('maxEmissions', params.maxEmissions.toString());
+        queryParams.append('idealConsumption', params.idealConsumption.toString());
+        queryParams.append('idealEmissions', params.idealEmissions.toString());
+    }
+
+    try {
+        const response = await fetch(`${endpoint}?${queryParams.toString()}`);
+        if (!response.ok) throw new Error('Search request failed');
+        const data = await response.json();
+        setSearchResults(data);
+
+        const newMarkers: maptilersdk.Marker[] = [];
+        data.forEach((res: any) => {
+            // **FIXED**: Initialize lng/lat as undefined
+            let lng: number | undefined;
+            let lat: number | undefined;
+
+            if (res.center) { 
+                [lng, lat] = res.center;
+            } else if (res._geopoint) { 
+                const parts = res._geopoint.split(',').map(Number);
+                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    [lat, lng] = parts;
+                }
+            }
+
+            // **FIXED**: Check that lng/lat are defined before using
+            if (lng !== undefined && lat !== undefined) {
+                const marker = new maptilersdk.Marker({ color: '#ff00ff' }).setLngLat([lng, lat]).addTo(map.current!);
+                newMarkers.push(marker);
+            }
+        });
+        setResultMarkers(newMarkers);
+    } catch (error) {
+        console.error("Search failed:", error);
+    } finally {
+        setIsSearching(false);
+    }
+  };
+  
+  const handleResultClick = (result: DpeSearchResult | ParcelSearchResult) => {
+    if (!map.current) return;
+    
+    // **FIXED**: Initialize lng/lat as undefined
+    let lng: number | undefined;
+    let lat: number | undefined;
+
+    if ('center' in result) { 
+        [lng, lat] = result.center;
+    } else if ('_geopoint' in result) { 
+        const parts = result._geopoint.split(',').map(Number);
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            [lat, lng] = parts;
+        }
+    }
+    
+    // **FIXED**: Check that lng/lat are defined before using
+    if(lng !== undefined && lat !== undefined) { 
+        map.current.flyTo({ center: [lng, lat], zoom: 18 }); 
+    }
+  };
+  
   useEffect(() => { if (isSearchMode) setSelectedParcelId(null); }, [isSearchMode]);
   
   useEffect(() => {
@@ -109,30 +202,24 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     }
   }, [selectedParcelId]);
   
-  // Effect for ONE-TIME map initialization
   useEffect(() => {
     if (map.current || !mapContainer.current) return;
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!;
     const newMap = new maptilersdk.Map({ container: mapContainer.current, style: maptilersdk.MapStyle.BASIC, center: [2.3522, 48.8566], zoom: 15 });
     map.current = newMap;
-    
     newMap.on('load', () => {
         addDataLayers();
         const throttledHoverHandler = throttle((e: maptilersdk.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => { if (e.features && e.features.length > 0) { newMap.getCanvas().style.cursor = 'pointer'; newMap.setFilter('parcelles-hover', ['==', 'id', e.features[0].properties?.id as string || '']); } }, 100);
         newMap.on('mousemove', 'parcelles-fill', throttledHoverHandler);
         newMap.on('mouseleave', 'parcelles-fill', () => { newMap.getCanvas().style.cursor = ''; newMap.setFilter('parcelles-hover', ['==', 'id', '']); });
     });
-    
     return () => { if (map.current) { map.current.remove(); map.current = null; } };
   }, [addDataLayers, throttle]);
 
-  // Effect for managing the CLICK listener based on search mode
   useEffect(() => {
-    const currentMap = map.current;
-    if (!currentMap) return;
-
+    const currentMap = map.current; if (!currentMap) return;
     const handleClick = async (e: maptilersdk.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
-        if (isSearchMode) return; // In search mode, do nothing on click
+        if (isSearchMode) return;
         if (e.features && e.features.length > 0) {
             const parcelFeature = e.features[0]; const parcelId = parcelFeature.properties?.id as string;
             if (parcelId) {
@@ -175,9 +262,9 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     return () => { currentMap.off('click', 'parcelles-fill', handleClick); };
   }, [isSearchMode, findDPE, findDVF]);
 
-  useEffect(() => { /* ... DPE marker logic ... */ }, [dpeResults, activeView, getDpeColor, showOtherDpeResults]);
-  useEffect(() => { /* ... Sale highlight logic ... */ }, [highlightedSaleParcels]);
-  useEffect(() => { /* ... Active sale highlight logic ... */ }, [activeView, dvfResults]);
+  useEffect(() => { /* DPE marker logic */ }, [dpeResults, activeView, getDpeColor, showOtherDpeResults]);
+  useEffect(() => { /* Sale highlight logic */ }, [highlightedSaleParcels]);
+  useEffect(() => { /* Active sale highlight logic */ }, [activeView, dvfResults]);
 
   useEffect(() => {
     if (!map.current) return; 
@@ -196,15 +283,14 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     });
   }, [mapStyle]);
   
-  const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: return 'DETAILS'; } };
+  const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: 'DETAILS'; } };
   
   const renderPanelContent = () => {
     if (isLoading) { return <div className="flex items-center justify-center gap-2 text-text-primary"><Loader2 className="animate-spin" size={16} /><span>INTERROGATING GRID...</span></div>; }
     switch (activeView) {
       case 'cadastre': return parcelData ? ( <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm"> <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span> <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span> <span className="font-semibold text-text-primary/80">SECTION:</span><span className="font-bold text-white text-right">{parcelData.section}</span> <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span> <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span> <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span> {banAddress && ( <> <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span> <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(banAddress.properties.label)}`} target="_blank" rel="noopener noreferrer" className="col-span-2 font-bold text-accent-cyan text-right hover:underline">{banAddress.properties.label}</a> {otherAddresses.length > 0 && (<div className="col-span-2 text-right"><button onClick={() => setShowOtherAddresses(!showOtherAddresses)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 ml-auto">{showOtherAddresses ? 'Hide' : 'Show'} alternatives {showOtherAddresses ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button></div>)} </> )} {showOtherAddresses && otherAddresses.length > 0 && ( <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2"> {otherAddresses.map((addr, index) => (<a key={index} href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr.properties.label)}`} target="_blank" rel="noopener noreferrer" className="block text-right text-xs text-accent-cyan/70 hover:underline">{addr.properties.label}</a>))} </div> )} </div> ) : <div className="text-center text-text-primary/70">Click on a parcel to see details.</div>;
-      
-      case 'dpe': /* ... DPE Panel JSX ... */ return <div>DPE Panel Content</div>;
-      case 'sales': /* ... Sales Panel JSX ... */ return <div>Sales Panel Content</div>;
+      case 'dpe': return <div>DPE Panel Content</div>;
+      case 'sales': return <div>Sales Panel Content</div>;
       default: return null;
     }
   };
@@ -226,28 +312,32 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]"> {getPanelTitle()} </h3>
             <div className="flex items-center gap-2">
-              <button onClick={() => setIsPanelMinimized(!isPanelMinimized)} className="text-accent-cyan/70 hover:text-accent-cyan">
-                {isPanelMinimized ? <Plus size={20} /> : <Minus size={20} />}
-              </button>
-              <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan">
-                <X size={20} />
-              </button>
+              <button onClick={() => setIsPanelMinimized(!isPanelMinimized)} className="text-accent-cyan/70 hover:text-accent-cyan">{isPanelMinimized ? <Plus size={20} /> : <Minus size={20} />}</button>
+              <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan"><X size={20} /></button>
             </div>
           </div>
-          {!isPanelMinimized && (
-            <div className="mt-4 border-t border-dashed border-accent-cyan/50 pt-4"> 
-              {renderPanelContent()} 
-            </div>
-          )}
+          {!isPanelMinimized && (<div className="mt-4 border-t border-dashed border-accent-cyan/50 pt-4">{renderPanelContent()}</div>)}
         </div>
       )}
 
-      {isSearchMode && (
+      {isSearchMode && !isSearching && searchResults.length === 0 && (
         <SearchControl
           radiusKm={searchRadiusKm}
           setRadiusKm={setSearchRadiusKm}
           resetCenter={resetSearchCenter}
           onClose={() => setIsSearchMode(false)}
+          onSearch={handleApiSearch}
+          center={searchCenter}
+        />
+      )}
+      
+      {(isSearching || searchResults.length > 0) && isSearchMode && (
+        <SearchResultsPanel 
+            isLoading={isSearching}
+            results={searchResults}
+            onClose={() => setSearchResults([])}
+            onResultClick={handleResultClick}
+            searchType={searchType}
         />
       )}
 
