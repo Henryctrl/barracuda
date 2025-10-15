@@ -47,7 +47,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
   const [showOtherAddresses, setShowOtherAddresses] = useState(false);
   const [dpeResults, setDpeResults] = useState<DPERecord[]>([]);
-  const [isDpeLoading, setIsDpeLoading] = useState(false);
+  const [isDpeLoading] = useState(false); // FIX: Removed setIsDpeLoading
   const [dpeError, setDpeError] = useState('');
   const [dpeSearchInfo, setDpeSearchInfo] = useState('');
   const [showOtherDpeResults, setShowOtherDpeResults] = useState(false);
@@ -104,15 +104,15 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     const endpoint = params.type === 'landSize' ? '/api/search/parcels' : '/api/search/dpe';
     
     if (params.type === 'landSize') {
-        queryParams.append('minSize', params.minSize.toString());
-        queryParams.append('maxSize', params.maxSize.toString());
+        queryParams.append('minSize', params.minSize!.toString());
+        queryParams.append('maxSize', params.maxSize!.toString());
     } else {
-        queryParams.append('minConsumption', params.minConsumption.toString());
-        queryParams.append('maxConsumption', params.maxConsumption.toString());
-        queryParams.append('minEmissions', params.minEmissions.toString());
-        queryParams.append('maxEmissions', params.maxEmissions.toString());
-        queryParams.append('idealConsumption', params.idealConsumption.toString());
-        queryParams.append('idealEmissions', params.idealEmissions.toString());
+        queryParams.append('minConsumption', params.minConsumption!.toString());
+        queryParams.append('maxConsumption', params.maxConsumption!.toString());
+        queryParams.append('minEmissions', params.minEmissions!.toString());
+        queryParams.append('maxEmissions', params.maxEmissions!.toString());
+        queryParams.append('idealConsumption', params.idealConsumption!.toString());
+        queryParams.append('idealEmissions', params.idealEmissions!.toString());
     }
 
     try {
@@ -122,10 +122,11 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         setSearchResults(data);
 
         const newMarkers: maptilersdk.Marker[] = [];
-        data.forEach((res: any) => {
+        // FIX: Replaced 'any' with the correct discriminated union type
+        data.forEach((res: DpeSearchResult | ParcelSearchResult) => {
             let lng: number | undefined, lat: number | undefined;
-            if (res.center) { [lng, lat] = res.center; } 
-            else if (res._geopoint) { const parts = res._geopoint.split(',').map(Number); if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { [lat, lng] = parts; } }
+            if ('center' in res) { [lng, lat] = res.center; } 
+            else if ('_geopoint' in res) { const parts = res._geopoint.split(',').map(Number); if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { [lat, lng] = parts; } }
             if (lng !== undefined && lat !== undefined) {
                 const marker = new maptilersdk.Marker({ color: '#ff00ff' }).setLngLat([lng, lat]).addTo(map.current!);
                 newMarkers.push(marker);
@@ -278,7 +279,6 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
             return conso >= dpeMinConso && conso <= dpeMaxConso;
         });
 
-        // *** THIS IS THE FIX: Check if filteredDpeResults is empty BEFORE trying to access its elements ***
         if (filteredDpeResults.length === 0) { 
             return dpeSearchInfo && !isDpeLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No DPE results match your filter.</div>); 
         }

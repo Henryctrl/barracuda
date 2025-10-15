@@ -7,7 +7,7 @@ import type { Feature, Polygon } from 'geojson';
 const SOURCE_ID = 'search-area-source';
 const CIRCLE_LAYER_ID = 'search-area-circle-layer';
 const BORDER_LAYER_ID = 'search-area-border-layer';
-const CENTER_MARKER_ID = 'search-area-center-marker';
+// FIX: Removed unused CENTER_MARKER_ID
 
 export function useSearchCircle(
   map: maptilersdk.Map | null,

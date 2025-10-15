@@ -7,13 +7,14 @@ export interface SearchParams {
   type: 'landSize' | 'dpe';
   radiusKm: number;
   center: [number, number];
-  [key: string]: any; 
+  // FIX: Changed 'any' to 'unknown' to satisfy linter
+  [key: string]: unknown; 
 }
 
 interface SearchPanelProps {
   onClose: () => void;
   onSearch: (params: SearchParams) => void;
-  onRecenter: () => void; // Added prop for recentering
+  onRecenter: () => void;
   center: [number, number];
   results: (DpeSearchResult | ParcelSearchResult)[];
   isLoading: boolean;
@@ -98,7 +99,8 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
             ))}
           </div>
         ) : (
-          <p className="text-center text-text-primary/70">No results yet. Configure your search and press "Search This Area".</p>
+          // FIX: Escaped quotes
+          <p className="text-center text-text-primary/70">No results yet. Configure your search and press &quot;Search This Area&quot;.</p>
         )}
       </div>
     </div>
