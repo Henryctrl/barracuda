@@ -64,13 +64,11 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   
   const [searchCenter, setSearchCenter] = useState<[number, number]>([2.3522, 48.8566]);
   
-  // State for search logic
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<(DpeSearchResult | ParcelSearchResult)[]>([]);
   const [resultMarkers, setResultMarkers] = useState<maptilersdk.Marker[]>([]);
   const [searchRadiusKm, setSearchRadiusKm] = useState(2);
   
-  // *** NEW: State for DPE consumption filter ***
   const [dpeMinConso, setDpeMinConso] = useState(0);
   const [dpeMaxConso, setDpeMaxConso] = useState(800);
   const [showDpeFilters, setShowDpeFilters] = useState(false);
@@ -271,17 +269,16 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       case 'cadastre': 
         return parcelData ? ( <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm"> <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span> <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span> <span className="font-semibold text-text-primary/80">SECTION:</span><span className="font-bold text-white text-right">{parcelData.section}</span> <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span> <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span> <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span> {banAddress && ( <> <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span> <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(banAddress.properties.label)}`} target="_blank" rel="noopener noreferrer" className="col-span-2 font-bold text-accent-cyan text-right hover:underline">{banAddress.properties.label}</a> {otherAddresses.length > 0 && (<div className="col-span-2 text-right"><button onClick={() => setShowOtherAddresses(!showOtherAddresses)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 ml-auto">{showOtherAddresses ? 'Hide' : 'Show'} alternatives {showOtherAddresses ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button></div>)} </> )} {showOtherAddresses && otherAddresses.length > 0 && ( <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2"> {otherAddresses.map((addr, index) => (<a key={index} href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr.properties.label)}`} target="_blank" rel="noopener noreferrer" className="block text-right text-xs text-accent-cyan/70 hover:underline">{addr.properties.label}</a>))} </div> )} </div> ) : <div className="text-center text-text-primary/70">Click on a parcel to see details.</div>;
 
-      // *** THIS IS THE CORRECTED DPE PANEL ***
       case 'dpe':
         if (isDpeLoading) { return <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DPE GRID...</span></div>; }
         if (dpeError) { return <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dpeError}</div>; }
         
-        // Filter results based on the new consumption filter state
         const filteredDpeResults = dpeResults.filter(dpe => {
             const conso = dpe.conso_5_usages_par_m2_ep;
             return conso >= dpeMinConso && conso <= dpeMaxConso;
         });
 
+        // *** THIS IS THE FIX: Check if filteredDpeResults is empty BEFORE trying to access its elements ***
         if (filteredDpeResults.length === 0) { 
             return dpeSearchInfo && !isDpeLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No DPE results match your filter.</div>); 
         }
@@ -289,7 +286,6 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         const topResult = filteredDpeResults[0];
         const otherResults = filteredDpeResults.slice(1, 10000);
 
-        // This function now renders all the details you requested
         const renderDpeItem = (dpe: DPERecord, isTopResult: boolean) => (
             <div key={dpe.numero_dpe} id={`dpe-${dpe.numero_dpe}`} className={`p-3 rounded-lg transition-all ${expandedDpeId === dpe.numero_dpe ? 'bg-accent-cyan/10' : ''}`}>
                 <div className={`text-sm font-bold mb-2 ${isTopResult ? 'text-accent-magenta' : 'text-accent-cyan'}`}>{isTopResult ? 'Closest Result' : `Result #${dpeResults.indexOf(dpe) + 1}`}: ~{Math.round(dpe._distance ?? 0)}m</div>
