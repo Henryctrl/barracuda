@@ -51,7 +51,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
   const [showOtherAddresses, setShowOtherAddresses] = useState(false);
   const [dpeResults, setDpeResults] = useState<DPERecord[]>([]);
-  const [isDpeLoading] = useState(false);
+  const [isDpeLoading, setIsDpeLoading] = useState(false);
   const [dpeError, setDpeError] = useState('');
   const [dpeSearchInfo, setDpeSearchInfo] = useState('');
   const [showOtherDpeResults, setShowOtherDpeResults] = useState(false);
@@ -101,6 +101,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   
   const handleApiSearch = async (params: SearchParams) => {
     if (!map.current) return;
+
     setIsSearching(true);
     setSearchResults([]);
     setSearchRadiusKm(params.radiusKm);
@@ -111,15 +112,31 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     const endpoint = params.type === 'landSize' ? '/api/search/parcels' : '/api/search/dpe';
     
     if (params.type === 'landSize') {
-        queryParams.append('minSize', (params as any).minSize.toString());
-        queryParams.append('maxSize', (params as any).maxSize.toString());
+      const { minSize, maxSize } = params as unknown as { minSize: number; maxSize: number };
+      queryParams.append('minSize', minSize.toString());
+      queryParams.append('maxSize', maxSize.toString());
     } else {
-        queryParams.append('minConsumption', (params as any).minConsumption.toString());
-        queryParams.append('maxConsumption', (params as any).maxConsumption.toString());
-        queryParams.append('minEmissions', (params as any).minEmissions.toString());
-        queryParams.append('maxEmissions', (params as any).maxEmissions.toString());
-        queryParams.append('idealConsumption', (params as any).idealConsumption.toString());
-        queryParams.append('idealEmissions', (params as any).idealEmissions.toString());
+      const {
+        minConsumption,
+        maxConsumption,
+        minEmissions,
+        maxEmissions,
+        idealConsumption,
+        idealEmissions
+      } = params as unknown as {
+        minConsumption: number;
+        maxConsumption: number;
+        minEmissions: number;
+        maxEmissions: number;
+        idealConsumption: boolean;
+        idealEmissions: boolean;
+      };
+      queryParams.append('minConsumption', minConsumption.toString());
+      queryParams.append('maxConsumption', maxConsumption.toString());
+      queryParams.append('minEmissions', minEmissions.toString());
+      queryParams.append('maxEmissions', maxEmissions.toString());
+      queryParams.append('idealConsumption', idealConsumption.toString());
+      queryParams.append('idealEmissions', idealEmissions.toString());
     }
 
     try {
@@ -267,7 +284,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     });
   }, [mapStyle]);
   
-  const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: 'DETAILS'; } };
+  const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: return 'DETAILS'; } };
   
   const renderPanelContent = () => {
     if (isLoading) { return <div className="flex items-center justify-center gap-2 text-text-primary"><Loader2 className="animate-spin" size={16} /><span>INTERROGATING GRID...</span></div>; }
