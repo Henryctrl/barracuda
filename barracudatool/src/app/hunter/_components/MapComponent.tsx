@@ -3,13 +3,15 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import type { FilterSpecification, MapGeoJSONFeature } from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
-import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus, Filter } from 'lucide-react';
+import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus, Filter, RotateCcw } from 'lucide-react';
 import type { Polygon, Position } from 'geojson';
+
 
 // Import NEW unified panel and types
 import { SearchPanel, SearchParams } from './SearchPanel';
 import { useSearchCircle } from '../../../hooks/useSearchCircle';
 import { ParcelSearchResult, DPERecord as DpeSearchResult } from '../types';
+
 
 // --- Interfaces ---
 interface ParcelData {
@@ -29,11 +31,13 @@ interface DVFRecord {
   idmutinvar: string; datemut: string; valeurfonc: string; libtypbien: string; sbati: string; sterr: string; l_idpar: ParcelInfo[]; l_addr: string; geom: { coordinates: number[][][][]; }; _distance?: number;
 }
 
+
 interface MapComponentProps {
   activeView: 'cadastre' | 'dpe' | 'sales';
   isSearchMode: boolean;
   setIsSearchMode: (isSearchMode: boolean) => void;
 }
+
 
 export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -47,7 +51,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [otherAddresses, setOtherAddresses] = useState<BanFeature[]>([]);
   const [showOtherAddresses, setShowOtherAddresses] = useState(false);
   const [dpeResults, setDpeResults] = useState<DPERecord[]>([]);
-  const [isDpeLoading] = useState(false); // FIX: Removed setIsDpeLoading
+  const [isDpeLoading] = useState(false);
   const [dpeError, setDpeError] = useState('');
   const [dpeSearchInfo, setDpeSearchInfo] = useState('');
   const [showOtherDpeResults, setShowOtherDpeResults] = useState(false);
@@ -71,7 +75,10 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   
   const [dpeMinConso, setDpeMinConso] = useState(0);
   const [dpeMaxConso, setDpeMaxConso] = useState(800);
-  const [showDpeFilters, setShowDpeFilters] = useState(false);
+  const [dpeMinEmissions, setDpeMinEmissions] = useState(0);
+  const [dpeMaxEmissions, setDpeMaxEmissions] = useState(200);
+  const [showDpeFilters, setShowDpeFilters] = useState(true); // Default to showing filters
+
 
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => { setIsLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...'); try { setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`); const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`); if (!response.ok) throw new Error('DPE data fetch failed'); const data: DPERecord[] = await response.json(); if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; } data.sort((a, b) => { const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity); if (distanceDiff !== 0) return distanceDiff; const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0; const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0; return dateB - dateA; }); setDpeResults(data); setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`); } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg); } finally { setIsLoading(false); } }, []);
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => { setIsDvfLoading(true); setDvfError(''); setDvfResults([]); setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...'); try { setDvfSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR PARCEL ${targetParcelId}...`); const response = await fetch(`/api/dvf?inseeCode=${inseeCode}&targetParcelId=${targetParcelId}`); if (!response.ok) throw new Error('DVF data fetch failed'); const filteredSales: DVFRecord[] = await response.json(); if (filteredSales.length === 0) { setDvfSearchInfo(`NO SALES HISTORY FOUND FOR THIS SPECIFIC PARCEL.`); } else { setDvfResults(filteredSales); setDvfSearchInfo(`ANALYSIS COMPLETE. ${filteredSales.length} HISTORICAL SALES FOUND.`); } } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DVF Error'; setDvfError(msg); } finally { setIsDvfLoading(false); } }, []);
@@ -104,15 +111,15 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     const endpoint = params.type === 'landSize' ? '/api/search/parcels' : '/api/search/dpe';
     
     if (params.type === 'landSize') {
-        queryParams.append('minSize', params.minSize!.toString());
-        queryParams.append('maxSize', params.maxSize!.toString());
+        queryParams.append('minSize', (params as any).minSize.toString());
+        queryParams.append('maxSize', (params as any).maxSize.toString());
     } else {
-        queryParams.append('minConsumption', params.minConsumption!.toString());
-        queryParams.append('maxConsumption', params.maxConsumption!.toString());
-        queryParams.append('minEmissions', params.minEmissions!.toString());
-        queryParams.append('maxEmissions', params.maxEmissions!.toString());
-        queryParams.append('idealConsumption', params.idealConsumption!.toString());
-        queryParams.append('idealEmissions', params.idealEmissions!.toString());
+        queryParams.append('minConsumption', (params as any).minConsumption.toString());
+        queryParams.append('maxConsumption', (params as any).maxConsumption.toString());
+        queryParams.append('minEmissions', (params as any).minEmissions.toString());
+        queryParams.append('maxEmissions', (params as any).maxEmissions.toString());
+        queryParams.append('idealConsumption', (params as any).idealConsumption.toString());
+        queryParams.append('idealEmissions', (params as any).idealEmissions.toString());
     }
 
     try {
@@ -122,7 +129,6 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         setSearchResults(data);
 
         const newMarkers: maptilersdk.Marker[] = [];
-        // FIX: Replaced 'any' with the correct discriminated union type
         data.forEach((res: DpeSearchResult | ParcelSearchResult) => {
             let lng: number | undefined, lat: number | undefined;
             if ('center' in res) { [lng, lat] = res.center; } 
@@ -276,15 +282,9 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         
         const filteredDpeResults = dpeResults.filter(dpe => {
             const conso = dpe.conso_5_usages_par_m2_ep;
-            return conso >= dpeMinConso && conso <= dpeMaxConso;
+            const emissions = dpe.emission_ges_5_usages_par_m2;
+            return conso >= dpeMinConso && conso <= dpeMaxConso && emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions;
         });
-
-        if (filteredDpeResults.length === 0) { 
-            return dpeSearchInfo && !isDpeLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No DPE results match your filter.</div>); 
-        }
-
-        const topResult = filteredDpeResults[0];
-        const otherResults = filteredDpeResults.slice(1, 10000);
 
         const renderDpeItem = (dpe: DPERecord, isTopResult: boolean) => (
             <div key={dpe.numero_dpe} id={`dpe-${dpe.numero_dpe}`} className={`p-3 rounded-lg transition-all ${expandedDpeId === dpe.numero_dpe ? 'bg-accent-cyan/10' : ''}`}>
@@ -315,28 +315,47 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
                         <Filter size={14} /> {showDpeFilters ? 'Hide' : 'Show'} Filters <ChevronUp className={`transition-transform ${showDpeFilters ? 'rotate-180' : ''}`} size={16} />
                     </button>
                     {showDpeFilters && (
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-2 mt-2 p-3 border border-dashed border-accent-yellow/30 rounded-md">
-                            <div>
-                                <label htmlFor="minConso" className="block text-xs font-semibold text-text-primary/80">Min Conso.</label>
-                                <input id="minConso" type="number" value={dpeMinConso} onChange={e => setDpeMinConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                        <div className="space-y-3 mt-2 p-3 border border-dashed border-accent-yellow/30 rounded-md">
+                            <div className="grid grid-cols-2 gap-x-2">
+                                <div>
+                                    <label htmlFor="minConso" className="block text-xs font-semibold text-text-primary/80">Min Conso.</label>
+                                    <input id="minConso" type="number" value={dpeMinConso} onChange={e => setDpeMinConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                                </div>
+                                <div>
+                                    <label htmlFor="maxConso" className="block text-xs font-semibold text-text-primary/80">Max Conso.</label>
+                                    <input id="maxConso" type="number" value={dpeMaxConso} onChange={e => setDpeMaxConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                                </div>
                             </div>
-                            <div>
-                                <label htmlFor="maxConso" className="block text-xs font-semibold text-text-primary/80">Max Conso.</label>
-                                <input id="maxConso" type="number" value={dpeMaxConso} onChange={e => setDpeMaxConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                            <div className="grid grid-cols-2 gap-x-2">
+                                <div>
+                                    <label htmlFor="minEmissions" className="block text-xs font-semibold text-text-primary/80">Min Emissions</label>
+                                    <input id="minEmissions" type="number" value={dpeMinEmissions} onChange={e => setDpeMinEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                                </div>
+                                <div>
+                                    <label htmlFor="maxEmissions" className="block text-xs font-semibold text-text-primary/80">Max Emissions</label>
+                                    <input id="maxEmissions" type="number" value={dpeMaxEmissions} onChange={e => setDpeMaxEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                                </div>
                             </div>
+                            <button onClick={() => { setDpeMinConso(0); setDpeMaxConso(800); setDpeMinEmissions(0); setDpeMaxEmissions(200); }} className="w-full flex items-center justify-center gap-2 text-sm mt-2 bg-accent-yellow/80 border-2 border-accent-yellow/90 text-background-dark rounded-md px-3 py-2 font-bold hover:bg-accent-yellow transition-all">
+                                <RotateCcw size={14} /> Reset Filters
+                            </button>
                         </div>
                     )}
                 </div>
-
-                <div className="space-y-2">
-                    {renderDpeItem(topResult, true)}
-                    {otherResults.length > 0 && 
-                        <div className="pt-3 mt-3 border-t border-accent-cyan/50">
-                            <button onClick={() => setShowOtherDpeResults(!showOtherDpeResults)} className="w-full text-center text-accent-cyan hover:text-accent-magenta flex items-center justify-center gap-2 font-bold">{showOtherDpeResults ? 'Hide' : `Show ${otherResults.length} Other Results`} <ChevronDown className={`transition-transform ${showOtherDpeResults ? 'rotate-180' : ''}`} size={16} /></button>
-                            {showOtherDpeResults && <div className="mt-2 space-y-2">{otherResults.map(dpe => <div key={dpe.numero_dpe} className="border-t border-dashed border-accent-cyan/30">{renderDpeItem(dpe, false)}</div>)}</div>}
-                        </div>
-                    }
-                </div>
+                
+                {filteredDpeResults.length > 0 ? (
+                    <div className="space-y-2">
+                        {renderDpeItem(filteredDpeResults[0], true)}
+                        {filteredDpeResults.length > 1 && 
+                            <div className="pt-3 mt-3 border-t border-accent-cyan/50">
+                                <button onClick={() => setShowOtherDpeResults(!showOtherDpeResults)} className="w-full text-center text-accent-cyan hover:text-accent-magenta flex items-center justify-center gap-2 font-bold">{showOtherDpeResults ? 'Hide' : `Show ${filteredDpeResults.length - 1} Other Results`} <ChevronDown className={`transition-transform ${showOtherDpeResults ? 'rotate-180' : ''}`} size={16} /></button>
+                                {showOtherDpeResults && <div className="mt-2 space-y-2">{filteredDpeResults.slice(1).map(dpe => <div key={dpe.numero_dpe} className="border-t border-dashed border-accent-cyan/30">{renderDpeItem(dpe, false)}</div>)}</div>}
+                            </div>
+                        }
+                    </div>
+                ) : (
+                    <div className="text-center text-text-primary/70 p-4">No results match your current filter criteria.</div>
+                )}
             </div>
         );
 
