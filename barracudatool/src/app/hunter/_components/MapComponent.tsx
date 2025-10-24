@@ -77,8 +77,20 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [dpeMaxConso, setDpeMaxConso] = useState(800);
   const [dpeMinEmissions, setDpeMinEmissions] = useState(0);
   const [dpeMaxEmissions, setDpeMaxEmissions] = useState(200);
-  const [showDpeFilters, setShowDpeFilters] = useState(true); // Default to showing filters
+  const [showDpeFilters, setShowDpeFilters] = useState(false); // CHANGED: Default to hiding filters
+  const [dpeStartDate, setDpeStartDate] = useState('');
+  const [dpeEndDate, setDpeEndDate] = useState('');
 
+  // Helper function to format dates in European format (DD/MM/YYYY)
+  const formatEuropeanDate = (dateString: string): string => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
 
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => { setIsLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...'); try { setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`); const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`); if (!response.ok) throw new Error('DPE data fetch failed'); const data: DPERecord[] = await response.json(); if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; } data.sort((a, b) => { const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity); if (distanceDiff !== 0) return distanceDiff; const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0; const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0; return dateB - dateA; }); setDpeResults(data); setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`); } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg); } finally { setIsLoading(false); } }, []);
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => { setIsDvfLoading(true); setDvfError(''); setDvfResults([]); setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...'); try { setDvfSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR PARCEL ${targetParcelId}...`); const response = await fetch(`/api/dvf?inseeCode=${inseeCode}&targetParcelId=${targetParcelId}`); if (!response.ok) throw new Error('DVF data fetch failed'); const filteredSales: DVFRecord[] = await response.json(); if (filteredSales.length === 0) { setDvfSearchInfo(`NO SALES HISTORY FOUND FOR THIS SPECIFIC PARCEL.`); } else { setDvfResults(filteredSales); setDvfSearchInfo(`ANALYSIS COMPLETE. ${filteredSales.length} HISTORICAL SALES FOUND.`); } } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DVF Error'; setDvfError(msg); } finally { setIsDvfLoading(false); } }, []);
@@ -300,13 +312,26 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         const filteredDpeResults = dpeResults.filter(dpe => {
             const conso = dpe.conso_5_usages_par_m2_ep;
             const emissions = dpe.emission_ges_5_usages_par_m2;
-            return conso >= dpeMinConso && conso <= dpeMaxConso && emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions;
+            const dpeDate = dpe.date_etablissement_dpe ? new Date(dpe.date_etablissement_dpe) : null;
+            
+            const consoMatch = conso >= dpeMinConso && conso <= dpeMaxConso;
+            const emissionsMatch = emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions;
+            
+            let dateMatch = true;
+            if (dpeStartDate && dpeDate) {
+                dateMatch = dateMatch && dpeDate >= new Date(dpeStartDate);
+            }
+            if (dpeEndDate && dpeDate) {
+                dateMatch = dateMatch && dpeDate <= new Date(dpeEndDate);
+            }
+            
+            return consoMatch && emissionsMatch && dateMatch;
         });
 
         const renderDpeItem = (dpe: DPERecord, isTopResult: boolean) => (
             <div key={dpe.numero_dpe} id={`dpe-${dpe.numero_dpe}`} className={`p-3 rounded-lg transition-all ${expandedDpeId === dpe.numero_dpe ? 'bg-accent-cyan/10' : ''}`}>
                 <div className={`text-sm font-bold mb-2 ${isTopResult ? 'text-accent-magenta' : 'text-accent-cyan'}`}>{isTopResult ? 'Closest Result' : `Result #${dpeResults.indexOf(dpe) + 1}`}: ~{Math.round(dpe._distance ?? 0)}m</div>
-                <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm"><span className="font-semibold text-text-primary/80">Address:</span><span className="font-bold text-white text-right">{dpe.adresse_ban || 'N/A'}</span><span className="font-semibold text-text-primary/80">Date:</span><span className="font-bold text-white text-right">{dpe.date_etablissement_dpe ? new Date(dpe.date_etablissement_dpe).toLocaleDateString() : 'N/A'}</span><span className="font-semibold text-text-primary/80">Energy:</span><span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_dpe) }}>{dpe.etiquette_dpe}</span><span className="font-semibold text-text-primary/80">GHG:</span><span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_ges) }}>{dpe.etiquette_ges}</span></div>
+                <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm"><span className="font-semibold text-text-primary/80">Address:</span><span className="font-bold text-white text-right">{dpe.adresse_ban || 'N/A'}</span><span className="font-semibold text-text-primary/80">Date:</span><span className="font-bold text-white text-right">{formatEuropeanDate(dpe.date_etablissement_dpe)}</span><span className="font-semibold text-text-primary/80">Energy:</span><span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_dpe) }}>{dpe.etiquette_dpe}</span><span className="font-semibold text-text-primary/80">GHG:</span><span className="font-bold text-right" style={{ color: getDpeColor(dpe.etiquette_ges) }}>{dpe.etiquette_ges}</span></div>
                 <button onClick={() => setExpandedDpeId(expandedDpeId === dpe.numero_dpe ? null : dpe.numero_dpe)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 mt-3">{expandedDpeId === dpe.numero_dpe ? 'Hide' : 'Show'} Details <ChevronDown className={`transition-transform ${expandedDpeId === dpe.numero_dpe ? 'rotate-180' : ''}`} size={14} /></button>
                 {expandedDpeId === dpe.numero_dpe && (
                     <div className="mt-3 pt-3 border-t border-dashed border-accent-cyan/20 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
@@ -353,7 +378,17 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
                                     <input id="maxEmissions" type="number" value={dpeMaxEmissions} onChange={e => setDpeMaxEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
                                 </div>
                             </div>
-                            <button onClick={() => { setDpeMinConso(0); setDpeMaxConso(800); setDpeMinEmissions(0); setDpeMaxEmissions(200); }} className="w-full flex items-center justify-center gap-2 text-sm mt-2 bg-accent-yellow/80 border-2 border-accent-yellow/90 text-background-dark rounded-md px-3 py-2 font-bold hover:bg-accent-yellow transition-all">
+                            <div className="grid grid-cols-2 gap-x-2">
+                                <div>
+                                    <label htmlFor="startDate" className="block text-xs font-semibold text-text-primary/80">Start Date</label>
+                                    <input id="startDate" type="date" value={dpeStartDate} onChange={e => setDpeStartDate(e.target.value)} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                                </div>
+                                <div>
+                                    <label htmlFor="endDate" className="block text-xs font-semibold text-text-primary/80">End Date</label>
+                                    <input id="endDate" type="date" value={dpeEndDate} onChange={e => setDpeEndDate(e.target.value)} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
+                                </div>
+                            </div>
+                            <button onClick={() => { setDpeMinConso(0); setDpeMaxConso(800); setDpeMinEmissions(0); setDpeMaxEmissions(200); setDpeStartDate(''); setDpeEndDate(''); }} className="w-full flex items-center justify-center gap-2 text-sm mt-2 bg-accent-yellow/80 border-2 border-accent-yellow/90 text-background-dark rounded-md px-3 py-2 font-bold hover:bg-accent-yellow transition-all">
                                 <RotateCcw size={14} /> Reset Filters
                             </button>
                         </div>
@@ -380,7 +415,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         if (isDvfLoading) { return <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DVF GRID...</span></div> }
         if (dvfError) { return <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dvfError}</div> }
         if (dvfResults.length === 0) { return dvfSearchInfo && !isDvfLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dvfSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No sales history available.</div>); }
-        return <div className="space-y-2">{dvfResults.slice(0, 10).map((sale, index) => (<div key={sale.idmutinvar} onClick={() => setHighlightedSaleParcels(sale.l_idpar)} className={`w-full text-left p-2 rounded-md transition-all cursor-pointer hover:bg-accent-yellow/20 focus:outline-none focus:ring-2 focus:ring-accent-yellow ${highlightedSaleParcels.map(p => p.id).join(',') === sale.l_idpar.map(p => p.id).join(',') ? 'bg-accent-yellow/20 ring-2 ring-accent-yellow' : ''}`} role="button" tabIndex={0}><div className={`pt-2 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}><div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}> SALE: {new Date(sale.datemut).toLocaleDateString()} </div><div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"><span className="font-semibold text-text-primary/80">PRICE:</span><span className="font-bold text-white text-right">{parseFloat(sale.valeurfonc).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}</span><span className="font-semibold text-text-primary/80">TYPE:</span><span className="font-bold text-white text-right">{sale.libtypbien || 'N/A'}</span><span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/20 pt-2">PARCELS ({sale.l_idpar.length}):</span><div className="col-span-2 text-right font-mono text-xs text-accent-cyan/80 space-y-1">{sale.l_idpar.map(p => <div key={p.id}>{p.id} ({p.sterr} m²)</div>)}{sale.l_idpar.length > 1 && <div className="font-bold text-white text-sm border-t border-dashed border-accent-cyan/20 pt-1 mt-1">TOTAL AREA: {sale.sterr} m²</div>}</div></div></div></div>))}</div>;
+        return <div className="space-y-2">{dvfResults.slice(0, 10).map((sale, index) => (<div key={sale.idmutinvar} onClick={() => setHighlightedSaleParcels(sale.l_idpar)} className={`w-full text-left p-2 rounded-md transition-all cursor-pointer hover:bg-accent-yellow/20 focus:outline-none focus:ring-2 focus:ring-accent-yellow ${highlightedSaleParcels.map(p => p.id).join(',') === sale.l_idpar.map(p => p.id).join(',') ? 'bg-accent-yellow/20 ring-2 ring-accent-yellow' : ''}`} role="button" tabIndex={0}><div className={`pt-2 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}><div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}> SALE: {formatEuropeanDate(sale.datemut)} </div><div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"><span className="font-semibold text-text-primary/80">PRICE:</span><span className="font-bold text-white text-right">{parseFloat(sale.valeurfonc).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}</span><span className="font-semibold text-text-primary/80">TYPE:</span><span className="font-bold text-white text-right">{sale.libtypbien || 'N/A'}</span><span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/20 pt-2">PARCELS ({sale.l_idpar.length}):</span><div className="col-span-2 text-right font-mono text-xs text-accent-cyan/80 space-y-1">{sale.l_idpar.map(p => <div key={p.id}>{p.id} ({p.sterr} m²)</div>)}{sale.l_idpar.length > 1 && <div className="font-bold text-white text-sm border-t border-dashed border-accent-cyan/20 pt-1 mt-1">TOTAL AREA: {sale.sterr} m²</div>}</div></div></div></div>))}</div>;
         
       default: return null;
     }
@@ -401,7 +436,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       {(selectedParcelId && !isSearchMode) && (
         <div className="absolute top-20 sm:top-16 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm bg-background-dark/75">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)] "> {getPanelTitle()} </h3>
+            <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]"> {getPanelTitle()} </h3>
             <div className="flex items-center gap-2">
               <button onClick={() => setIsPanelMinimized(!isPanelMinimized)} className="text-accent-cyan/70 hover:text-accent-cyan">{isPanelMinimized ? <Plus size={20} /> : <Minus size={20} />}</button>
               <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan"><X size={20} /></button>
