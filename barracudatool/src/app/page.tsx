@@ -1,178 +1,285 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react';
+
+// New component for the animated ticker
+const SystemTicker = () => {
+    const messages = [
+        "// INITIATING DEEP DATA DIVE...",
+        "// MARKET VOLATILITY: +3.14%...",
+        "// NEW ASSET DETECTED: SECTOR 7G...",
+        "// AGENT ONLINE: CODENAME 'VIPER'...",
+        "// SYNCHRONIZING WITH GLOBAL MATRIX...",
+        "// AUTHENTICATION SECURE...",
+    ];
+
+    const styles = {
+        tickerContainer: {
+            backgroundColor: '#000',
+            color: '#00ff00',
+            fontFamily: "'Courier New', Courier, monospace",
+            padding: '5px 0',
+            overflow: 'hidden',
+            whiteSpace: 'nowrap' as const,
+            borderBottom: '1px solid #00ff00',
+            boxShadow: '0 0 10px #00ff00',
+        },
+        tickerText: {
+            display: 'inline-block',
+            animation: 'scroll-left 25s linear infinite',
+        }
+    };
+
+    return (
+        <div style={styles.tickerContainer}>
+            <div style={styles.tickerText}>
+                {messages.join(' ')}&nbsp;&nbsp;&nbsp;{messages.join(' ')}&nbsp;&nbsp;&nbsp;
+            </div>
+            {/* Simple CSS animation for the ticker */}
+            <style jsx global>{`
+                @keyframes scroll-left {
+                    0% { transform: translateX(0%); }
+                    100% { transform: translateX(-50%); }
+                }
+            `}</style>
+        </div>
+    );
+};
 
 export default function HomePage() {
   
+  // State for the glitch effect
+  const [glitch, setGlitch] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGlitch(true);
+      setTimeout(() => setGlitch(false), 150);
+    }, 5000); // Trigger glitch every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   const styles = {
     container: {
       minHeight: '100vh',
       backgroundColor: '#0d0d21',
-      padding: '15px', 
+      backgroundImage: `
+        linear-gradient(rgba(13, 13, 33, 0.95), rgba(13, 13, 33, 0.95)),
+        repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 255, 255, 0.1) 1px, rgba(0, 255, 255, 0.1) 2px),
+        repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(0, 255, 255, 0.1) 1px, rgba(0, 255, 255, 0.1) 2px)
+      `,
+      backgroundSize: '100%, 50px 50px, 50px 50px',
+      padding: '0 15px 40px 15px',
       fontFamily: "'Orbitron', sans-serif",
       color: '#00ffff',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      '@media (minWidth: 576px)': {
-        padding: '40px',
-      },
     },
     main: {
-      maxWidth: '900px',
+      maxWidth: '1200px',
       width: '100%',
       margin: 'auto',
       border: '2px solid #ff00ff',
       borderRadius: '10px',
-      padding: '20px',
+      padding: '40px',
       backgroundColor: 'rgba(10, 10, 30, 0.85)',
-      boxShadow: '0 0 35px rgba(255, 0, 255, 0.6)',
+      boxShadow: '0 0 45px rgba(255, 0, 255, 0.6)',
       textAlign: 'center' as const,
-      '@media (minWidth: 576px)': {
-        padding: '40px',
-      },
+      marginTop: '40px'
     },
     header: {
-      fontSize: '2.5rem',
+      fontSize: '4.5rem',
       fontWeight: 'bold',
       color: '#ff00ff',
       textShadow: '0 0 15px #ff00ff, 0 0 5px #ffffff',
       marginBottom: '10px',
-      letterSpacing: '2px',
-      '@media (minWidth: 576px)': {
-        fontSize: '4.5rem',
-        letterSpacing: '4px',
-      },
+      letterSpacing: '4px',
+      position: 'relative' as const,
+    },
+    // Glitch effect styles
+    glitchLayer: {
+        position: 'absolute' as const,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        color: '#00ffff',
+        textShadow: '-2px 0 #00ff00',
+        clipPath: 'inset(20% 0 60% 0)',
+        animation: glitch ? 'glitch-anim-1 0.5s infinite linear alternate-reverse' : 'none',
+    },
+    glitchLayer2: {
+        position: 'absolute' as const,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        color: '#ff00ff',
+        textShadow: '2px 0 #ff00ff',
+        clipPath: 'inset(60% 0 20% 0)',
+        animation: glitch ? 'glitch-anim-2 0.5s infinite linear alternate-reverse' : 'none',
     },
     subHeader: {
-      fontSize: '1rem',
+      fontSize: '1.2rem',
       color: '#00ffff',
       textShadow: '0 0 8px #00ffff',
-      marginBottom: '30px',
+      marginBottom: '40px',
       fontStyle: 'italic',
-      '@media (minWidth: 576px)': {
-        fontSize: '1.2rem',
-        marginBottom: '40px',
-      },
     },
     contentSection: {
       borderTop: '1px dashed #00ffff',
-      paddingTop: '20px',
-      marginTop: '20px',
-      '@media (minWidth: 576px)': {
-        paddingTop: '30px',
-        marginTop: '30px',
-      },
+      paddingTop: '30px',
+      marginTop: '30px',
     },
     sectionHeader: {
-      fontSize: '1.25rem',
+      fontSize: '1.75rem',
       color: '#ff00ff',
       textTransform: 'uppercase' as const,
-      marginBottom: '15px',
-      '@media (minWidth: 576px)': {
-        fontSize: '1.5rem',
-      },
+      marginBottom: '30px',
     },
-    bodyText: {
-      color: '#c0c0ff',
-      fontSize: '0.9rem',
-      lineHeight: '1.6',
-      maxWidth: '700px',
-      margin: '0 auto 20px auto',
-      '@media (minWidth: 576px)': {
-        fontSize: '1rem',
-        margin: '0 auto 30px auto',
-      },
-    },
-    directiveGrid: {
-      display: 'grid',
-      gridTemplateColumns: '1fr',
-      gap: '15px',
-      textAlign: 'left' as const,
-      marginTop: '15px',
-      '@media (minWidth: 576px)': {
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-        gap: '20px',
-        marginTop: '20px',
-      },
-    },
-    directiveItem: {
-      border: '1px solid #00ffff',
-      backgroundColor: 'rgba(0, 255, 255, 0.05)',
-      padding: '12px',
-      borderRadius: '5px',
-      color: '#00ffff',
-      fontWeight: 'bold',
-      boxShadow: 'inset 0 0 8px rgba(0, 255, 255, 0.3)',
-      '@media (minWidth: 576px)': {
-        padding: '15px',
-      },
+    buttonContainer: {
+        display: 'flex',
+        flexDirection: 'row' as const,
+        justifyContent: 'center',
+        gap: '30px',
+        margin: '40px 0',
     },
     button: {
-      width: 'auto',  // Changed to auto for flex layout
-      padding: '15px 25px', // Adjusted padding for better appearance
-      fontSize: '1rem', // Slightly smaller font for dual buttons
+      padding: '18px 40px',
+      fontSize: '1.5rem',
       fontWeight: 'bold',
       color: '#0d0d21',
-      backgroundColor: '#00ffff',
       border: 'none',
       borderRadius: '5px',
       cursor: 'pointer',
       textShadow: '0 0 5px #0d0d21',
-      boxShadow: '0 0 25px #00ffff',
       transition: 'all 0.3s ease',
       textDecoration: 'none',
-      '@media (minWidth: 576px)': {
-        padding: '18px 30px',
-        fontSize: '1.25rem',
-      },
     },
-    // New style for the button container
-    buttonContainer: {
-        display: 'flex',
-        flexDirection: 'column' as const, // Stack buttons on mobile
-        alignItems: 'center',
-        gap: '15px',
-        marginTop: '30px',
-        '@media (minWidth: 576px)': {
-            flexDirection: 'row' as const, // Side-by-side on larger screens
-            justifyContent: 'center',
-            gap: '20px',
-            marginTop: '40px'
-        },
+    hunterButton: {
+        backgroundColor: '#00ffff',
+        boxShadow: '0 0 25px #00ffff',
+        ':hover': {
+            boxShadow: '0 0 45px #00ffff, 0 0 15px #ffffff',
+        }
+    },
+    gathererButton: {
+        backgroundColor: '#ff00ff',
+        boxShadow: '0 0 25px #ff00ff',
+        ':hover': {
+            boxShadow: '0 0 45px #ff00ff, 0 0 15px #ffffff',
+        }
+    },
+    targetGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+        gap: '25px',
+        textAlign: 'left' as const,
+    },
+    targetCard: {
+        border: '1px solid #00ffff',
+        borderRadius: '8px',
+        backgroundColor: 'rgba(0, 255, 255, 0.05)',
+        overflow: 'hidden',
+        boxShadow: 'inset 0 0 10px rgba(0, 255, 255, 0.2)',
+        transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+        ':hover': {
+            transform: 'scale(1.03)',
+            boxShadow: '0 0 20px rgba(0, 255, 255, 0.5)'
+        }
+    },
+    targetImage: {
+        width: '100%',
+        height: '180px',
+        objectFit: 'cover' as const,
+        borderBottom: '1px solid #00ffff',
+    },
+    targetInfo: {
+        padding: '20px',
+    },
+    targetCodename: {
+        fontSize: '1.2rem',
+        fontWeight: 'bold',
+        color: '#ff00ff',
+        marginBottom: '15px',
+    },
+    targetData: {
+        fontSize: '0.9rem',
+        color: '#c0c0ff',
+        lineHeight: '1.6',
     },
   };
 
   return (
     <div style={styles.container}>
+      <SystemTicker />
+
       <main style={styles.main}>
-        <h1 style={styles.header}>BARRACUDA</h1>
+        <h1 style={styles.header}>
+            BARRACUDA
+            <span style={styles.glitchLayer}>BARRACUDA</span>
+            <span style={styles.glitchLayer2}>BARRACUDA</span>
+        </h1>
         <p style={styles.subHeader}>{'// THE DEEP DATA DIVE PROTOCOL'}</p>
 
-        <p style={styles.bodyText}>
-          In the neon-drenched abyss of the data sphere, information flows in torrents. To navigate it is to survive. To command it is to prevail. Barracuda is your vessel—an apex predator in the digital ocean, engineered for speed, precision, and relentless efficiency.
-        </p>
+        <div style={styles.buttonContainer}>
+            <Link href="/hunter" style={{...styles.button, ...styles.hunterButton}}>[ INITIATE HUNTER ]</Link>
+            <Link href="/gatherer" style={{...styles.button, ...styles.gathererButton}}>[ ACCESS GATHERER ]</Link>
+        </div>
 
         <div style={styles.contentSection}>
-          <h2 style={styles.sectionHeader}>{'// Core Directives'}</h2>
-          <div style={styles.directiveGrid}>
-            <div style={styles.directiveItem}>{'>'} STEALTH PENETRATION</div>
-            <div style={styles.directiveItem}>{'>'} RAPID DATA EXTRACTION</div>
-            <div style={styles.directiveItem}>{'>'} PREDICTIVE ANALYSIS</div>
-            <div style={styles.directiveItem}>{'>'} TOTAL ANOMALY DETECTION</div>
-          </div>
-        </div>
-
-        {/* --- UPDATED BUTTON CONTAINER --- */}
-        <div style={styles.buttonContainer}>
-            <Link href="/hunter" style={styles.button}>
-                [ INITIATE HUNTER ]
-            </Link>
-            <Link href="/gatherer" style={styles.button}>
-                [ INITIATE GATHERER ]
-            </Link>
+            <h2 style={styles.sectionHeader}>{'// PRIORITY TARGETS'}</h2>
+            <div style={styles.targetGrid}>
+                {/* Target 1 */}
+                <div style={styles.targetCard}>
+                    <img src="https://via.placeholder.com/400x250/0d0d21/ff00ff?text=TARGET+IMAGE" alt="Skybreaker Loft" style={styles.targetImage} />
+                    <div style={styles.targetInfo}>
+                        <h3 style={styles.targetCodename}>TARGET: SKYBREAKER LOFT</h3>
+                        <p style={styles.targetData}>
+                            PRICE: €1,200,000<br/>
+                            LOCATION: NEO-PARIS SECTOR 7<br/>
+                            CLASS: PENTHOUSE
+                        </p>
+                    </div>
+                </div>
+                {/* Target 2 */}
+                <div style={styles.targetCard}>
+                    <img src="https://via.placeholder.com/400x250/0d0d21/00ffff?text=TARGET+IMAGE" alt="Aetherium Villa" style={styles.targetImage} />
+                    <div style={styles.targetInfo}>
+                        <h3 style={styles.targetCodename}>TARGET: AETHERIUM VILLA</h3>
+                        <p style={styles.targetData}>
+                            PRICE: €3,500,000<br/>
+                            LOCATION: CYBER-MONACO<br/>
+                            CLASS: ROOFTOP ESTATE
+                        </p>
+                    </div>
+                </div>
+                {/* Target 3 */}
+                <div style={styles.targetCard}>
+                    <img src="https://via.placeholder.com/400x250/1a1a3a/ff00ff?text=TARGET+IMAGE" alt="Data Haven" style={styles.targetImage} />
+                    <div style={styles.targetInfo}>
+                        <h3 style={styles.targetCodename}>TARGET: DATA HAVEN 42</h3>
+                        <p style={styles.targetData}>
+                            PRICE: €450,000<br/>
+                            LOCATION: GRID-CITY CENTRAL<br/>
+                            CLASS: SMART APARTMENT
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
       </main>
+
+      {/* CSS for glitch animations */}
+      <style jsx global>{`
+        @keyframes glitch-anim-1 {
+            0% { clip-path: inset(20% 0 60% 0); }
+            100% { clip-path: inset(60% 0 20% 0); }
+        }
+        @keyframes glitch-anim-2 {
+            0% { clip-path: inset(60% 0 20% 0); }
+            100% { clip-path: inset(20% 0 60% 0); }
+        }
+      `}</style>
     </div>
   )
 }
