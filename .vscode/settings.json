@@ -23,6 +23,7 @@
         "consommation",
         "coordonnee",
         "datemut",
+        "Deckard",
         "Demandes",
         "département",
         "diagnostiqueur",
@@ -37,6 +38,7 @@
         "idopendata",
         "idpar",
         "Informatisé",
+        "Kaelen",
         "landuse",
         "libtypbien",
         "licence",
@@ -58,16 +60,20 @@
         "reelle",
         "resultats",
         "rgba",
+        "Ryker",
+        "Sona",
         "SRID",
         "sterr",
         "thermique",
         "tileset",
         "Tirecul",
+        "Valerius",
         "valeur",
         "Valeurs",
         "validite",
         "validité",
-        "visite"
+        "visite",
+        "Voss"
     ],
     "findUnusedExports.detectCircularImports": true
 }
