@@ -1,3 +1,5 @@
+/* global.css */
+
 /* Import Tailwind's core styles */
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
