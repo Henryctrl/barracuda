@@ -40,13 +40,13 @@ export default function HomePage() {
             repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(0, 255, 255, 0.1) 1px, rgba(0, 255, 255, 0.1) 2px)
         `,
         backgroundSize: '100%, 50px 50px, 50px 50px',
-        paddingTop: '80px',
+        paddingTop: '110px',
         paddingBottom: '40px',
     }}>
 
       <SystemTicker />
       
-      <div className="fixed top-5 right-7 z-50 flex items-center gap-4">
+      <div className="fixed top-12 right-7 z-50 flex items-center gap-4">
         <Link href="/signup" className="px-6 py-2.5 text-base font-bold text-background-dark bg-accent-green rounded-md shadow-glow-green transition-all hover:shadow-glow-green-hover hover:scale-105 no-underline">
             [ SIGN UP ]
         </Link>

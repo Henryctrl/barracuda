@@ -392,16 +392,16 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       <div className="absolute top-4 left-4 z-10 w-72">
         <div className="relative flex items-center">
           <Search className="absolute left-3 text-accent-cyan/70" size={20} />
-          <input type="text" value={searchQuery} onChange={handleSearchChange} placeholder="Search for an address..." className="w-full pl-10 pr-10 py-2 bg-container-bg border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan" />
+          <input type="text" value={searchQuery} onChange={handleSearchChange} placeholder="Search for an address..." className="w-full pl-10 pr-10 py-2 bg-container-bg border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan bg-background-dark" />
           {searchQuery.length > 0 && ( <button onClick={handleClearSearch} className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan" aria-label="Clear search"><X size={20} /></button> )}
         </div>
         {suggestions.length > 0 && ( <div className="absolute mt-2 w-full bg-container-bg border border-accent-cyan rounded-md shadow-lg max-h-60 overflow-y-auto"> {suggestions.map((feature, index) => ( <div key={index} onClick={() => handleSuggestionClick(feature)} className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer"> {feature.properties.label} {feature.properties.postcode && <span className="text-accent-cyan/70 ml-2">({feature.properties.postcode})</span>} </div> ))} </div> )}
       </div>
 
       {(selectedParcelId && !isSearchMode) && (
-        <div className="absolute top-20 sm:top-4 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm">
+        <div className="absolute top-20 sm:top-16 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm bg-background-dark/75">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]"> {getPanelTitle()} </h3>
+            <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)] "> {getPanelTitle()} </h3>
             <div className="flex items-center gap-2">
               <button onClick={() => setIsPanelMinimized(!isPanelMinimized)} className="text-accent-cyan/70 hover:text-accent-cyan">{isPanelMinimized ? <Plus size={20} /> : <Minus size={20} />}</button>
               <button onClick={() => setSelectedParcelId(null)} className="text-accent-cyan/70 hover:text-accent-cyan"><X size={20} /></button>
@@ -429,7 +429,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       )}
 
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-        <button onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')} className="rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark">
+        <button onClick={() => setMapStyle(style => style === 'basic-v2' ? 'satellite' : 'basic-v2')} className="rounded-md border-2 border-accent-cyan bg-container-bg px-4 py-2 font-bold text-accent-cyan shadow-glow-cyan transition hover:bg-accent-cyan hover:text-background-dark backdrop-blur-sm bg-background-dark/75">
           {mapStyle === 'basic-v2' ? 'Satellite' : 'Basic'}
         </button>
       </div>
