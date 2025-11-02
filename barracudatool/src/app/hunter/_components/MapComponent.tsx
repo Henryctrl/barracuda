@@ -3,15 +3,14 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import type { FilterSpecification, MapGeoJSONFeature } from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
-import { Loader2, X, ChevronDown, ChevronUp, Search, Minus, Plus, Filter, RotateCcw } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Search, Minus, Plus, Filter, RotateCcw } from 'lucide-react';
 import type { Polygon, Position } from 'geojson';
-
 
 // Import NEW unified panel and types
 import { SearchPanel, SearchParams } from './SearchPanel';
 import { useSearchCircle } from '../../../hooks/useSearchCircle';
 import { ParcelSearchResult, DPERecord as DpeSearchResult } from '../types';
-
+import BarracudaLoader from '../../../components/loaders/BarracudaLoader'; // Make sure this path is correct
 
 // --- Interfaces ---
 interface ParcelData {
@@ -31,13 +30,11 @@ interface DVFRecord {
   idmutinvar: string; datemut: string; valeurfonc: string; libtypbien: string; sbati: string; sterr: string; l_idpar: ParcelInfo[]; l_addr: string; geom: { coordinates: number[][][][]; }; _distance?: number;
 }
 
-
 interface MapComponentProps {
   activeView: 'cadastre' | 'dpe' | 'sales';
   isSearchMode: boolean;
   setIsSearchMode: (isSearchMode: boolean) => void;
 }
-
 
 export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -77,11 +74,10 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [dpeMaxConso, setDpeMaxConso] = useState(800);
   const [dpeMinEmissions, setDpeMinEmissions] = useState(0);
   const [dpeMaxEmissions, setDpeMaxEmissions] = useState(200);
-  const [showDpeFilters, setShowDpeFilters] = useState(false); // CHANGED: Default to hiding filters
+  const [showDpeFilters, setShowDpeFilters] = useState(false);
   const [dpeStartDate, setDpeStartDate] = useState('');
   const [dpeEndDate, setDpeEndDate] = useState('');
 
-  // Helper function to format dates in European format (DD/MM/YYYY)
   const formatEuropeanDate = (dateString: string): string => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -92,7 +88,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     return `${day}/${month}/${year}`;
   };
 
-  const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => { setIsLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...'); try { setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`); const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`); if (!response.ok) throw new Error('DPE data fetch failed'); const data: DPERecord[] = await response.json(); if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; } data.sort((a, b) => { const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity); if (distanceDiff !== 0) return distanceDiff; const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0; const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0; return dateB - dateA; }); setDpeResults(data); setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`); } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg); } finally { setIsLoading(false); } }, []);
+  const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => { setIsDpeLoading(true); setDpeError(''); setDpeResults([]); setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...'); try { setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`); const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`); if (!response.ok) throw new Error('DPE data fetch failed'); const data: DPERecord[] = await response.json(); if (data.length === 0) { setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`); return; } data.sort((a, b) => { const distanceDiff = (a._distance ?? Infinity) - (b._distance ?? Infinity); if (distanceDiff !== 0) return distanceDiff; const dateA = a.date_etablissement_dpe ? new Date(a.date_etablissement_dpe).getTime() : 0; const dateB = b.date_etablissement_dpe ? new Date(b.date_etablissement_dpe).getTime() : 0; return dateB - dateA; }); setDpeResults(data); setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`); } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DPE Error'; setDpeError(msg); } finally { setIsDpeLoading(false); } }, []);
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => { setIsDvfLoading(true); setDvfError(''); setDvfResults([]); setDvfSearchInfo('INITIALIZING DVF SECTOR SCAN...'); try { setDvfSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR PARCEL ${targetParcelId}...`); const response = await fetch(`/api/dvf?inseeCode=${inseeCode}&targetParcelId=${targetParcelId}`); if (!response.ok) throw new Error('DVF data fetch failed'); const filteredSales: DVFRecord[] = await response.json(); if (filteredSales.length === 0) { setDvfSearchInfo(`NO SALES HISTORY FOUND FOR THIS SPECIFIC PARCEL.`); } else { setDvfResults(filteredSales); setDvfSearchInfo(`ANALYSIS COMPLETE. ${filteredSales.length} HISTORICAL SALES FOUND.`); } } catch (err) { const msg = err instanceof Error ? err.message : 'Unknown DVF Error'; setDvfError(msg); } finally { setIsDvfLoading(false); } }, []);
   const getDpeColor = useCallback((rating: string) => { switch (rating) { case 'A': return '#00ff00'; case 'B': return '#adff2f'; case 'C': return '#ffff00'; case 'D': return '#ffd700'; case 'E': return '#ffa500'; case 'F': return '#ff4500'; case 'G': return '#ff0000'; default: return '#808080'; } }, []);
   const throttle = useCallback(<T extends unknown[]>(func: (...args: T) => void, limit: number) => { let inThrottle: boolean = false; return function(this: unknown, ...args: T) { if (!inThrottle) { func.apply(this, args); inThrottle = true; setTimeout(() => inThrottle = false, limit); } } }, []);
@@ -113,7 +109,6 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   
   const handleApiSearch = async (params: SearchParams) => {
     if (!map.current) return;
-
     setIsSearching(true);
     setSearchResults([]);
     setSearchRadiusKm(params.radiusKm);
@@ -128,21 +123,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       queryParams.append('minSize', minSize.toString());
       queryParams.append('maxSize', maxSize.toString());
     } else {
-      const {
-        minConsumption,
-        maxConsumption,
-        minEmissions,
-        maxEmissions,
-        idealConsumption,
-        idealEmissions
-      } = params as unknown as {
-        minConsumption: number;
-        maxConsumption: number;
-        minEmissions: number;
-        maxEmissions: number;
-        idealConsumption: boolean;
-        idealEmissions: boolean;
-      };
+      const { minConsumption, maxConsumption, minEmissions, maxEmissions, idealConsumption, idealEmissions } = params as unknown as { minConsumption: number; maxConsumption: number; minEmissions: number; maxEmissions: number; idealConsumption: boolean; idealEmissions: boolean; };
       queryParams.append('minConsumption', minConsumption.toString());
       queryParams.append('maxConsumption', maxConsumption.toString());
       queryParams.append('minEmissions', minEmissions.toString());
@@ -299,33 +280,24 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const getPanelTitle = () => { switch(activeView) { case 'cadastre': return 'PARCEL DETAILS'; case 'dpe': return 'DPE SCAN RESULTS'; case 'sales': return 'SALES HISTORY'; default: return 'DETAILS'; } };
   
   const renderPanelContent = () => {
-    if (isLoading) { return <div className="flex items-center justify-center gap-2 text-text-primary"><Loader2 className="animate-spin" size={16} /><span>INTERROGATING GRID...</span></div>; }
+    if (isLoading) { return <BarracudaLoader text="INTERROGATING GRID..." />; }
     
     switch (activeView) {
       case 'cadastre': 
         return parcelData ? ( <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm"> <span className="font-semibold text-text-primary/80">IDU:</span><span className="font-bold text-white text-right">{parcelData.idu}</span> <span className="font-semibold text-text-primary/80">COMMUNE:</span><span className="font-bold text-white text-right">{parcelData.nom_com}</span> <span className="font-semibold text-text-primary/80">SECTION:</span><span className="font-bold text-white text-right">{parcelData.section}</span> <span className="font-semibold text-text-primary/80">NUMERO:</span><span className="font-bold text-white text-right">{parcelData.numero}</span> <span className="font-semibold text-text-primary/80">AREA:</span><span className="font-bold text-white text-right">{parcelData.contenance} m²</span> <span className="font-semibold text-text-primary/80">DEPT:</span><span className="font-bold text-white text-right">{parcelData.code_dep}</span> {banAddress && ( <> <span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/30 pt-2">ADDRESS:</span> <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(banAddress.properties.label)}`} target="_blank" rel="noopener noreferrer" className="col-span-2 font-bold text-accent-cyan text-right hover:underline">{banAddress.properties.label}</a> {otherAddresses.length > 0 && (<div className="col-span-2 text-right"><button onClick={() => setShowOtherAddresses(!showOtherAddresses)} className="text-xs text-accent-magenta/80 hover:text-accent-magenta flex items-center gap-1 ml-auto">{showOtherAddresses ? 'Hide' : 'Show'} alternatives {showOtherAddresses ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button></div>)} </> )} {showOtherAddresses && otherAddresses.length > 0 && ( <div className="col-span-2 mt-2 space-y-1 border-t border-dashed border-accent-cyan/30 pt-2"> {otherAddresses.map((addr, index) => (<a key={index} href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr.properties.label)}`} target="_blank" rel="noopener noreferrer" className="block text-right text-xs text-accent-cyan/70 hover:underline">{addr.properties.label}</a>))} </div> )} </div> ) : <div className="text-center text-text-primary/70">Click on a parcel to see details.</div>;
 
       case 'dpe':
-        if (isDpeLoading) { return <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DPE GRID...</span></div>; }
+        if (isDpeLoading) { return <BarracudaLoader text="SCANNING DPE GRID..." />; }
         if (dpeError) { return <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dpeError}</div>; }
         
         const filteredDpeResults = dpeResults.filter(dpe => {
             const conso = dpe.conso_5_usages_par_m2_ep;
             const emissions = dpe.emission_ges_5_usages_par_m2;
             const dpeDate = dpe.date_etablissement_dpe ? new Date(dpe.date_etablissement_dpe) : null;
-            
-            const consoMatch = conso >= dpeMinConso && conso <= dpeMaxConso;
-            const emissionsMatch = emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions;
-            
             let dateMatch = true;
-            if (dpeStartDate && dpeDate) {
-                dateMatch = dateMatch && dpeDate >= new Date(dpeStartDate);
-            }
-            if (dpeEndDate && dpeDate) {
-                dateMatch = dateMatch && dpeDate <= new Date(dpeEndDate);
-            }
-            
-            return consoMatch && emissionsMatch && dateMatch;
+            if (dpeStartDate && dpeDate) { dateMatch = dateMatch && dpeDate >= new Date(dpeStartDate); }
+            if (dpeEndDate && dpeDate) { dateMatch = dateMatch && dpeDate <= new Date(dpeEndDate); }
+            return conso >= dpeMinConso && conso <= dpeMaxConso && emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions && dateMatch;
         });
 
         const renderDpeItem = (dpe: DPERecord, isTopResult: boolean) => (
@@ -351,69 +323,38 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
         return (
             <div>
                 {dpeSearchInfo && !isDpeLoading && <div className="p-3 mb-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dpeSearchInfo} ({dpeResults.length} found, {filteredDpeResults.length} shown)</div>}
-                
                 <div className="mb-4">
-                    <button onClick={() => setShowDpeFilters(!showDpeFilters)} className="w-full flex items-center justify-center gap-2 text-xs font-bold text-accent-yellow/80 hover:text-accent-yellow">
-                        <Filter size={14} /> {showDpeFilters ? 'Hide' : 'Show'} Filters <ChevronUp className={`transition-transform ${showDpeFilters ? 'rotate-180' : ''}`} size={16} />
-                    </button>
+                    <button onClick={() => setShowDpeFilters(!showDpeFilters)} className="w-full flex items-center justify-center gap-2 text-xs font-bold text-accent-yellow/80 hover:text-accent-yellow"><Filter size={14} /> {showDpeFilters ? 'Hide' : 'Show'} Filters <ChevronUp className={`transition-transform ${showDpeFilters ? 'rotate-180' : ''}`} size={16} /></button>
                     {showDpeFilters && (
                         <div className="space-y-3 mt-2 p-3 border border-dashed border-accent-yellow/30 rounded-md">
                             <div className="grid grid-cols-2 gap-x-2">
-                                <div>
-                                    <label htmlFor="minConso" className="block text-xs font-semibold text-text-primary/80">Min Conso.</label>
-                                    <input id="minConso" type="number" value={dpeMinConso} onChange={e => setDpeMinConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
-                                </div>
-                                <div>
-                                    <label htmlFor="maxConso" className="block text-xs font-semibold text-text-primary/80">Max Conso.</label>
-                                    <input id="maxConso" type="number" value={dpeMaxConso} onChange={e => setDpeMaxConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
-                                </div>
+                                <div><label htmlFor="minConso" className="block text-xs font-semibold text-text-primary/80">Min Conso.</label><input id="minConso" type="number" value={dpeMinConso} onChange={e => setDpeMinConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" /></div>
+                                <div><label htmlFor="maxConso" className="block text-xs font-semibold text-text-primary/80">Max Conso.</label><input id="maxConso" type="number" value={dpeMaxConso} onChange={e => setDpeMaxConso(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" /></div>
                             </div>
                             <div className="grid grid-cols-2 gap-x-2">
-                                <div>
-                                    <label htmlFor="minEmissions" className="block text-xs font-semibold text-text-primary/80">Min Emissions</label>
-                                    <input id="minEmissions" type="number" value={dpeMinEmissions} onChange={e => setDpeMinEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
-                                </div>
-                                <div>
-                                    <label htmlFor="maxEmissions" className="block text-xs font-semibold text-text-primary/80">Max Emissions</label>
-                                    <input id="maxEmissions" type="number" value={dpeMaxEmissions} onChange={e => setDpeMaxEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
-                                </div>
+                                <div><label htmlFor="minEmissions" className="block text-xs font-semibold text-text-primary/80">Min Emissions</label><input id="minEmissions" type="number" value={dpeMinEmissions} onChange={e => setDpeMinEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" /></div>
+                                <div><label htmlFor="maxEmissions" className="block text-xs font-semibold text-text-primary/80">Max Emissions</label><input id="maxEmissions" type="number" value={dpeMaxEmissions} onChange={e => setDpeMaxEmissions(Number(e.target.value))} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" /></div>
                             </div>
                             <div className="grid grid-cols-2 gap-x-2">
-                                <div>
-                                    <label htmlFor="startDate" className="block text-xs font-semibold text-text-primary/80">Start Date</label>
-                                    <input id="startDate" type="date" value={dpeStartDate} onChange={e => setDpeStartDate(e.target.value)} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
-                                </div>
-                                <div>
-                                    <label htmlFor="endDate" className="block text-xs font-semibold text-text-primary/80">End Date</label>
-                                    <input id="endDate" type="date" value={dpeEndDate} onChange={e => setDpeEndDate(e.target.value)} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" />
-                                </div>
+                                <div><label htmlFor="startDate" className="block text-xs font-semibold text-text-primary/80">Start Date</label><input id="startDate" type="date" value={dpeStartDate} onChange={e => setDpeStartDate(e.target.value)} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" /></div>
+                                <div><label htmlFor="endDate" className="block text-xs font-semibold text-text-primary/80">End Date</label><input id="endDate" type="date" value={dpeEndDate} onChange={e => setDpeEndDate(e.target.value)} className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" /></div>
                             </div>
-                            <button onClick={() => { setDpeMinConso(0); setDpeMaxConso(800); setDpeMinEmissions(0); setDpeMaxEmissions(200); setDpeStartDate(''); setDpeEndDate(''); }} className="w-full flex items-center justify-center gap-2 text-sm mt-2 bg-accent-yellow/80 border-2 border-accent-yellow/90 text-background-dark rounded-md px-3 py-2 font-bold hover:bg-accent-yellow transition-all">
-                                <RotateCcw size={14} /> Reset Filters
-                            </button>
+                            <button onClick={() => { setDpeMinConso(0); setDpeMaxConso(800); setDpeMinEmissions(0); setDpeMaxEmissions(200); setDpeStartDate(''); setDpeEndDate(''); }} className="w-full flex items-center justify-center gap-2 text-sm mt-2 bg-accent-yellow/80 border-2 border-accent-yellow/90 text-background-dark rounded-md px-3 py-2 font-bold hover:bg-accent-yellow transition-all"><RotateCcw size={14} /> Reset Filters</button>
                         </div>
                     )}
                 </div>
-                
                 {filteredDpeResults.length > 0 ? (
                     <div className="space-y-2">
                         {renderDpeItem(filteredDpeResults[0], true)}
-                        {filteredDpeResults.length > 1 && 
-                            <div className="pt-3 mt-3 border-t border-accent-cyan/50">
-                                <button onClick={() => setShowOtherDpeResults(!showOtherDpeResults)} className="w-full text-center text-accent-cyan hover:text-accent-magenta flex items-center justify-center gap-2 font-bold">{showOtherDpeResults ? 'Hide' : `Show ${filteredDpeResults.length - 1} Other Results`} <ChevronDown className={`transition-transform ${showOtherDpeResults ? 'rotate-180' : ''}`} size={16} /></button>
-                                {showOtherDpeResults && <div className="mt-2 space-y-2">{filteredDpeResults.slice(1).map(dpe => <div key={dpe.numero_dpe} className="border-t border-dashed border-accent-cyan/30">{renderDpeItem(dpe, false)}</div>)}</div>}
-                            </div>
-                        }
+                        {filteredDpeResults.length > 1 && <div className="pt-3 mt-3 border-t border-accent-cyan/50"><button onClick={() => setShowOtherDpeResults(!showOtherDpeResults)} className="w-full text-center text-accent-cyan hover:text-accent-magenta flex items-center justify-center gap-2 font-bold">{showOtherDpeResults ? 'Hide' : `Show ${filteredDpeResults.length - 1} Other Results`} <ChevronDown className={`transition-transform ${showOtherDpeResults ? 'rotate-180' : ''}`} size={16} /></button>{showOtherDpeResults && <div className="mt-2 space-y-2">{filteredDpeResults.slice(1).map(dpe => <div key={dpe.numero_dpe} className="border-t border-dashed border-accent-cyan/30">{renderDpeItem(dpe, false)}</div>)}</div>}</div>}
                     </div>
-                ) : (
-                    <div className="text-center text-text-primary/70 p-4">No results match your current filter criteria.</div>
-                )}
+                ) : <div className="text-center text-text-primary/70 p-4">No results match your current filter criteria.</div>}
             </div>
         );
 
       case 'sales':
-        if (isDvfLoading) { return <div className="flex items-center justify-center gap-2 text-accent-cyan"><Loader2 className="animate-spin" size={16} /><span>SCANNING DVF GRID...</span></div> }
-        if (dvfError) { return <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dvfError}</div> }
+        if (isDvfLoading) { return <BarracudaLoader text="SCANNING DVF GRID..." />; }
+        if (dvfError) { return <div className="p-3 text-center font-bold bg-red-900/50 border border-red-500 text-red-400 rounded-md">{dvfError}</div>; }
         if (dvfResults.length === 0) { return dvfSearchInfo && !isDvfLoading ? (<div className="p-3 text-center font-bold bg-cyan-900/50 border border-accent-cyan text-accent-cyan rounded-md">{dvfSearchInfo}</div>) : (<div className="text-center text-text-primary/70">No sales history available.</div>); }
         return <div className="space-y-2">{dvfResults.slice(0, 10).map((sale, index) => (<div key={sale.idmutinvar} onClick={() => setHighlightedSaleParcels(sale.l_idpar)} className={`w-full text-left p-2 rounded-md transition-all cursor-pointer hover:bg-accent-yellow/20 focus:outline-none focus:ring-2 focus:ring-accent-yellow ${highlightedSaleParcels.map(p => p.id).join(',') === sale.l_idpar.map(p => p.id).join(',') ? 'bg-accent-yellow/20 ring-2 ring-accent-yellow' : ''}`} role="button" tabIndex={0}><div className={`pt-2 ${index > 0 ? 'border-t border-dashed border-accent-cyan/30' : ''}`}><div className={`text-sm font-bold mb-2 ${index === 0 ? 'text-accent-magenta' : 'text-accent-cyan'}`}> SALE: {formatEuropeanDate(sale.datemut)} </div><div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm"><span className="font-semibold text-text-primary/80">PRICE:</span><span className="font-bold text-white text-right">{parseFloat(sale.valeurfonc).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}</span><span className="font-semibold text-text-primary/80">TYPE:</span><span className="font-bold text-white text-right">{sale.libtypbien || 'N/A'}</span><span className="font-semibold text-text-primary/80 col-span-2 mt-2 border-t border-dashed border-accent-cyan/20 pt-2">PARCELS ({sale.l_idpar.length}):</span><div className="col-span-2 text-right font-mono text-xs text-accent-cyan/80 space-y-1">{sale.l_idpar.map(p => <div key={p.id}>{p.id} ({p.sterr} m²)</div>)}{sale.l_idpar.length > 1 && <div className="font-bold text-white text-sm border-t border-dashed border-accent-cyan/20 pt-1 mt-1">TOTAL AREA: {sale.sterr} m²</div>}</div></div></div></div>))}</div>;
         
@@ -430,7 +371,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
           <input type="text" value={searchQuery} onChange={handleSearchChange} placeholder="Search for an address..." className="w-full pl-10 pr-10 py-2 bg-container-bg border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan bg-background-dark" />
           {searchQuery.length > 0 && ( <button onClick={handleClearSearch} className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan" aria-label="Clear search"><X size={20} /></button> )}
         </div>
-        {suggestions.length > 0 && ( <div className="absolute mt-2 w-full bg-container-bg border border-accent-cyan rounded-md shadow-lg max-h-60 overflow-y-auto"> {suggestions.map((feature, index) => ( <div key={index} onClick={() => handleSuggestionClick(feature)} className="px-4 py-2 text-white hover:bg-accent-cyan/50 cursor-pointer bg-background-dark/75"> {feature.properties.label} {feature.properties.postcode && <span className="text-accent-cyan/70 ml-2">({feature.properties.postcode})</span>} </div> ))} </div> )}
+        {suggestions.length > 0 && ( <div className="absolute mt-2 w-full bg-container-bg border border-accent-cyan rounded-md shadow-lg max-h-60 overflow-y-auto"> {suggestions.map((feature, index) => ( <div key={index} onClick={() => handleSuggestionClick(feature)} className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer"> {feature.properties.label} {feature.properties.postcode && <span className="text-accent-cyan/70 ml-2">({feature.properties.postcode})</span>} </div> ))} </div> )}
       </div>
 
       {(selectedParcelId && !isSearchMode) && (
@@ -448,18 +389,13 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
 
       {isSearchMode && (
         <SearchPanel
-          onClose={() => {
-            setIsSearchMode(false);
-            setSearchResults([]);
-            resultMarkers.forEach(marker => marker.remove());
-            setResultMarkers([]);
-          }}
-          onSearch={handleApiSearch}
-          onRecenter={resetSearchCenter}
-          center={searchCenter}
-          results={searchResults}
-          isLoading={isSearching}
-          onResultClick={handleResultClick}
+            onClose={() => { setIsSearchMode(false); setSearchResults([]); resultMarkers.forEach(marker => marker.remove()); setResultMarkers([]); }}
+            onSearch={handleApiSearch}
+            onRecenter={resetSearchCenter}
+            center={searchCenter}
+            results={searchResults}
+            isLoading={isSearching}
+            onResultClick={handleResultClick}
         />
       )}
 
