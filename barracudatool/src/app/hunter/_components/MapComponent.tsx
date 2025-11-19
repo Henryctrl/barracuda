@@ -368,10 +368,10 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       <div className="absolute top-4 left-4 z-10 w-72">
         <div className="relative flex items-center">
           <Search className="absolute left-3 text-accent-cyan/70" size={20} />
-          <input type="text" value={searchQuery} onChange={handleSearchChange} placeholder="Search for an address..." className="w-full pl-10 pr-10 py-2 bg-container-bg border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan bg-background-dark" />
+          <input type="text" value={searchQuery} onChange={handleSearchChange} placeholder="Search for an address..." className="w-full pl-10 pr-10 py-2 bg-container-bg border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan backdrop-blur-sm bg-background-dark/75" />
           {searchQuery.length > 0 && ( <button onClick={handleClearSearch} className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan" aria-label="Clear search"><X size={20} /></button> )}
         </div>
-        {suggestions.length > 0 && ( <div className="absolute mt-2 w-full bg-container-bg border border-accent-cyan rounded-md shadow-lg max-h-60 overflow-y-auto"> {suggestions.map((feature, index) => ( <div key={index} onClick={() => handleSuggestionClick(feature)} className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer"> {feature.properties.label} {feature.properties.postcode && <span className="text-accent-cyan/70 ml-2">({feature.properties.postcode})</span>} </div> ))} </div> )}
+        {suggestions.length > 0 && ( <div className="absolute mt-2 w-full bg-container-bg border border-accent-cyan rounded-md shadow-lg max-h-60 overflow-y-auto"> {suggestions.map((feature, index) => ( <div key={index} onClick={() => handleSuggestionClick(feature)} className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer backdrop-blur-sm bg-background-dark/75"> {feature.properties.label} {feature.properties.postcode && <span className="text-accent-cyan/70 ml-2">({feature.properties.postcode})</span>} </div> ))} </div> )}
       </div>
 
       {(selectedParcelId && !isSearchMode) && (
