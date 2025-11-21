@@ -30,7 +30,11 @@ const styles: { [key: string]: CSSProperties } = {
   input: { backgroundColor: 'rgba(0, 255, 255, 0.1)', border: '1px solid #00ffff', borderRadius: '4px', padding: '10px', color: '#ffffff', fontSize: '1rem', outline: 'none' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' },
   fullWidth: { gridColumn: '1 / -1' },
-  errorMsg: { color: '#ff4545', marginTop: '10px', textAlign: 'center', fontWeight: 'bold' }
+  errorMsg: { color: '#ff4545', marginTop: '10px', textAlign: 'center', fontWeight: 'bold' },
+  option: {
+  backgroundColor: '#0d0d21', // Dark background for dropdown options
+  color: '#ffffff'
+}
 };
 
 const dynamicStyles = {
