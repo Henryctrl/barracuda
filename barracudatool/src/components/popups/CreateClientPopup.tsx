@@ -4,9 +4,9 @@ import React, { useState, CSSProperties } from 'react';
 import Popup from '../Popup';
 import ClientFormFields, { ClientFormData } from './ClientFormFields';
 import { User, Plus, Trash2, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, CheckCircle, Loader2 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js'; // Or import your initialized client
+import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Client (Replace with your actual import path or initialization)
+// Initialize Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -54,7 +54,6 @@ interface CreateClientPopupProps {
   onClose: () => void;
 }
 
-// Extend Relation to include data
 interface RelationData {
   id: number;
   type: string;
@@ -141,8 +140,6 @@ export default function CreateClientPopup({ isOpen, onClose }: CreateClientPopup
     });
   };
 
-  // --- SUBMISSION LOGIC ---
-
   const handleFinalSubmit = async () => {
     setIsSubmitting(true);
     setErrorMessage('');
@@ -170,7 +167,6 @@ export default function CreateClientPopup({ isOpen, onClose }: CreateClientPopup
       // 2. Insert Relations and Links
       if (relations.length > 0) {
         for (const rel of relations) {
-          // Insert relation as a client
           const { data: relData, error: relError } = await supabase
             .from('clients')
             .insert([{
@@ -188,7 +184,6 @@ export default function CreateClientPopup({ isOpen, onClose }: CreateClientPopup
 
           if (relError) throw relError;
 
-          // Link them
           const { error: linkError } = await supabase
             .from('client_relationships')
             .insert([{
@@ -231,88 +226,6 @@ export default function CreateClientPopup({ isOpen, onClose }: CreateClientPopup
     }
   };
 
-  // --- RENDER STAGES ---
-
-  const Stage1 = () => (
-    <>
-      <div style={styles.subHeader}>Primary Client Details</div>
-      <ClientFormFields data={primaryClientData} onChange={updatePrimaryClient} />
-      
-      <div style={{ ...styles.subHeader, marginTop: '20px' }}>Relations ({relations.length}/20)</div>
-      {relations.map((rel, index) => (
-        <div key={rel.id} style={styles.relationContainer}>
-          <div style={styles.relationHeader} onClick={() => setExpandedRelation(expandedRelation === rel.id ? null : rel.id)}>
-            <span>Relation #{index + 1} {rel.data.firstName ? `- ${rel.data.firstName}` : ''}</span>
-            <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-              <button type="button" style={{...styles.iconButton, color: '#ff00ff'}} onClick={(e) => { e.stopPropagation(); removeRelation(rel.id); }}><Trash2 size={20} /></button>
-              {expandedRelation === rel.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </div>
-          </div>
-          {expandedRelation === rel.id && (
-            <div style={styles.relationBody}>
-              <div style={{...styles.formGroup, marginBottom: '15px'}}>
-                <label style={styles.label}>Relationship to Primary Client</label>
-                <select 
-                  style={styles.input} 
-                  value={rel.type}
-                  onChange={(e) => updateRelationType(rel.id, e.target.value)}
-                >
-                  <option value="">Select a relationship...</option>
-                  {['Partner', 'Spouse', 'Child', 'Parent', 'Sibling', 'Roommate', 'Friend', 'Business Partner', 'Colleague', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <ClientFormFields data={rel.data} onChange={(field, val) => updateRelationData(rel.id, field, val)} />
-            </div>
-          )}
-        </div>
-      ))}
-      {relations.length < 20 && (
-        <button type="button" onClick={addRelation} style={{...styles.submitButton, backgroundColor: 'rgba(0, 255, 255, 0.2)', border: '1px solid #00ffff', color: '#00ffff'}}>
-          <Plus size={16} /> Add Relation
-        </button>
-      )}
-    </>
-  );
-
-  const Stage2 = () => (
-     <>
-      <div style={styles.grid}>
-        <div style={{...styles.formGroup, ...styles.fullWidth}}><div style={styles.subHeader}>Search Criteria</div></div>
-        <div style={styles.formGroup}><label style={styles.label}>Min Budget (€)</label><input type="number" style={styles.input} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} /></div>
-        <div style={styles.formGroup}><label style={styles.label}>Max Budget (€)</label><input type="number" style={styles.input} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} /></div>
-        <div style={{...styles.formGroup, ...styles.fullWidth}}><label style={styles.label}>Locations</label><textarea style={styles.input} rows={3} value={searchCriteria.locations} onChange={e => updateSearchCriteria('locations', e.target.value)}></textarea></div>
-        
-        <div style={{...styles.formGroup, ...styles.fullWidth}}>
-          <div style={styles.subHeader}>Property Type</div>
-          <div style={styles.checkboxGroup}>
-            {['Apartment', 'Villa', 'Penthouse', 'Land', 'Commercial'].map(type => (
-              <label key={type} style={styles.checkboxLabel}>
-                <input type="checkbox" style={styles.checkbox} checked={searchCriteria.propertyTypes.includes(type)} onChange={() => toggleCheckbox('propertyTypes', type)} /> {type}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div style={styles.formGroup}><label style={styles.label}>Min Surface (m²)</label><input type="number" style={styles.input} value={searchCriteria.minSurface} onChange={e => updateSearchCriteria('minSurface', e.target.value)} /></div>
-        <div style={styles.formGroup}><label style={styles.label}>Max Surface (m²)</label><input type="number" style={styles.input} value={searchCriteria.maxSurface} onChange={e => updateSearchCriteria('maxSurface', e.target.value)} /></div>
-        <div style={styles.formGroup}><label style={styles.label}>Min Bedrooms</label><input type="number" style={styles.input} value={searchCriteria.minBedrooms} onChange={e => updateSearchCriteria('minBedrooms', e.target.value)} /></div>
-        <div style={styles.formGroup}><label style={styles.label}>Max Bedrooms</label><input type="number" style={styles.input} value={searchCriteria.maxBedrooms} onChange={e => updateSearchCriteria('maxBedrooms', e.target.value)} /></div>
-        
-        <div style={{...styles.formGroup, ...styles.fullWidth}}>
-          <div style={styles.subHeader}>Required Features</div>
-          <div style={styles.checkboxGroup}>
-            {['Pool', 'Garden', 'Terrace/Balcony', 'Garage', 'Sea View', 'Elevator', 'New Build', 'Needs Renovation'].map(feature => (
-              <label key={feature} style={styles.checkboxLabel}>
-                <input type="checkbox" style={styles.checkbox} checked={searchCriteria.features.includes(feature)} onChange={() => toggleCheckbox('features', feature)} /> {feature}
-              </label>
-            ))}
-          </div>
-        </div>
-        <div style={{...styles.formGroup, ...styles.fullWidth}}><label style={styles.label}>Notes</label><textarea style={styles.input} rows={3} value={searchCriteria.notes} onChange={e => updateSearchCriteria('notes', e.target.value)}></textarea></div>
-      </div>
-    </>
-  );
-
   return (
     <Popup isOpen={isOpen} onClose={onClose} title="Create New Client">
       <div style={styles.container}>
@@ -324,7 +237,85 @@ export default function CreateClientPopup({ isOpen, onClose }: CreateClientPopup
           <span style={dynamicStyles.stepLabel(stage === 2)}>Search</span>
         </div>
         
-        {stage === 1 ? <Stage1 /> : <Stage2 />}
+        {stage === 1 && (
+          <>
+            <div style={styles.subHeader}>Primary Client Details</div>
+            <ClientFormFields data={primaryClientData} onChange={updatePrimaryClient} />
+            
+            <div style={{ ...styles.subHeader, marginTop: '20px' }}>Relations ({relations.length}/20)</div>
+            {relations.map((rel, index) => (
+              <div key={rel.id} style={styles.relationContainer}>
+                <div style={styles.relationHeader} onClick={() => setExpandedRelation(expandedRelation === rel.id ? null : rel.id)}>
+                  <span>Relation #{index + 1} {rel.data.firstName ? `- ${rel.data.firstName}` : ''}</span>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                    <button type="button" style={{...styles.iconButton, color: '#ff00ff'}} onClick={(e) => { e.stopPropagation(); removeRelation(rel.id); }}><Trash2 size={20} /></button>
+                    {expandedRelation === rel.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                  </div>
+                </div>
+                {expandedRelation === rel.id && (
+                  <div style={styles.relationBody}>
+                    <div style={{...styles.formGroup, marginBottom: '15px'}}>
+                      <label style={styles.label}>Relationship to Primary Client</label>
+                      <select 
+                        style={styles.input} 
+                        value={rel.type}
+                        onChange={(e) => updateRelationType(rel.id, e.target.value)}
+                      >
+                        <option value="">Select a relationship...</option>
+                        {['Partner', 'Spouse', 'Child', 'Parent', 'Sibling', 'Roommate', 'Friend', 'Business Partner', 'Colleague', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <ClientFormFields data={rel.data} onChange={(field, val) => updateRelationData(rel.id, field, val)} />
+                  </div>
+                )}
+              </div>
+            ))}
+            {relations.length < 20 && (
+              <button type="button" onClick={addRelation} style={{...styles.submitButton, backgroundColor: 'rgba(0, 255, 255, 0.2)', border: '1px solid #00ffff', color: '#00ffff'}}>
+                <Plus size={16} /> Add Relation
+              </button>
+            )}
+          </>
+        )}
+
+        {stage === 2 && (
+          <>
+            <div style={styles.grid}>
+              <div style={{...styles.formGroup, ...styles.fullWidth}}><div style={styles.subHeader}>Search Criteria</div></div>
+              <div style={styles.formGroup}><label style={styles.label}>Min Budget (€)</label><input type="number" style={styles.input} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>Max Budget (€)</label><input type="number" style={styles.input} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} /></div>
+              <div style={{...styles.formGroup, ...styles.fullWidth}}><label style={styles.label}>Locations</label><textarea style={styles.input} rows={3} value={searchCriteria.locations} onChange={e => updateSearchCriteria('locations', e.target.value)}></textarea></div>
+              
+              <div style={{...styles.formGroup, ...styles.fullWidth}}>
+                <div style={styles.subHeader}>Property Type</div>
+                <div style={styles.checkboxGroup}>
+                  {['Apartment', 'Villa', 'Penthouse', 'Land', 'Commercial'].map(type => (
+                    <label key={type} style={styles.checkboxLabel}>
+                      <input type="checkbox" style={styles.checkbox} checked={searchCriteria.propertyTypes.includes(type)} onChange={() => toggleCheckbox('propertyTypes', type)} /> {type}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.formGroup}><label style={styles.label}>Min Surface (m²)</label><input type="number" style={styles.input} value={searchCriteria.minSurface} onChange={e => updateSearchCriteria('minSurface', e.target.value)} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>Max Surface (m²)</label><input type="number" style={styles.input} value={searchCriteria.maxSurface} onChange={e => updateSearchCriteria('maxSurface', e.target.value)} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>Min Bedrooms</label><input type="number" style={styles.input} value={searchCriteria.minBedrooms} onChange={e => updateSearchCriteria('minBedrooms', e.target.value)} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>Max Bedrooms</label><input type="number" style={styles.input} value={searchCriteria.maxBedrooms} onChange={e => updateSearchCriteria('maxBedrooms', e.target.value)} /></div>
+              
+              <div style={{...styles.formGroup, ...styles.fullWidth}}>
+                <div style={styles.subHeader}>Required Features</div>
+                <div style={styles.checkboxGroup}>
+                  {['Pool', 'Garden', 'Terrace/Balcony', 'Garage', 'Sea View', 'Elevator', 'New Build', 'Needs Renovation'].map(feature => (
+                    <label key={feature} style={styles.checkboxLabel}>
+                      <input type="checkbox" style={styles.checkbox} checked={searchCriteria.features.includes(feature)} onChange={() => toggleCheckbox('features', feature)} /> {feature}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div style={{...styles.formGroup, ...styles.fullWidth}}><label style={styles.label}>Notes</label><textarea style={styles.input} rows={3} value={searchCriteria.notes} onChange={e => updateSearchCriteria('notes', e.target.value)}></textarea></div>
+            </div>
+          </>
+        )}
 
         {errorMessage && <div style={styles.errorMsg}>{errorMessage}</div>}
 
