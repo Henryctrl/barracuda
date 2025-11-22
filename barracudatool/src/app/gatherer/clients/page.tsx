@@ -41,7 +41,7 @@ export default function ClientsPage() {
       .order('created_at', { ascending: false });
 
     if (error) console.error('Error fetching clients:', error);
-    else setClients((data as unknown as ClientSummary[]) || []); // Fixed type casting
+    else setClients((data as unknown as ClientSummary[]) || []);
     setIsLoading(false);
   };
 
