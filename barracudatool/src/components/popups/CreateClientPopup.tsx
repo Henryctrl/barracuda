@@ -5,6 +5,7 @@ import Popup from '../Popup';
 import ClientFormFields, { ClientFormData } from './ClientFormFields';
 import { User, Plus, Trash2, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, CheckCircle, Loader2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+import LocationSelector from '../inputs/LocationSelector';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -220,7 +221,14 @@ export default function CreateClientPopup({ isOpen, onClose }: CreateClientPopup
             <div className="md:col-span-2 className={sectionHeaderClass}">Budget & Location</div>
             <div><label className={labelClass}>Min Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} /></div>
             <div><label className={labelClass}>Max Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} /></div>
-            <div className="md:col-span-2"><label className={labelClass}>Locations (Cities, Postcodes, Depts)</label><textarea className={inputClass} rows={2} value={searchCriteria.locations} onChange={e => updateSearchCriteria('locations', e.target.value)}></textarea></div>
+            <div className="md:col-span-2">
+              <label className={labelClass}>Locations (Auto-match)</label>
+              <LocationSelector 
+                value={searchCriteria.locations} 
+                onChange={(val) => updateSearchCriteria('locations', val)} 
+              />
+            </div>
+
             
             <div className="md:col-span-2 className={sectionHeaderClass} mt-4">Property Specs</div>
             <div><label className={labelClass}>Min Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.minSurface} onChange={e => updateSearchCriteria('minSurface', e.target.value)} /></div>
