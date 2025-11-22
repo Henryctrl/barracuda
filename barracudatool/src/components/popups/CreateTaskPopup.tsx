@@ -92,8 +92,9 @@ export default function CreateTaskPopup({ isOpen, onClose, onTaskCreated }: Crea
 
       if (onTaskCreated) onTaskCreated();
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Failed to create task');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create task';
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

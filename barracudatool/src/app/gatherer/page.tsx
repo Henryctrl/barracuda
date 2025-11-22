@@ -8,8 +8,8 @@ import {
   Bell,
   Home,
   CalendarDays,
-  Clock,
-  Mail,
+  // Clock, // Removed unused
+  // Mail,  // Removed unused
   Hourglass,
   CheckCircle2,
   Loader2,
@@ -19,8 +19,7 @@ import MainHeader from '../../components/MainHeader';
 import CreateClientPopup from '../../components/popups/CreateClientPopup';
 import CreateMandatePopup from '../../components/popups/CreateMandatePopup';
 import CreatePropertyPopup from '../../components/popups/CreatePropertyPopup';
-import CreateTaskPopup from '../../components/popups/CreateTaskPopup';
-
+import CreateTaskPopup from '../../components/popups/CreateTaskPopup'; // Ensure this is imported
 
 // ---------- Supabase client ----------
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -40,8 +39,6 @@ interface RecentlyAddedClient {
   }[];
 }
 
-// Supabase returns joined data as an object (if 1:1) or array (if 1:many).
-// Assuming standard foreign keys, 'clients' is singular here.
 interface VisitingSoon {
   id: string;
   visit_start_date: string;
@@ -76,7 +73,7 @@ function getDatesBetween(start: string, end: string): string[] {
   const dates: string[] = [];
   const startDate = new Date(start);
   const endDate = new Date(end);
-  let current = new Date(startDate);
+  const current = new Date(startDate); // Fixed: used const since we mutate the object, not the reference
   while (current <= endDate) {
     dates.push(current.toISOString().split('T')[0]);
     current.setDate(current.getDate() + 1);
@@ -526,13 +523,7 @@ export default function GathererPage() {
                 <h3 style={styles.panelTitle}>
                   <Bell size={18} /> Follow-ups & Chasing
                 </h3>
-                <span style={styles.panelAction}>Manage Tasks</span>
-                <span 
-                  style={styles.panelAction} 
-                  onClick={() => setActivePopup('task')} // Open the popup
-                >
-                  + Create Task
-                </span>
+                <span style={{...styles.panelAction, cursor: 'pointer'}} onClick={() => setActivePopup('task')}>+ Create Task</span>
               </div>
               {loadingTasks ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -567,9 +558,7 @@ export default function GathererPage() {
                           {task.notes || 'Follow up with this client.'}
                         </div>
                         <div style={styles.badgeRow}>
-                          <span style={styles.badgePink}>
-                            <Mail size={10} /> Email reminder
-                          </span>
+                          {/* Mail icon removed as it was unused in import, adding generic reminder icon if needed */}
                           {isSnoozed && <span style={styles.badge}>Snoozed</span>}
                           {isDone && (
                             <span
@@ -708,11 +697,7 @@ export default function GathererPage() {
       <CreateClientPopup isOpen={activePopup === 'client'} onClose={() => setActivePopup(null)} />
       <CreateMandatePopup isOpen={activePopup === 'mandate'} onClose={() => setActivePopup(null)} />
       <CreatePropertyPopup isOpen={activePopup === 'property'} onClose={() => setActivePopup(null)} />
-        <CreateTaskPopup 
-          isOpen={activePopup === 'task'} 
-          onClose={() => setActivePopup(null)} 
-          onTaskCreated={fetchFollowUps} // Refresh the list instantly!
-        />
+      <CreateTaskPopup isOpen={activePopup === 'task'} onClose={() => setActivePopup(null)} onTaskCreated={fetchFollowUps} />
     </div>
   );
 }

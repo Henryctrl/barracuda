@@ -3,8 +3,8 @@
 import React, { useState, useEffect, CSSProperties } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Search, Edit, Trash2, Loader2, User, MapPin, TrendingUp } from 'lucide-react';
-import MainHeader from '../../../components/MainHeader'; // Adjust path as needed
-import EditClientPopup from '../../../components/popups/EditClientPopup'; // We will create this next
+import MainHeader from '../../../components/MainHeader';
+import EditClientPopup from '../../../components/popups/EditClientPopup';
 
 // Initialize Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -41,7 +41,7 @@ export default function ClientsPage() {
       .order('created_at', { ascending: false });
 
     if (error) console.error('Error fetching clients:', error);
-    else setClients(data as any || []);
+    else setClients((data as unknown as ClientSummary[]) || []); // Fixed type casting
     setIsLoading(false);
   };
 

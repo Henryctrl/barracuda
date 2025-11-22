@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, CSSProperties } from 'react';
+import React, { useState, useEffect } from 'react';
 import Popup from '../Popup';
 import ClientFormFields, { ClientFormData } from './ClientFormFields';
 import LocationSelector from '../inputs/LocationSelector';
-import { User, Save, Loader2, Calendar, CheckCircle, Plus, Trash2, Clock, Mail, CheckSquare } from 'lucide-react';
+import { Save, Loader2, Calendar, Plus, Trash2, Clock, Mail, CheckCircle, CheckSquare } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -64,49 +64,51 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: EditClien
   const [newVisit, setNewVisit] = useState({ start: '', end: '', notes: '' });
   const [newTask, setNewTask] = useState({ type: 'follow_up', due: '', notes: '' });
 
+  // Wrapped in useCallback or moved inside useEffect to avoid dependency issues
+  // but for simplicity we define fetch inside useEffect
   useEffect(() => {
+    const fetchAllData = async () => {
+      setLoading(true);
+      
+      // 1. Client Info
+      const { data: client } = await supabase.from('clients').select('*').eq('id', clientId).single();
+      if (client) {
+        setClientData({
+          firstName: client.first_name || '', lastName: client.last_name || '', address: client.address || '',
+          email: client.email || '', mobile: client.mobile || '', landline: client.landline || '', dob: client.dob || '', pob: client.pob || ''
+        });
+      }
+
+      // 2. Criteria
+      const { data: criteria } = await supabase.from('client_search_criteria').select('*').eq('client_id', clientId).single();
+      if (criteria) {
+        setSearchCriteria({
+          minBudget: criteria.min_budget || '', maxBudget: criteria.max_budget || '', locations: criteria.locations || '',
+          propertyTypes: criteria.property_types || [], minSurface: criteria.min_surface || '', maxSurface: criteria.max_surface || '',
+          minRooms: criteria.min_rooms || '', minBedrooms: criteria.min_bedrooms || '', desiredDPE: criteria.desired_dpe || '',
+          features: criteria.features || [], notes: criteria.notes || '',
+          circleCenterLabel: criteria.circle_center_label || '', circleCenterLat: criteria.circle_center_lat, 
+          circleCenterLon: criteria.circle_center_lon, circleRadiusKm: criteria.circle_radius_km || 25
+        });
+      }
+
+      // 3. Visits
+      const { data: visitData } = await supabase.from('client_visits').select('*').eq('client_id', clientId).order('visit_start_date', { ascending: false });
+      setVisits(visitData || []);
+
+      // 4. Tasks
+      const { data: taskData } = await supabase.from('client_tasks').select('*').eq('client_id', clientId).order('due_date', { ascending: true });
+      setTasks(taskData || []);
+
+      setLoading(false);
+    };
+
     if (isOpen && clientId) fetchAllData();
   }, [isOpen, clientId]);
 
-  const fetchAllData = async () => {
-    setLoading(true);
-    
-    // 1. Client Info
-    const { data: client } = await supabase.from('clients').select('*').eq('id', clientId).single();
-    if (client) {
-      setClientData({
-        firstName: client.first_name || '', lastName: client.last_name || '', address: client.address || '',
-        email: client.email || '', mobile: client.mobile || '', landline: client.landline || '', dob: client.dob || '', pob: client.pob || ''
-      });
-    }
-
-    // 2. Criteria
-    const { data: criteria } = await supabase.from('client_search_criteria').select('*').eq('client_id', clientId).single();
-    if (criteria) {
-      setSearchCriteria({
-        minBudget: criteria.min_budget || '', maxBudget: criteria.max_budget || '', locations: criteria.locations || '',
-        propertyTypes: criteria.property_types || [], minSurface: criteria.min_surface || '', maxSurface: criteria.max_surface || '',
-        minRooms: criteria.min_rooms || '', minBedrooms: criteria.min_bedrooms || '', desiredDPE: criteria.desired_dpe || '',
-        features: criteria.features || [], notes: criteria.notes || '',
-        circleCenterLabel: criteria.circle_center_label || '', circleCenterLat: criteria.circle_center_lat, 
-        circleCenterLon: criteria.circle_center_lon, circleRadiusKm: criteria.circle_radius_km || 25
-      });
-    }
-
-    // 3. Visits
-    const { data: visitData } = await supabase.from('client_visits').select('*').eq('client_id', clientId).order('visit_start_date', { ascending: false });
-    setVisits(visitData || []);
-
-    // 4. Tasks
-    const { data: taskData } = await supabase.from('client_tasks').select('*').eq('client_id', clientId).order('due_date', { ascending: true });
-    setTasks(taskData || []);
-
-    setLoading(false);
-  };
-
   // --- Update Handlers ---
   const updateClient = (f: keyof ClientFormData, v: string) => setClientData(p => ({ ...p, [f]: v }));
-  const updateCriteria = (f: keyof SearchCriteriaData, v: any) => setSearchCriteria(p => ({ ...p, [f]: v }));
+  const updateCriteria = (f: keyof SearchCriteriaData, v: string | number) => setSearchCriteria(p => ({ ...p, [f]: v }));
   const toggleCheckbox = (f: 'propertyTypes' | 'features', v: string) => setSearchCriteria(p => ({ ...p, [f]: p[f].includes(v) ? p[f].filter(i => i !== v) : [...p[f], v] }));
 
   // --- Save Main Data ---
@@ -134,7 +136,7 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: EditClien
   // --- Sub-Item Handlers (Visits/Tasks) ---
   const addVisit = async () => {
     if (!newVisit.start) return;
-    const { data, error } = await supabase.from('client_visits').insert([{
+    const { data } = await supabase.from('client_visits').insert([{
       client_id: clientId, visit_start_date: newVisit.start, visit_end_date: newVisit.end || newVisit.start, notes: newVisit.notes
     }]).select().single();
     if (data) { setVisits([data, ...visits]); setNewVisit({ start: '', end: '', notes: '' }); }
