@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image' // Import Next.js Image component
 import { useEffect, useState } from 'react';
 
-// --- System Ticker Component (Corrected to match original) ---
+// --- System Ticker Component ---
 const SystemTicker = () => {
     const messages = [
         "// INITIATING DEEP DATA DIVE...", "// MARKET VOLATILITY: +3.14%...", "// NEW ASSET DETECTED: SECTOR 7G...",
@@ -79,7 +80,15 @@ export default function HomePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
                 {/* Target 1 */}
                 <div className="border border-accent-cyan rounded-lg bg-accent-cyan/5 overflow-hidden shadow-inner-cyan transition-all duration-300 hover:scale-105 hover:shadow-card-hover">
-                    <img src="https://via.placeholder.com/400x250/0d0d21/ff00ff?text=TARGET+IMAGE" alt="Skybreaker Loft" className="w-full h-48 object-cover border-b border-accent-cyan" />
+                    <div className="relative w-full h-48 border-b border-accent-cyan">
+                      <Image 
+                        src="https://via.placeholder.com/400x250/0d0d21/ff00ff?text=TARGET+IMAGE" 
+                        alt="Skybreaker Loft" 
+                        fill 
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    </div>
                     <div className="p-5">
                         <h3 className="text-xl font-bold text-accent-magenta mb-4">TARGET: SKYBREAKER LOFT</h3>
                         <p className="text-sm text-text-secondary leading-relaxed">
@@ -91,7 +100,15 @@ export default function HomePage() {
                 </div>
                 {/* Target 2 */}
                 <div className="border border-accent-cyan rounded-lg bg-accent-cyan/5 overflow-hidden shadow-inner-cyan transition-all duration-300 hover:scale-105 hover:shadow-card-hover">
-                    <img src="https://via.placeholder.com/400x250/0d0d21/00ffff?text=TARGET+IMAGE" alt="Aetherium Villa" className="w-full h-48 object-cover border-b border-accent-cyan" />
+                    <div className="relative w-full h-48 border-b border-accent-cyan">
+                      <Image 
+                        src="https://via.placeholder.com/400x250/0d0d21/00ffff?text=TARGET+IMAGE" 
+                        alt="Aetherium Villa" 
+                        fill 
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    </div>
                     <div className="p-5">
                         <h3 className="text-xl font-bold text-accent-magenta mb-4">TARGET: AETHERIUM VILLA</h3>
                         <p className="text-sm text-text-secondary leading-relaxed">
@@ -103,7 +120,15 @@ export default function HomePage() {
                 </div>
                 {/* Target 3 */}
                 <div className="border border-accent-cyan rounded-lg bg-accent-cyan/5 overflow-hidden shadow-inner-cyan transition-all duration-300 hover:scale-105 hover:shadow-card-hover">
-                    <img src="https://via.placeholder.com/400x250/1a1a3a/ff00ff?text=TARGET+IMAGE" alt="Data Haven" className="w-full h-48 object-cover border-b border-accent-cyan" />
+                    <div className="relative w-full h-48 border-b border-accent-cyan">
+                      <Image 
+                        src="https://via.placeholder.com/400x250/1a1a3a/ff00ff?text=TARGET+IMAGE" 
+                        alt="Data Haven" 
+                        fill 
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    </div>
                     <div className="p-5">
                         <h3 className="text-xl font-bold text-accent-magenta mb-4">TARGET: DATA HAVEN 42</h3>
                         <p className="text-sm text-text-secondary leading-relaxed">

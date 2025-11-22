@@ -17,9 +17,7 @@ interface SearchCriteriaData {
   minBudget: string; maxBudget: string; locations: string; propertyTypes: string[];
   minSurface: string; maxSurface: string; minRooms: string; minBedrooms: string;
   desiredDPE: string; features: string[]; notes: string;
-  // Circle Search Data
   circleCenterLabel: string; circleCenterLat: number | null; circleCenterLon: number | null; circleRadiusKm: number;
-  // Visit Data
   visitStartDate: string; visitEndDate: string; visitNotes: string;
 }
 
@@ -47,7 +45,6 @@ const styles: { [key: string]: CSSProperties } = {
   errorMsg: { color: '#ff4545', marginTop: '10px', textAlign: 'center', fontWeight: 'bold' }
 };
 
-// Helper classes for cleaner JSX where styles are complex
 const inputClass = "w-full bg-[#0d0d21] border border-[#00ffff] rounded p-2 text-white focus:outline-none focus:ring-1 focus:ring-[#ff00ff] placeholder-white/30";
 const labelClass = "text-xs font-bold text-[#00ffff] mb-1 uppercase tracking-wider";
 const sectionHeaderClass = "text-[#ff00ff] text-lg font-bold border-b border-dashed border-[#ff00ff] pb-1 mb-4 uppercase";
@@ -88,7 +85,6 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
     setIsSubmitting(true);
     setErrorMessage('');
     try {
-      // 1. Create Primary Client (Map state camelCase to DB snake_case)
       const { data: primaryData, error: primaryError } = await supabase.from('clients').insert([{
           first_name: primaryClientData.firstName,
           last_name: primaryClientData.lastName,
@@ -102,7 +98,6 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
 
       if (primaryError) throw primaryError;
       
-      // 2. Create Relations (Map state camelCase to DB snake_case)
       for (const rel of relations) {
         const { data: relData, error: relError } = await supabase.from('clients').insert([{
             first_name: rel.data.firstName,
@@ -119,7 +114,6 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         await supabase.from('client_relationships').insert([{ primary_client_id: primaryData.id, related_client_id: relData.id, relationship_type: rel.type }]);
       }
       
-      // 3. Create Criteria
       await supabase.from('client_search_criteria').insert([{ 
         client_id: primaryData.id,
         min_budget: searchCriteria.minBudget || null, max_budget: searchCriteria.maxBudget || null, locations: searchCriteria.locations,
@@ -132,7 +126,6 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         circle_radius_km: isCircleSearchActive ? searchCriteria.circleRadiusKm : null,
       }]);
       
-      // 4. Insert Visit
       if (searchCriteria.visitStartDate) {
         await supabase.from('client_visits').insert([{
           client_id: primaryData.id,

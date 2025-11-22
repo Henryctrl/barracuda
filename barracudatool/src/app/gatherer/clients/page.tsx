@@ -99,7 +99,7 @@ export default function ClientsPage() {
       <MainHeader />
       <main style={styles.mainContent}>
         <div style={styles.header}>
-          <h1 style={styles.title}>// CLIENT DATABASE</h1>
+          <h1 style={styles.title}>{'// CLIENT DATABASE'}</h1>
           <div style={styles.searchContainer}>
             <Search size={18} style={styles.searchIcon} />
             <input 
