@@ -19,6 +19,8 @@ import MainHeader from '../../components/MainHeader';
 import CreateClientPopup from '../../components/popups/CreateClientPopup';
 import CreateMandatePopup from '../../components/popups/CreateMandatePopup';
 import CreatePropertyPopup from '../../components/popups/CreatePropertyPopup';
+import CreateTaskPopup from '../../components/popups/CreateTaskPopup';
+
 
 // ---------- Supabase client ----------
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -219,7 +221,7 @@ const styles: StyleObject = {
 };
 
 export default function GathererPage() {
-  const [activePopup, setActivePopup] = useState<'client' | 'mandate' | 'property' | null>(null);
+  const [activePopup, setActivePopup] = useState<'client' | 'mandate' | 'property' | 'task' | null>(null);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
 
   const [recentClients, setRecentClients] = useState<RecentlyAddedClient[]>([]);
@@ -525,6 +527,12 @@ export default function GathererPage() {
                   <Bell size={18} /> Follow-ups & Chasing
                 </h3>
                 <span style={styles.panelAction}>Manage Tasks</span>
+                <span 
+                  style={styles.panelAction} 
+                  onClick={() => setActivePopup('task')} // Open the popup
+                >
+                  + Create Task
+                </span>
               </div>
               {loadingTasks ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -700,6 +708,11 @@ export default function GathererPage() {
       <CreateClientPopup isOpen={activePopup === 'client'} onClose={() => setActivePopup(null)} />
       <CreateMandatePopup isOpen={activePopup === 'mandate'} onClose={() => setActivePopup(null)} />
       <CreatePropertyPopup isOpen={activePopup === 'property'} onClose={() => setActivePopup(null)} />
+        <CreateTaskPopup 
+          isOpen={activePopup === 'task'} 
+          onClose={() => setActivePopup(null)} 
+          onTaskCreated={fetchFollowUps} // Refresh the list instantly!
+        />
     </div>
   );
 }
