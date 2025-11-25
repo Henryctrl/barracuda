@@ -45,7 +45,6 @@ const styles: { [key: string]: CSSProperties } = {
   errorMsg: { color: '#ff4545', marginTop: '10px', textAlign: 'center', fontWeight: 'bold' }
 };
 
-// Helper classes for cleaner JSX where styles are complex
 const inputClass = "w-full bg-[#0d0d21] border border-[#00ffff] rounded p-2 text-white focus:outline-none focus:ring-1 focus:ring-[#ff00ff] placeholder-white/30";
 const labelClass = "text-xs font-bold text-[#00ffff] mb-1 uppercase tracking-wider";
 const sectionHeaderClass = "text-[#ff00ff] text-lg font-bold border-b border-dashed border-[#ff00ff] pb-1 mb-4 uppercase";
@@ -79,8 +78,7 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
   const removeRelation = (id: number) => { setRelations(relations.filter(r => r.id !== id)); if (expandedRelation === id) setExpandedRelation(null); };
   const updateRelationData = (id: number, field: keyof ClientFormData, value: string) => setRelations(prev => prev.map(r => r.id === id ? { ...r, data: { ...r.data, [field]: value } } : r));
   const updateRelationType = (id: number, type: string) => setRelations(prev => prev.map(r => r.id === id ? { ...r, type } : r));
- const updateSearchCriteria = (field: keyof SearchCriteriaData, value: string | number | boolean | string[] | null) => setSearchCriteria(prev => ({ ...prev, [field]: value }));
-
+  const updateSearchCriteria = (field: keyof SearchCriteriaData, value: string | number | boolean | string[] | null) => setSearchCriteria(prev => ({ ...prev, [field]: value }));
   const toggleCheckbox = (field: 'propertyTypes' | 'features', value: string) => setSearchCriteria(prev => ({ ...prev, [field]: prev[field].includes(value) ? prev[field].filter(i => i !== value) : [...prev[field], value] }));
 
   const handleFinalSubmit = async () => {
@@ -118,13 +116,22 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         await supabase.from('client_relationships').insert([{ primary_client_id: primaryData.id, related_client_id: relData.id, relationship_type: rel.type }]);
       }
       
-      // 3. Create Criteria
+      // 3. Create Criteria - Safe Parsing
+      const safeInt = (val: string) => (val && !isNaN(parseInt(val))) ? parseInt(val) : null;
+
       await supabase.from('client_search_criteria').insert([{ 
         client_id: primaryData.id,
-        min_budget: searchCriteria.minBudget || null, max_budget: searchCriteria.maxBudget || null, locations: searchCriteria.locations,
-        property_types: searchCriteria.propertyTypes, min_surface: searchCriteria.minSurface || null, max_surface: searchCriteria.maxSurface || null,
-        min_rooms: searchCriteria.minRooms || null, min_bedrooms: searchCriteria.minBedrooms || null, desired_dpe: searchCriteria.desiredDPE || null,
-        features: searchCriteria.features, notes: searchCriteria.notes,
+        min_budget: safeInt(searchCriteria.minBudget), 
+        max_budget: safeInt(searchCriteria.maxBudget), 
+        locations: searchCriteria.locations,
+        property_types: searchCriteria.propertyTypes, 
+        min_surface: safeInt(searchCriteria.minSurface), 
+        max_surface: safeInt(searchCriteria.maxSurface),
+        min_rooms: safeInt(searchCriteria.minRooms), 
+        min_bedrooms: safeInt(searchCriteria.minBedrooms), 
+        desired_dpe: searchCriteria.desiredDPE || null,
+        features: searchCriteria.features, 
+        notes: searchCriteria.notes,
         circle_center_label: isCircleSearchActive ? searchCriteria.circleCenterLabel : null,
         circle_center_lat: isCircleSearchActive ? searchCriteria.circleCenterLat : null,
         circle_center_lon: isCircleSearchActive ? searchCriteria.circleCenterLon : null,
@@ -137,13 +144,13 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
           client_id: primaryData.id,
           visit_start_date: searchCriteria.visitStartDate,
           visit_end_date: searchCriteria.visitEndDate || searchCriteria.visitStartDate,
-          notes: searchCriteria.visitNotes
+          notes: searchCriteria.visitNotes,
+          color: '#ff00ff' // Default color
         }]);
       }
 
       onClose();
     } catch (error) {
-      // FIXED: Explicit type check for error
       const message = error instanceof Error ? error.message : 'An unknown error occurred';
       console.error("Submission error:", error);
       setErrorMessage(message);
