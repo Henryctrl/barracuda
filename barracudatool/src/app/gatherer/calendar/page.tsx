@@ -254,7 +254,7 @@ export default function CalendarPage() {
     );
   };
 
-  const renderMonthView = () => {
+    const renderMonthView = () => {
     const days = getMonthDays();
     return (
       <div className="grid grid-cols-7 gap-px bg-[#00ffff]/30 border border-[#00ffff]/30">
@@ -275,8 +275,17 @@ export default function CalendarPage() {
             day.getFullYear() === today.getFullYear();
 
           return (
-            <div key={idx} className="bg-[#0d0d21] min-h-[80px] md:min-h-[110px] p-1 flex flex-col gap-1 relative">
-              <span className={`text-xs self-end ${isToday ? 'text-[#ff00ff] font-bold' : 'text-white/60'}`}>
+            <div 
+              key={idx} 
+              className={`
+                min-h-[80px] md:min-h-[110px] p-1 flex flex-col gap-1 relative transition-colors
+                ${isToday 
+                  ? 'bg-[#ff00ff]/10 border-2 border-[#ff00ff] shadow-[inset_0_0_15px_rgba(255,0,255,0.2)] z-10' 
+                  : 'bg-[#0d0d21] hover:bg-[#0d0d21]/80'
+                }
+              `}
+            >
+              <span className={`text-xs self-end ${isToday ? 'text-[#ff00ff] font-extrabold text-lg drop-shadow-[0_0_5px_rgba(255,0,255,0.8)]' : 'text-white/60'}`}>
                 {day.getDate()}
               </span>
 
@@ -294,6 +303,7 @@ export default function CalendarPage() {
       </div>
     );
   };
+
 
   const renderWeekOrDayView = () => {
     const isWeek = viewMode === 'week';
@@ -366,46 +376,68 @@ export default function CalendarPage() {
       }}
     >
       <MainHeader />
-      <main className="p-4 md:p-8">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+            <main className="p-4 md:p-8">
+        {/* Header Container */}
+        <div className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-6 w-full">
+          
+          {/* Left Side: Title */}
           <div className="flex items-center gap-2 text-xl md:text-2xl text-[#ff00ff] uppercase font-bold tracking-wider drop-shadow-[0_0_8px_rgba(255,0,255,0.7)]">
             <CalIcon size={24} />
             {'// MISSION CALENDAR'}
-          </div></div>
+          </div>
 
-          <div className="flex items-center gap-4">
-  {/* View Toggle */}
-  <div className="flex rounded border border-[#00ffff] overflow-hidden">
-    {(['month', 'week', 'day'] as ViewMode[]).map((m) => (
-      <button
-        key={m}
-        onClick={() => setViewMode(m)}
-        className={`px-3 py-1.5 text-xs uppercase font-bold transition-colors ${viewMode === m ? 'bg-[#00ffff] text-[#0d0d21]' : 'bg-transparent text-[#00ffff] hover:bg-[#00ffff]/10'}`}
-      >
-        {m}
-      </button>
-    ))}
-  </div>
+          {/* Right Side: All Controls Grouped Together */}
+          <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6 w-full xl:w-auto justify-center xl:justify-end">
+            
+            {/* View Toggle */}
+            <div className="flex rounded border border-[#00ffff] overflow-hidden shrink-0">
+              {(['month', 'week', 'day'] as ViewMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setViewMode(m)}
+                  className={`px-4 py-2 text-xs uppercase font-bold transition-colors ${
+                    viewMode === m
+                      ? 'bg-[#00ffff] text-[#0d0d21]'
+                      : 'bg-transparent text-[#00ffff] hover:bg-[#00ffff]/10'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
 
-  {/* Nav */}
-  <div className="flex items-center gap-2">
-    <button onClick={goPrev} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10"><ChevronLeft size={16} /></button>
-    <div className="text-white font-bold w-32 text-center text-sm md:text-base">
-      {currentDate.toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase()}
-    </div>
-    <button onClick={goNext} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10"><ChevronRight size={16} /></button>
-  </div>
+            {/* Navigation Controls */}
+            <div className="flex items-center gap-3 bg-[#00ffff]/5 p-1 rounded border border-[#00ffff]/20">
+              <button
+                onClick={goPrev}
+                className="p-2 text-[#00ffff] hover:bg-[#00ffff]/20 rounded transition-colors"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              
+              <div className="text-white font-bold w-36 text-center text-sm md:text-base tracking-widest">
+                {currentDate.toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase()}
+              </div>
+              
+              <button
+                onClick={goNext}
+                className="p-2 text-[#00ffff] hover:bg-[#00ffff]/20 rounded transition-colors"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
 
-  {/* TODAY BUTTON */}
-  <button 
-    onClick={() => setCurrentDate(new Date())}
-    className="px-4 py-2 bg-[#ff00ff] text-white font-bold text-xs uppercase rounded hover:bg-[#ff00ff]/80 transition-colors shadow-[0_0_10px_rgba(255,0,255,0.5)]"
-  >
-    Today
-  </button>
-</div>
+            {/* TODAY BUTTON */}
+            <button
+              onClick={() => setCurrentDate(new Date())}
+              className="px-6 py-2 bg-[#ff00ff] text-white font-bold text-xs uppercase rounded shadow-[0_0_15px_rgba(255,0,255,0.4)] hover:bg-[#ff00ff]/80 hover:shadow-[0_0_20px_rgba(255,0,255,0.6)] transition-all shrink-0"
+            >
+              Today
+            </button>
+          </div>
+        </div>
 
-
+        {/* Calendar Content */}
         {loading ? (
           <div className="flex justify-center py-20 text-[#00ffff]">
             <Loader2 className="animate-spin" size={40} />
@@ -414,6 +446,7 @@ export default function CalendarPage() {
           viewMode === 'month' ? renderMonthView() : renderWeekOrDayView()
         )}
       </main>
+
 
       {/* VISIT DETAIL POPUP */}
       {selectedVisit && (
