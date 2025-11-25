@@ -737,7 +737,7 @@ export default function GathererPage() {
 
           {/* RIGHT COLUMN */}
           <div style={styles.columnStack}>
-            {/* Mini Calendar */}
+                       {/* Mini Calendar */}
             <section style={styles.calendarPanel}>
               <div style={styles.panelHeader}>
                 <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
@@ -788,6 +788,7 @@ export default function GathererPage() {
                 Colored days indicate at least one visit.
               </div>
             </section>
+
 
             {/* Priority Alerts */}
             <section style={styles.panel}>
