@@ -159,6 +159,7 @@ export default function CalendarPage() {
         .gte('due_date', rangeStartStr)
         .lte('due_date', rangeEndStr);
 
+      // Type assertion safe assuming standard FK setup
       setVisits((visitsData as unknown as VisitEvent[]) || []);
       setTasks((tasksData as unknown as TaskEvent[]) || []);
       setLoading(false);
@@ -222,10 +223,15 @@ export default function CalendarPage() {
   };
 
   const isVisitDay = (d: Date, v: VisitEvent) => {
-    const time = d.getTime();
-    const startTime = new Date(v.visit_start_date).getTime();
-    const endTime = new Date(v.visit_end_date).getTime();
-    return time >= startTime && time <= endTime;
+    // Normalize dates to midnight to ensure inclusive matching
+    const current = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const start = new Date(v.visit_start_date);
+    const startNorm = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+    
+    const end = new Date(v.visit_end_date);
+    const endNorm = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+    
+    return current >= startNorm && current <= endNorm;
   };
 
   const today = new Date();
@@ -244,7 +250,7 @@ export default function CalendarPage() {
     return (
       <div
         key={v.id}
-        className="text-[0.65rem] px-1.5 py-0.5 rounded border cursor-pointer truncate"
+        className="text-[0.65rem] px-1.5 py-0.5 rounded border cursor-pointer truncate mb-1"
         style={{ backgroundColor: bgColor, borderColor }}
         onClick={() => setSelectedVisit(v)}
       >
@@ -254,7 +260,7 @@ export default function CalendarPage() {
     );
   };
 
-    const renderMonthView = () => {
+  const renderMonthView = () => {
     const days = getMonthDays();
     return (
       <div className="grid grid-cols-7 gap-px bg-[#00ffff]/30 border border-[#00ffff]/30">
@@ -289,21 +295,22 @@ export default function CalendarPage() {
                 {day.getDate()}
               </span>
 
-              {dayVisits.map(renderVisitPill)}
+              <div className="flex flex-col gap-1 w-full">
+                {dayVisits.map(renderVisitPill)}
 
-              {dayTasks.map(t => (
-                <div key={t.id} className="text-[0.65rem] text-[#a0a0ff] flex items-center truncate" title={t.notes || ''}>
-                  <span className={`w-1.5 h-1.5 rounded-full mr-1 inline-block ${t.status === 'done' ? 'bg-green-500' : 'bg-yellow-400'}`} />
-                  {(t.task_type === 'follow_up' ? 'Call ' : 'Task ') + (t.clients?.last_name || '')}
-                </div>
-              ))}
+                {dayTasks.map(t => (
+                  <div key={t.id} className="text-[0.65rem] text-[#a0a0ff] flex items-center truncate" title={t.notes || ''}>
+                    <span className={`w-1.5 h-1.5 rounded-full mr-1 inline-block ${t.status === 'done' ? 'bg-green-500' : 'bg-yellow-400'}`} />
+                    {(t.task_type === 'follow_up' ? 'Call ' : 'Task ') + (t.clients?.last_name || '')}
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })}
       </div>
     );
   };
-
 
   const renderWeekOrDayView = () => {
     const isWeek = viewMode === 'week';
@@ -376,7 +383,7 @@ export default function CalendarPage() {
       }}
     >
       <MainHeader />
-            <main className="p-4 md:p-8">
+      <main className="p-4 md:p-8">
         {/* Header Container */}
         <div className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-6 w-full">
           
@@ -447,7 +454,6 @@ export default function CalendarPage() {
         )}
       </main>
 
-
       {/* VISIT DETAIL POPUP */}
       {selectedVisit && (
         <Popup
@@ -456,7 +462,6 @@ export default function CalendarPage() {
           title={`VISIT: ${selectedVisit.clients?.first_name || ''} ${selectedVisit.clients?.last_name || ''}`}
         >
           <div className="flex flex-col gap-4">
-            {/* Removed conflicting 'block' class when 'flex' is present */}
             <div className="border-b border-[#00ffff]/30 pb-3 mb-1">
               <span className="flex items-center gap-1 text-[#ff00ff] text-xs uppercase mb-1"><Clock size={14} /> Dates</span>
               <span className="text-white text-sm">

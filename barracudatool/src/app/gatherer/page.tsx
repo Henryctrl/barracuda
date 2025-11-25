@@ -8,8 +8,6 @@ import {
   Bell,
   Home,
   CalendarDays,
-  // Clock, // Removed unused
-  // Mail,  // Removed unused
   Hourglass,
   CheckCircle2,
   Loader2,
@@ -19,7 +17,9 @@ import MainHeader from '../../components/MainHeader';
 import CreateClientPopup from '../../components/popups/CreateClientPopup';
 import CreateMandatePopup from '../../components/popups/CreateMandatePopup';
 import CreatePropertyPopup from '../../components/popups/CreatePropertyPopup';
-import CreateTaskPopup from '../../components/popups/CreateTaskPopup'; // Ensure this is imported
+import CreateTaskPopup from '../../components/popups/CreateTaskPopup';
+import CreateVisitPopup from '../../components/popups/CreateVisitPopup';
+import EditVisitPopup from '../../components/popups/EditVisitPopup';
 
 // ---------- Supabase client ----------
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -44,11 +44,12 @@ interface VisitingSoon {
   visit_start_date: string;
   visit_end_date: string | null;
   notes: string | null;
+  color: string | null;
   clients: {
     id: string;
     first_name: string | null;
     last_name: string | null;
-  } | null; 
+  } | null;
 }
 
 type FollowUpStatus = 'pending' | 'snoozed' | 'done';
@@ -68,12 +69,15 @@ interface FollowUpTask {
   } | null;
 }
 
-// Utility: get all dates in a visit range
+// Utility: get all dates in a visit range (UTC-safe)
 function getDatesBetween(start: string, end: string): string[] {
   const dates: string[] = [];
+  // Use simple string splitting to avoid timezone issues entirely
+  // Assuming format YYYY-MM-DD
   const startDate = new Date(start);
   const endDate = new Date(end);
-  const current = new Date(startDate); // Fixed: used const since we mutate the object, not the reference
+  
+  const current = new Date(startDate);
   while (current <= endDate) {
     dates.push(current.toISOString().split('T')[0]);
     current.setDate(current.getDate() + 1);
@@ -218,7 +222,8 @@ const styles: StyleObject = {
 };
 
 export default function GathererPage() {
-  const [activePopup, setActivePopup] = useState<'client' | 'mandate' | 'property' | 'task' | null>(null);
+  const [activePopup, setActivePopup] = useState<'client' | 'mandate' | 'property' | 'task' | 'visit' | null>(null);
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
 
   const [recentClients, setRecentClients] = useState<RecentlyAddedClient[]>([]);
@@ -273,6 +278,7 @@ export default function GathererPage() {
         visit_start_date,
         visit_end_date,
         notes,
+        color,
         clients (
           id,
           first_name,
@@ -284,7 +290,6 @@ export default function GathererPage() {
       .lte('visit_start_date', plus30.toISOString().split('T')[0])
       .order('visit_start_date', { ascending: true });
 
-    // Type assertion is safe here assuming clients returns a single object 
     if (!error && data) setVisitingSoon(data as unknown as VisitingSoon[]);
     setLoadingVisits(false);
   };
@@ -315,7 +320,6 @@ export default function GathererPage() {
       .lte('due_date', todayStr)
       .order('due_date', { ascending: true });
 
-    // Type assertion safe assuming clients returns a single object
     if (!error && data) setFollowUps(data as unknown as FollowUpTask[]);
     setLoadingTasks(false);
   };
@@ -354,26 +358,50 @@ export default function GathererPage() {
     fetchFollowUps();
   };
 
-  // ---------- Calendar logic ----------
+  // ---------- Calendar logic (UTC Fixed) ----------
   const today = new Date();
   const [calendarMonth] = useState(today.getMonth());
   const [calendarYear] = useState(today.getFullYear());
+
+  // FIX: Calculate month start/end using plain construction to avoid local timezone shifting weekday
+  // Construct 1st of month in local time, then getDay() returns local weekday
   const firstOfMonth = new Date(calendarYear, calendarMonth, 1);
+  
+  // Monday = 0 in our calculation logic for offset
+  // JS getDay(): Sun=0, Mon=1, Tue=2...
+  // We want Mon=0, Tue=1... Sun=6
+  // (day + 6) % 7 converts JS Sunday(0) to 6, and Monday(1) to 0.
   const firstDayIndex = (firstOfMonth.getDay() + 6) % 7;
+  
+  // Number of days in this month
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
 
-  const visitDates = new Set<string>();
+  const visitDateColors = new Map<string, string>();
   visitingSoon.forEach(v => {
     const start = v.visit_start_date;
     const end = v.visit_end_date || v.visit_start_date;
-    getDatesBetween(start, end).forEach(d => visitDates.add(d));
+    const color = v.color || '#ff00ff';
+    getDatesBetween(start, end).forEach(d => {
+      if (!visitDateColors.has(d)) visitDateColors.set(d, color);
+    });
   });
 
-  const calendarCells: Array<{ day: number | null; hasVisit: boolean }> = [];
-  for (let i = 0; i < firstDayIndex; i++) calendarCells.push({ day: null, hasVisit: false });
+  const calendarCells: Array<{ day: number | null; color: string | null }> = [];
+  
+  // Fill padding days
+  for (let i = 0; i < firstDayIndex; i++) {
+    calendarCells.push({ day: null, color: null });
+  }
+  
+  // Fill actual days
   for (let d = 1; d <= daysInMonth; d++) {
-    const key = new Date(calendarYear, calendarMonth, d).toISOString().split('T')[0];
-    calendarCells.push({ day: d, hasVisit: visitDates.has(key) });
+    // Create date string manually YYYY-MM-DD to match DB format, avoiding timezone shifts
+    const monthStr = String(calendarMonth + 1).padStart(2, '0');
+    const dayStr = String(d).padStart(2, '0');
+    const key = `${calendarYear}-${monthStr}-${dayStr}`;
+    
+    const color = visitDateColors.get(key) || null;
+    calendarCells.push({ day: d, color });
   }
 
   const activeFollowUps = followUps.filter(t => t.status !== 'done');
@@ -384,7 +412,7 @@ export default function GathererPage() {
       <main
         style={{
           ...styles.mainContent,
-          filter: activePopup ? 'blur(5px)' : 'none',
+          filter: activePopup || editingVisitId ? 'blur(5px)' : 'none',
         }}
       >
         <h2 style={styles.sectionHeader}>{'// BUYER CONTROL HUB'}</h2>
@@ -393,7 +421,7 @@ export default function GathererPage() {
         <div style={styles.statusBar}>
           <span style={styles.statusItem}>
             ACTIVE BUYERS:{' '}
-            <strong>{/* Replace later with count from Supabase if needed */}138</strong>
+            <strong>{/* Placeholder */}138</strong>
           </span>
           <span style={styles.statusItem}>
             VISITS NEXT 30 DAYS: <strong>{visitingSoon.length}</strong>
@@ -450,7 +478,7 @@ export default function GathererPage() {
                         ? `€${crit.min_budget.toLocaleString()}–€${crit.max_budget.toLocaleString()}`
                         : 'N/A';
                     const areas = crit?.locations || 'No areas set';
-                    const created = new Date(client.created_at).toLocaleString();
+                    const created = new Date(client.created_at).toLocaleDateString('en-GB');
                     return (
                       <li key={client.id} style={styles.cardItem}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -480,6 +508,12 @@ export default function GathererPage() {
                 <h3 style={styles.panelTitle}>
                   <CalendarDays size={18} /> People Visiting Soon
                 </h3>
+                <span
+                  style={{ ...styles.panelAction, cursor: 'pointer' }}
+                  onClick={() => setActivePopup('visit')}
+                >
+                  + Log Visit
+                </span>
               </div>
               {loadingVisits ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -491,22 +525,106 @@ export default function GathererPage() {
                     const name = v.clients
                       ? `${v.clients.first_name || ''} ${v.clients.last_name || ''}`.trim()
                       : 'Unknown client';
-                    const fromLabel = new Date(v.visit_start_date).toLocaleDateString();
-                    const toLabel = new Date(v.visit_end_date || v.visit_start_date).toLocaleDateString();
+                    const fromLabel = new Date(v.visit_start_date).toLocaleDateString('en-GB');
+                    const toLabel = new Date(v.visit_end_date || v.visit_start_date).toLocaleDateString('en-GB');
+                    const visitColor = v.color || '#ff00ff';
+
                     return (
-                      <li key={v.id} style={styles.cardItem}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>
-                            <strong>{name}</strong>{' '}
-                            <span style={styles.smallLabel}>({v.id.slice(0, 8)})</span>
+                      <li
+                        key={v.id}
+                        style={{
+                          ...styles.cardItem,
+                          borderLeft: `4px solid ${visitColor}`,
+                          paddingLeft: '16px',
+                        }}
+                      >
+                        {/* Name and ID */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>
+                            {name}
                           </span>
-                          <span style={styles.smallLabel}>
-                            {fromLabel} – {toLabel}
+                          <span style={{ ...styles.smallLabel, fontSize: '0.65rem' }}>
+                            ({v.id.slice(0, 8)})
                           </span>
                         </div>
-                        <div style={styles.badgeRow}>
-                          <span style={styles.badgePink}>{v.notes || 'No notes yet'}</span>
+
+                        {/* Dates - larger */}
+                        <div
+                          style={{
+                            fontSize: '1.1rem',
+                            fontWeight: 'bold',
+                            color: visitColor,
+                            marginBottom: '6px',
+                            textShadow: `0 0 4px ${visitColor}`,
+                          }}
+                        >
+                          📅 {fromLabel} → {toLabel}
                         </div>
+
+                        {/* Notes - bigger box */}
+                        <div
+                          style={{
+                            fontSize: '0.95rem',
+                            color: '#e0e0ff',
+                            fontWeight: 600,
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            padding: '8px',
+                            borderRadius: '4px',
+                            marginBottom: '10px',
+                            border: `1px solid ${visitColor}40`,
+                          }}
+                        >
+                          {v.notes || 'No visit notes recorded'}
+                        </div>
+
+                        {/* Edit visit button */}
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            backgroundColor: `${visitColor}20`,
+                            border: `1px solid ${visitColor}`,
+                            borderRadius: '4px',
+                            color: visitColor,
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                          onClick={() => setEditingVisitId(v.id)}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.backgroundColor = `${visitColor}40`;
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.backgroundColor = `${visitColor}20`;
+                          }}
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                          Edit Visit
+                        </button>
                       </li>
                     );
                   })}
@@ -523,7 +641,12 @@ export default function GathererPage() {
                 <h3 style={styles.panelTitle}>
                   <Bell size={18} /> Follow-ups & Chasing
                 </h3>
-                <span style={{...styles.panelAction, cursor: 'pointer'}} onClick={() => setActivePopup('task')}>+ Create Task</span>
+                <span
+                  style={{ ...styles.panelAction, cursor: 'pointer' }}
+                  onClick={() => setActivePopup('task')}
+                >
+                  + Create Task
+                </span>
               </div>
               {loadingTasks ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -537,14 +660,16 @@ export default function GathererPage() {
                     const name = task.clients
                       ? `${task.clients.first_name || ''} ${task.clients.last_name || ''}`.trim()
                       : 'Unknown client';
-                    const dueLabel = new Date(task.due_date).toLocaleDateString();
+                    const dueLabel = new Date(task.due_date).toLocaleDateString('en-GB');
                     return (
                       <li
                         key={task.id}
                         style={{
                           ...styles.cardItem,
                           opacity: isDone ? 0.5 : 1,
-                          backgroundColor: isSnoozed ? 'rgba(255, 255, 0, 0.08)' : 'rgba(0, 255, 255, 0.08)',
+                          backgroundColor: isSnoozed
+                            ? 'rgba(255, 255, 0, 0.08)'
+                            : 'rgba(0, 255, 255, 0.08)',
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -558,7 +683,6 @@ export default function GathererPage() {
                           {task.notes || 'Follow up with this client.'}
                         </div>
                         <div style={styles.badgeRow}>
-                          {/* Mail icon removed as it was unused in import, adding generic reminder icon if needed */}
                           {isSnoozed && <span style={styles.badge}>Snoozed</span>}
                           {isDone && (
                             <span
@@ -613,7 +737,7 @@ export default function GathererPage() {
 
           {/* RIGHT COLUMN */}
           <div style={styles.columnStack}>
-            {/* Calendar */}
+            {/* Mini Calendar */}
             <section style={styles.calendarPanel}>
               <div style={styles.panelHeader}>
                 <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
@@ -627,9 +751,9 @@ export default function GathererPage() {
                 {today.toLocaleString('default', { month: 'long' }).toUpperCase()} {calendarYear}
               </div>
               <div style={styles.calendarGrid}>
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, idx) => (
                   <div
-                    key={d}
+                    key={idx} // Use Index for uniqueness
                     style={{ textAlign: 'center', fontSize: '0.7rem', color: '#a0a0ff' }}
                   >
                     {d}
@@ -640,22 +764,20 @@ export default function GathererPage() {
                     key={idx}
                     style={{
                       ...styles.calendarCell,
-                      backgroundColor: cell.hasVisit ? 'rgba(255, 0, 255, 0.18)' : 'transparent',
-                      borderColor: cell.hasVisit ? '#ff00ff' : 'rgba(0, 255, 255, 0.2)',
+                      backgroundColor: cell.color ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
+                      borderColor: cell.color || 'rgba(0, 255, 255, 0.2)',
                     }}
                   >
-                    <span style={{ fontSize: '0.7rem', color: '#ffffff' }}>
-                      {cell.day ?? ''}
-                    </span>
-                    {cell.hasVisit && (
+                    <span style={{ fontSize: '0.7rem', color: '#ffffff' }}>{cell.day ?? ''}</span>
+                    {cell.color && (
                       <span
                         style={{
                           alignSelf: 'flex-end',
                           width: '6px',
                           height: '6px',
                           borderRadius: '999px',
-                          backgroundColor: '#ff00ff',
-                          boxShadow: '0 0 6px #ff00ff',
+                          backgroundColor: cell.color,
+                          boxShadow: `0 0 6px ${cell.color}`,
                         }}
                       />
                     )}
@@ -663,11 +785,11 @@ export default function GathererPage() {
                 ))}
               </div>
               <div style={{ marginTop: '12px', fontSize: '0.75rem', color: '#a0a0ff' }}>
-                Pink-highlighted days indicate at least one buyer present in the area.
+                Colored days indicate at least one visit.
               </div>
             </section>
 
-            {/* Priority Alerts (static copy for now) */}
+            {/* Priority Alerts */}
             <section style={styles.panel}>
               <div style={styles.panelHeader}>
                 <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
@@ -682,12 +804,14 @@ export default function GathererPage() {
                 </li>
                 <li style={styles.cardItem}>
                   <div style={{ fontSize: '0.85rem' }}>
-                    Several buyers have no updated criteria in the last 90 days – schedule strategy calls.
+                    Several buyers have no updated criteria in the last 90 days – schedule strategy
+                    calls.
                   </div>
                 </li>
                 <li style={styles.cardItem}>
                   <div style={{ fontSize: '0.85rem' }}>
-                    Email reminder engine can be wired via Supabase Edge Functions + Cron for automatic follow-ups.
+                    Email reminder engine can be wired via Supabase Edge Functions + Cron for
+                    automatic follow-ups.
                   </div>
                 </li>
               </ul>
@@ -699,8 +823,26 @@ export default function GathererPage() {
       {/* Popups */}
       <CreateClientPopup isOpen={activePopup === 'client'} onClose={() => setActivePopup(null)} />
       <CreateMandatePopup isOpen={activePopup === 'mandate'} onClose={() => setActivePopup(null)} />
-      <CreatePropertyPopup isOpen={activePopup === 'property'} onClose={() => setActivePopup(null)} />
-      <CreateTaskPopup isOpen={activePopup === 'task'} onClose={() => setActivePopup(null)} onTaskCreated={fetchFollowUps} />
+      <CreatePropertyPopup
+        isOpen={activePopup === 'property'}
+        onClose={() => setActivePopup(null)}
+      />
+      <CreateTaskPopup
+        isOpen={activePopup === 'task'}
+        onClose={() => setActivePopup(null)}
+        onTaskCreated={fetchFollowUps}
+      />
+      <CreateVisitPopup
+        isOpen={activePopup === 'visit'}
+        onClose={() => setActivePopup(null)}
+        onVisitCreated={fetchVisitingSoon}
+      />
+      <EditVisitPopup
+        isOpen={!!editingVisitId}
+        visitId={editingVisitId}
+        onClose={() => setEditingVisitId(null)}
+        onVisitUpdated={fetchVisitingSoon}
+      />
     </div>
   );
 }
