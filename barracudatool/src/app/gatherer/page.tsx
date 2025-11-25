@@ -69,11 +69,9 @@ interface FollowUpTask {
   } | null;
 }
 
-// Utility: get all dates in a visit range (UTC-safe)
+// Utility: get all dates in a visit range
 function getDatesBetween(start: string, end: string): string[] {
   const dates: string[] = [];
-  // Use simple string splitting to avoid timezone issues entirely
-  // Assuming format YYYY-MM-DD
   const startDate = new Date(start);
   const endDate = new Date(end);
   
@@ -229,10 +227,12 @@ export default function GathererPage() {
   const [recentClients, setRecentClients] = useState<RecentlyAddedClient[]>([]);
   const [visitingSoon, setVisitingSoon] = useState<VisitingSoon[]>([]);
   const [followUps, setFollowUps] = useState<FollowUpTask[]>([]);
+  const [totalClients, setTotalClients] = useState(0); // NEW: Total active buyers count
 
   const [loadingRecent, setLoadingRecent] = useState(true);
   const [loadingVisits, setLoadingVisits] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true); // NEW
 
   useEffect(() => {
     const handleResize = () => setIsLargeScreen(window.innerWidth >= 1200);
@@ -264,6 +264,17 @@ export default function GathererPage() {
     setLoadingRecent(false);
   };
 
+  // NEW: Fetch total client count for status bar
+  const fetchTotalClients = async () => {
+    setLoadingStats(true);
+    const { count, error } = await supabase
+      .from('clients')
+      .select('*', { count: 'exact', head: true });
+    
+    if (!error && count !== null) setTotalClients(count);
+    setLoadingStats(false);
+  };
+
   const fetchVisitingSoon = async () => {
     setLoadingVisits(true);
     const today = new Date();
@@ -288,7 +299,7 @@ export default function GathererPage() {
       )
       .gte('visit_start_date', today.toISOString().split('T')[0])
       .lte('visit_start_date', plus30.toISOString().split('T')[0])
-      .order('visit_start_date', { ascending: true });
+      .order('visit_start_date', { ascending: true});
 
     if (!error && data) setVisitingSoon(data as unknown as VisitingSoon[]);
     setLoadingVisits(false);
@@ -328,6 +339,7 @@ export default function GathererPage() {
     fetchRecentClients();
     fetchVisitingSoon();
     fetchFollowUps();
+    fetchTotalClients(); // NEW
   }, []);
 
   // ---------- Actions ----------
@@ -358,22 +370,13 @@ export default function GathererPage() {
     fetchFollowUps();
   };
 
-  // ---------- Calendar logic (UTC Fixed) ----------
+  // ---------- Calendar logic ----------
   const today = new Date();
   const [calendarMonth] = useState(today.getMonth());
   const [calendarYear] = useState(today.getFullYear());
 
-  // FIX: Calculate month start/end using plain construction to avoid local timezone shifting weekday
-  // Construct 1st of month in local time, then getDay() returns local weekday
   const firstOfMonth = new Date(calendarYear, calendarMonth, 1);
-  
-  // Monday = 0 in our calculation logic for offset
-  // JS getDay(): Sun=0, Mon=1, Tue=2...
-  // We want Mon=0, Tue=1... Sun=6
-  // (day + 6) % 7 converts JS Sunday(0) to 6, and Monday(1) to 0.
   const firstDayIndex = (firstOfMonth.getDay() + 6) % 7;
-  
-  // Number of days in this month
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
 
   const visitDateColors = new Map<string, string>();
@@ -388,14 +391,11 @@ export default function GathererPage() {
 
   const calendarCells: Array<{ day: number | null; color: string | null }> = [];
   
-  // Fill padding days
   for (let i = 0; i < firstDayIndex; i++) {
     calendarCells.push({ day: null, color: null });
   }
   
-  // Fill actual days
   for (let d = 1; d <= daysInMonth; d++) {
-    // Create date string manually YYYY-MM-DD to match DB format, avoiding timezone shifts
     const monthStr = String(calendarMonth + 1).padStart(2, '0');
     const dayStr = String(d).padStart(2, '0');
     const key = `${calendarYear}-${monthStr}-${dayStr}`;
@@ -417,11 +417,11 @@ export default function GathererPage() {
       >
         <h2 style={styles.sectionHeader}>{'// BUYER CONTROL HUB'}</h2>
 
-        {/* Status bar */}
+        {/* Status bar - NOW CONNECTED */}
         <div style={styles.statusBar}>
           <span style={styles.statusItem}>
             ACTIVE BUYERS:{' '}
-            <strong>{/* Placeholder */}138</strong>
+            <strong>{loadingStats ? '...' : totalClients}</strong>
           </span>
           <span style={styles.statusItem}>
             VISITS NEXT 30 DAYS: <strong>{visitingSoon.length}</strong>
@@ -538,7 +538,6 @@ export default function GathererPage() {
                           paddingLeft: '16px',
                         }}
                       >
-                        {/* Name and ID */}
                         <div
                           style={{
                             display: 'flex',
@@ -555,7 +554,6 @@ export default function GathererPage() {
                           </span>
                         </div>
 
-                        {/* Dates - larger */}
                         <div
                           style={{
                             fontSize: '1.1rem',
@@ -568,7 +566,6 @@ export default function GathererPage() {
                           📅 {fromLabel} → {toLabel}
                         </div>
 
-                        {/* Notes - bigger box */}
                         <div
                           style={{
                             fontSize: '0.95rem',
@@ -584,7 +581,6 @@ export default function GathererPage() {
                           {v.notes || 'No visit notes recorded'}
                         </div>
 
-                        {/* Edit visit button */}
                         <button
                           type="button"
                           style={{
@@ -635,11 +631,11 @@ export default function GathererPage() {
               )}
             </section>
 
-            {/* Follow-ups */}
+            {/* Follow-ups - REDESIGNED AS TODO LIST */}
             <section style={styles.panel}>
               <div style={styles.panelHeader}>
                 <h3 style={styles.panelTitle}>
-                  <Bell size={18} /> Follow-ups & Chasing
+                  <Bell size={18} /> Follow-ups & Tasks
                 </h3>
                 <span
                   style={{ ...styles.panelAction, cursor: 'pointer' }}
@@ -655,80 +651,90 @@ export default function GathererPage() {
               ) : (
                 <ul style={styles.list}>
                   {activeFollowUps.map(task => {
-                    const isDone = task.status === 'done';
                     const isSnoozed = task.status === 'snoozed';
                     const name = task.clients
                       ? `${task.clients.first_name || ''} ${task.clients.last_name || ''}`.trim()
                       : 'Unknown client';
                     const dueLabel = new Date(task.due_date).toLocaleDateString('en-GB');
+                    const isOverdue = new Date(task.due_date) < new Date(new Date().toISOString().split('T')[0]);
+                    
                     return (
                       <li
                         key={task.id}
                         style={{
                           ...styles.cardItem,
-                          opacity: isDone ? 0.5 : 1,
                           backgroundColor: isSnoozed
                             ? 'rgba(255, 255, 0, 0.08)'
+                            : isOverdue
+                            ? 'rgba(255, 0, 0, 0.08)'
                             : 'rgba(0, 255, 255, 0.08)',
+                          borderLeft: `4px solid ${isSnoozed ? '#ffff00' : isOverdue ? '#ff0000' : '#00ffff'}`,
+                          paddingLeft: '12px',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>
-                            <strong>{name}</strong>{' '}
-                            <span style={styles.smallLabel}>({task.client_id.slice(0, 8)})</span>
+                        {/* Task header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>
+                            {name}
                           </span>
-                          <span style={styles.smallLabel}>{dueLabel}</span>
+                          <span style={{ ...styles.smallLabel, fontSize: '0.65rem' }}>
+                            Due: {dueLabel}
+                          </span>
                         </div>
-                        <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>
+
+                        {/* Task description */}
+                        <div style={{ 
+                          fontSize: '0.9rem', 
+                          color: '#e0e0ff',
+                          marginBottom: '8px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                          padding: '6px',
+                          borderRadius: '4px'
+                        }}>
                           {task.notes || 'Follow up with this client.'}
                         </div>
-                        <div style={styles.badgeRow}>
-                          {isSnoozed && <span style={styles.badge}>Snoozed</span>}
-                          {isDone && (
-                            <span
-                              style={{
-                                ...styles.badge,
-                                borderColor: '#00ff00',
-                                color: '#00ff00',
-                              }}
-                            >
-                              Completed
-                            </span>
-                          )}
+
+                        {/* Status badges */}
+                        <div style={{ ...styles.badgeRow, marginBottom: '8px' }}>
+                          {isSnoozed && <span style={styles.badge}>⏰ Snoozed</span>}
+                          {isOverdue && <span style={{...styles.badge, borderColor: '#ff0000', color: '#ff0000'}}>⚠️ Overdue</span>}
+                          <span style={styles.badgePink}>{task.task_type === 'follow_up' ? '📞 Call' : '📋 Task'}</span>
                         </div>
-                        {!isDone && (
-                          <div style={styles.followUpActions}>
-                            <button
-                              type="button"
-                              style={{
-                                ...styles.followUpBtn,
-                                borderColor: '#ff00ff',
-                                backgroundColor: 'rgba(255, 0, 255, 0.1)',
-                                color: '#ff00ff',
-                              }}
-                              onClick={() => handleSnooze(task.id)}
-                            >
-                              <Hourglass size={12} /> Snooze
-                            </button>
-                            <button
-                              type="button"
-                              style={{
-                                ...styles.followUpBtn,
-                                borderColor: '#00ff00',
-                                backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                                color: '#00ff00',
-                              }}
-                              onClick={() => handleDone(task.id)}
-                            >
-                              <CheckCircle2 size={12} /> Done
-                            </button>
-                          </div>
-                        )}
+
+                        {/* Action buttons */}
+                        <div style={styles.followUpActions}>
+                          <button
+                            type="button"
+                            style={{
+                              ...styles.followUpBtn,
+                              borderColor: '#ff00ff',
+                              backgroundColor: 'rgba(255, 0, 255, 0.1)',
+                              color: '#ff00ff',
+                            }}
+                            onClick={() => handleSnooze(task.id)}
+                          >
+                            <Hourglass size={12} /> Snooze 7d
+                          </button>
+                          <button
+                            type="button"
+                            style={{
+                              ...styles.followUpBtn,
+                              borderColor: '#00ff00',
+                              backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                              color: '#00ff00',
+                            }}
+                            onClick={() => handleDone(task.id)}
+                          >
+                            <CheckCircle2 size={12} /> Complete
+                          </button>
+                        </div>
                       </li>
                     );
                   })}
                   {activeFollowUps.length === 0 && (
-                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>No follow-ups due.</li>
+                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>
+                      ✅ All caught up! No follow-ups due.
+                    </li>
                   )}
                 </ul>
               )}
@@ -737,7 +743,7 @@ export default function GathererPage() {
 
           {/* RIGHT COLUMN */}
           <div style={styles.columnStack}>
-                       {/* Mini Calendar */}
+            {/* Mini Calendar */}
             <section style={styles.calendarPanel}>
               <div style={styles.panelHeader}>
                 <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
@@ -751,10 +757,10 @@ export default function GathererPage() {
                 {today.toLocaleString('default', { month: 'long' }).toUpperCase()} {calendarYear}
               </div>
               <div style={styles.calendarGrid}>
-                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, idx) => (
+                {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => (
                   <div
-                    key={idx} // Use Index for uniqueness
-                    style={{ textAlign: 'center', fontSize: '0.7rem', color: '#a0a0ff' }}
+                    key={d}
+                    style={{ textAlign: 'center', fontSize: '0.65rem', color: '#a0a0ff', fontWeight: 'bold' }}
                   >
                     {d}
                   </div>
@@ -788,7 +794,6 @@ export default function GathererPage() {
                 Colored days indicate at least one visit.
               </div>
             </section>
-
 
             {/* Priority Alerts */}
             <section style={styles.panel}>
