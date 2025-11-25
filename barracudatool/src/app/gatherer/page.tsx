@@ -11,7 +11,8 @@ import {
   Hourglass,
   CheckCircle2,
   Loader2,
-  Edit, // Added Edit icon
+  Edit,
+  RotateCcw,
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import MainHeader from '../../components/MainHeader';
@@ -21,7 +22,7 @@ import CreatePropertyPopup from '../../components/popups/CreatePropertyPopup';
 import CreateTaskPopup from '../../components/popups/CreateTaskPopup';
 import CreateVisitPopup from '../../components/popups/CreateVisitPopup';
 import EditVisitPopup from '../../components/popups/EditVisitPopup';
-import EditClientPopup from '../../components/popups/EditClientPopup'; // Added Import
+import EditClientPopup from '../../components/popups/EditClientPopup';
 
 // ---------- Supabase client ----------
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -71,12 +72,11 @@ interface FollowUpTask {
   } | null;
 }
 
-// Utility: get all dates in a visit range (UTC-safe)
+// Utility: get all dates in a visit range
 function getDatesBetween(start: string, end: string): string[] {
   const dates: string[] = [];
   const startDate = new Date(start);
   const endDate = new Date(end);
-  
   const current = new Date(startDate);
   while (current <= endDate) {
     dates.push(current.toISOString().split('T')[0]);
@@ -222,7 +222,8 @@ const styles: StyleObject = {
 };
 
 export default function GathererPage() {
-  const [activePopup, setActivePopup] = useState<'client' | 'mandate' | 'property' | 'task' | 'visit' | null>(null);
+  const [activePopup, setActivePopup] =
+    useState<'client' | 'mandate' | 'property' | 'task' | 'visit' | null>(null);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
@@ -272,7 +273,7 @@ export default function GathererPage() {
     const { count, error } = await supabase
       .from('clients')
       .select('*', { count: 'exact', head: true });
-    
+
     if (!error && count !== null) setTotalClients(count);
     setLoadingStats(false);
   };
@@ -309,9 +310,6 @@ export default function GathererPage() {
 
   const fetchFollowUps = async () => {
     setLoadingTasks(true);
-    // REMOVED THE TODAY FILTER. Now showing ALL pending tasks.
-    // const todayStr = new Date().toISOString().split('T')[0];
-
     const { data, error } = await supabase
       .from('client_tasks')
       .select(
@@ -330,8 +328,6 @@ export default function GathererPage() {
         )
       `
       )
-      .in('status', ['pending', 'snoozed'])
-      //.lte('due_date', todayStr) // <--- REMOVED THIS to show upcoming tasks too
       .order('due_date', { ascending: true });
 
     if (!error && data) setFollowUps(data as unknown as FollowUpTask[]);
@@ -345,32 +341,31 @@ export default function GathererPage() {
     fetchTotalClients();
   }, []);
 
-  // ---------- Actions ----------
+  // ---------- Task actions with Undo ----------
+  const updateLocalTaskStatus = (id: string, status: FollowUpStatus) => {
+    setFollowUps(prev => prev.map(t => (t.id === id ? { ...t, status } : t)));
+  };
+
   const handleSnooze = async (taskId: string) => {
     const snoozeDate = new Date();
     snoozeDate.setDate(snoozeDate.getDate() + 7);
     const snoozeStr = snoozeDate.toISOString().split('T')[0];
 
+    updateLocalTaskStatus(taskId, 'snoozed'); // optimistic
     await supabase
       .from('client_tasks')
-      .update({
-        status: 'snoozed',
-        snoozed_until: snoozeStr,
-      })
+      .update({ status: 'snoozed', snoozed_until: snoozeStr })
       .eq('id', taskId);
-
-    fetchFollowUps();
   };
 
   const handleDone = async (taskId: string) => {
-    await supabase
-      .from('client_tasks')
-      .update({
-        status: 'done',
-      })
-      .eq('id', taskId);
+    updateLocalTaskStatus(taskId, 'done');
+    await supabase.from('client_tasks').update({ status: 'done' }).eq('id', taskId);
+  };
 
-    fetchFollowUps();
+  const handleUndo = async (taskId: string) => {
+    updateLocalTaskStatus(taskId, 'pending');
+    await supabase.from('client_tasks').update({ status: 'pending' }).eq('id', taskId);
   };
 
   // ---------- Calendar logic ----------
@@ -379,7 +374,7 @@ export default function GathererPage() {
   const [calendarYear] = useState(today.getFullYear());
 
   const firstOfMonth = new Date(calendarYear, calendarMonth, 1);
-  const firstDayIndex = (firstOfMonth.getDay() + 6) % 7;
+  const firstDayIndex = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
 
   const visitDateColors = new Map<string, string>();
@@ -393,11 +388,7 @@ export default function GathererPage() {
   });
 
   const calendarCells: Array<{ day: number | null; color: string | null }> = [];
-  
-  for (let i = 0; i < firstDayIndex; i++) {
-    calendarCells.push({ day: null, color: null });
-  }
-  
+  for (let i = 0; i < firstDayIndex; i++) calendarCells.push({ day: null, color: null });
   for (let d = 1; d <= daysInMonth; d++) {
     const monthStr = String(calendarMonth + 1).padStart(2, '0');
     const dayStr = String(d).padStart(2, '0');
@@ -406,7 +397,7 @@ export default function GathererPage() {
     calendarCells.push({ day: d, color });
   }
 
-  const activeFollowUps = followUps.filter(t => t.status !== 'done');
+  const pendingTasksCount = followUps.filter(t => t.status !== 'done').length;
 
   return (
     <div style={styles.pageContainer}>
@@ -414,7 +405,7 @@ export default function GathererPage() {
       <main
         style={{
           ...styles.mainContent,
-          filter: activePopup || editingVisitId ? 'blur(5px)' : 'none',
+          filter: activePopup || editingVisitId || editingClientId ? 'blur(5px)' : 'none',
         }}
       >
         <h2 style={styles.sectionHeader}>{'// BUYER CONTROL HUB'}</h2>
@@ -422,14 +413,13 @@ export default function GathererPage() {
         {/* Status bar */}
         <div style={styles.statusBar}>
           <span style={styles.statusItem}>
-            ACTIVE BUYERS:{' '}
-            <strong>{loadingStats ? '...' : totalClients}</strong>
+            ACTIVE BUYERS: <strong>{loadingStats ? '...' : totalClients}</strong>
           </span>
           <span style={styles.statusItem}>
             VISITS NEXT 30 DAYS: <strong>{visitingSoon.length}</strong>
           </span>
           <span style={styles.statusItem}>
-            PENDING TASKS: <strong>{activeFollowUps.length}</strong>
+            PENDING TASKS: <strong>{pendingTasksCount}</strong>
           </span>
           <span style={styles.statusItem}>
             SYSTEM STATUS: <strong style={{ color: '#00ff00' }}>NOMINAL</strong>
@@ -453,11 +443,12 @@ export default function GathererPage() {
         </div>
 
         {/* Main layout */}
-        <div style={{ ...styles.contentLayout, ...(isLargeScreen ? styles.contentLayoutLarge : {}) }}>
+        <div
+          style={{ ...styles.contentLayout, ...(isLargeScreen ? styles.contentLayoutLarge : {}) }}
+        >
           {/* LEFT COLUMN */}
           <div style={styles.columnStack}>
-            
-            {/* Recently added clients - VISUAL UPDATE */}
+            {/* Recently added clients */}
             <section style={styles.panel}>
               <div style={styles.panelHeader}>
                 <h3 style={styles.panelTitle}>
@@ -475,58 +466,94 @@ export default function GathererPage() {
                 <ul style={styles.list}>
                   {recentClients.map(client => {
                     const crit = client.client_search_criteria?.[0];
-                    const name = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'Unnamed Client';
-                    
-                    // Ensure budget is displayed as a number if it exists
+                    const name =
+                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                      'Unnamed Client';
+
                     const minB = crit?.min_budget;
                     const maxB = crit?.max_budget;
-                    const budgetLabel = (minB || maxB) 
+                    const budgetLabel =
+                      minB != null || maxB != null
                         ? `€${(minB || 0).toLocaleString()} - €${(maxB || 0).toLocaleString()}`
                         : 'Budget Not Set';
 
                     const areas = crit?.locations || 'No areas set';
                     const created = new Date(client.created_at).toLocaleDateString('en-GB');
-                    
+
                     return (
-                      <li key={client.id} style={{
+                      <li
+                        key={client.id}
+                        style={{
                           ...styles.cardItem,
-                          padding: '15px', // Increased padding
-                          borderLeft: '4px solid #00ffff' // Added visual indicator
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          padding: '15px',
+                          borderLeft: '4px solid #00ffff',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '8px',
+                          }}
+                        >
                           <div>
-                            <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff' }}>{name}</div>
-                            <div style={{ fontSize: '0.7rem', color: '#a0a0ff' }}>ID: {client.id.slice(0, 8)}</div>
+                            <div
+                              style={{
+                                fontSize: '1.1rem',
+                                fontWeight: 'bold',
+                                color: '#fff',
+                              }}
+                            >
+                              {name}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#a0a0ff' }}>
+                              ID: {client.id.slice(0, 8)}
+                            </div>
                           </div>
-                          
-                          {/* Edit Button */}
-                          <button 
+
+                          <button
                             onClick={() => setEditingClientId(client.id)}
                             style={{
-                                background: 'transparent', 
-                                border: '1px solid #00ffff', 
-                                color:'#00ffff', 
-                                borderRadius: '4px', 
-                                padding: '5px 10px', 
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                fontSize: '0.75rem'
+                              background: 'transparent',
+                              border: '1px solid #00ffff',
+                              color: '#00ffff',
+                              borderRadius: '4px',
+                              padding: '5px 10px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              fontSize: '0.75rem',
                             }}
                           >
-                            <Edit size={14}/> Edit File
+                            <Edit size={14} /> Edit File
                           </button>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                          <div style={{ fontSize: '0.9rem', color: '#e0e0ff' }}>
-                            <strong>Budget:</strong> <span style={{color: '#00ff00'}}>{budgetLabel}</span>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '5px',
+                            fontSize: '0.9rem',
+                          }}
+                        >
+                          <div style={{ color: '#e0e0ff' }}>
+                            <strong>Budget:</strong>{' '}
+                            <span style={{ color: '#00ff00' }}>{budgetLabel}</span>
                           </div>
-                          <div style={{ fontSize: '0.9rem', color: '#e0e0ff' }}>
-                            <strong>Looking in:</strong> <span style={{color: '#ff00ff'}}>{areas}</span>
+                          <div style={{ color: '#e0e0ff' }}>
+                            <strong>Looking in:</strong>{' '}
+                            <span style={{ color: '#ff00ff' }}>{areas}</span>
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '5px' }}>
+                          <div
+                            style={{
+                              fontSize: '0.75rem',
+                              color: '#888',
+                              marginTop: '5px',
+                            }}
+                          >
                             Added: {created}
                           </div>
                         </div>
@@ -542,78 +569,261 @@ export default function GathererPage() {
 
             {/* People visiting soon */}
             <section style={styles.panel}>
-              {/* ... (same as before) ... */}
               <div style={styles.panelHeader}>
-                <h3 style={styles.panelTitle}><CalendarDays size={18} /> People Visiting Soon</h3>
-                <span style={{...styles.panelAction, cursor: 'pointer'}} onClick={() => setActivePopup('visit')}>+ Log Visit</span>
+                <h3 style={styles.panelTitle}>
+                  <CalendarDays size={18} /> People Visiting Soon
+                </h3>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span
+                    style={{ ...styles.panelAction, cursor: 'pointer' }}
+                    onClick={() => setActivePopup('visit')}
+                  >
+                    + Log Visit
+                  </span>
+                  <Link href="/gatherer/visits" style={styles.panelAction}>
+                    See all visits
+                  </Link>
+                </div>
               </div>
-              {loadingVisits ? <div style={{display:'flex', justifyContent:'center', padding:'10px'}}><Loader2 className="animate-spin" size={20}/></div> : (
+              {loadingVisits ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
+                  <Loader2 className="animate-spin" size={20} />
+                </div>
+              ) : (
                 <ul style={styles.list}>
                   {visitingSoon.map(v => {
-                    const name = v.clients ? `${v.clients.first_name || ''} ${v.clients.last_name || ''}`.trim() : 'Unknown client';
+                    const name = v.clients
+                      ? `${v.clients.first_name || ''} ${v.clients.last_name || ''}`.trim()
+                      : 'Unknown client';
                     const fromLabel = new Date(v.visit_start_date).toLocaleDateString('en-GB');
-                    const toLabel = new Date(v.visit_end_date || v.visit_start_date).toLocaleDateString('en-GB');
+                    const toLabel = new Date(
+                      v.visit_end_date || v.visit_start_date,
+                    ).toLocaleDateString('en-GB');
                     const visitColor = v.color || '#ff00ff';
+
                     return (
-                      <li key={v.id} style={{...styles.cardItem, borderLeft: `4px solid ${visitColor}`, paddingLeft: '16px'}}>
-                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px'}}>
-                          <span style={{fontSize: '1rem', fontWeight: 'bold', color: '#fff'}}>{name}</span>
-                          <span style={{...styles.smallLabel, fontSize: '0.65rem'}}>({v.id.slice(0, 8)})</span>
+                      <li
+                        key={v.id}
+                        style={{
+                          ...styles.cardItem,
+                          borderLeft: `4px solid ${visitColor}`,
+                          paddingLeft: '16px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: '1rem',
+                              fontWeight: 'bold',
+                              color: '#fff',
+                            }}
+                          >
+                            {name}
+                          </span>
+                          <span
+                            style={{ ...styles.smallLabel, fontSize: '0.65rem' }}
+                          >
+                            ({v.id.slice(0, 8)})
+                          </span>
                         </div>
-                        <div style={{fontSize: '1.1rem', fontWeight: 'bold', color: visitColor, marginBottom: '6px', textShadow: `0 0 4px ${visitColor}`}}>
+
+                        <div
+                          style={{
+                            fontSize: '1.1rem',
+                            fontWeight: 'bold',
+                            color: visitColor,
+                            marginBottom: '6px',
+                            textShadow: `0 0 4px ${visitColor}`,
+                          }}
+                        >
                           📅 {fromLabel} → {toLabel}
                         </div>
-                        <div style={{fontSize: '0.95rem', color: '#e0e0ff', fontWeight: 600, backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '8px', borderRadius: '4px', marginBottom: '10px', border: `1px solid ${visitColor}40`}}>
+
+                        <div
+                          style={{
+                            fontSize: '0.95rem',
+                            color: '#e0e0ff',
+                            fontWeight: 600,
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            padding: '8px',
+                            borderRadius: '4px',
+                            marginBottom: '10px',
+                            border: `1px solid ${visitColor}40`,
+                          }}
+                        >
                           {v.notes || 'No visit notes recorded'}
                         </div>
-                        <button type="button" style={{width: '100%', padding: '8px 12px', backgroundColor: `${visitColor}20`, border: `1px solid ${visitColor}`, borderRadius: '4px', color: visitColor, fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'}}
+
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            backgroundColor: `${visitColor}20`,
+                            border: `1px solid ${visitColor}`,
+                            borderRadius: '4px',
+                            color: visitColor,
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
                           onClick={() => setEditingVisitId(v.id)}
                         >
-                          <Edit size={14}/> Edit Visit
+                          <Edit size={14} /> Edit Visit
                         </button>
                       </li>
                     );
                   })}
-                  {visitingSoon.length === 0 && <li style={{ ...styles.cardItem, opacity: 0.6 }}>No visits planned.</li>}
+                  {visitingSoon.length === 0 && (
+                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>No visits planned.</li>
+                  )}
                 </ul>
               )}
             </section>
 
-            {/* Follow-ups */}
+            {/* Follow-ups & Tasks with Undo */}
             <section style={styles.panel}>
               <div style={styles.panelHeader}>
-                <h3 style={styles.panelTitle}><Bell size={18} /> Follow-ups & Tasks</h3>
-                <span style={{...styles.panelAction, cursor: 'pointer'}} onClick={() => setActivePopup('task')}>+ Create Task</span>
+                <h3 style={styles.panelTitle}>
+                  <Bell size={18} /> Follow-ups & Tasks
+                </h3>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span
+                    style={{ ...styles.panelAction, cursor: 'pointer' }}
+                    onClick={() => setActivePopup('task')}
+                  >
+                    + Create Task
+                  </span>
+                  <Link href="/gatherer/tasks" style={styles.panelAction}>
+                    See all tasks
+                  </Link>
+                </div>
               </div>
-              {loadingTasks ? <div style={{display:'flex', justifyContent:'center', padding:'10px'}}><Loader2 className="animate-spin" size={20}/></div> : (
+              {loadingTasks ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
+                  <Loader2 className="animate-spin" size={20} />
+                </div>
+              ) : (
                 <ul style={styles.list}>
-                  {activeFollowUps.map(task => {
+                  {followUps.map(task => {
                     const isDone = task.status === 'done';
                     const isSnoozed = task.status === 'snoozed';
-                    const name = task.clients ? `${task.clients.first_name || ''} ${task.clients.last_name || ''}`.trim() : 'Unknown client';
+                    const name = task.clients
+                      ? `${task.clients.first_name || ''} ${
+                          task.clients.last_name || ''
+                        }`.trim()
+                      : 'Unknown client';
                     const dueLabel = new Date(task.due_date).toLocaleDateString('en-GB');
-                    
+
+                    const bgColor = isDone
+                      ? 'rgba(0, 255, 0, 0.08)'
+                      : isSnoozed
+                      ? 'rgba(255, 255, 0, 0.08)'
+                      : 'rgba(0, 255, 255, 0.08)';
+
                     return (
-                      <li key={task.id} style={{...styles.cardItem, opacity: isDone ? 0.5 : 1, backgroundColor: isSnoozed ? 'rgba(255, 255, 0, 0.08)' : 'rgba(0, 255, 255, 0.08)'}}>
-                        <div style={{display: 'flex', justifyContent: 'space-between'}}>
-                          <span><strong>{name}</strong> <span style={styles.smallLabel}>({task.client_id.slice(0, 8)})</span></span>
+                      <li
+                        key={task.id}
+                        style={{
+                          ...styles.cardItem,
+                          backgroundColor: bgColor,
+                          opacity: isDone ? 0.7 : 1,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>
+                            <strong>{name}</strong>{' '}
+                            <span style={styles.smallLabel}>
+                              ({task.client_id.slice(0, 8)})
+                            </span>
+                          </span>
                           <span style={styles.smallLabel}>{dueLabel}</span>
                         </div>
-                        <div style={{fontSize: '0.8rem', color: '#e0e0ff'}}>{task.notes || 'Follow up.'}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>
+                          {task.notes || 'Follow up with this client.'}
+                        </div>
                         <div style={styles.badgeRow}>
                           {isSnoozed && <span style={styles.badge}>Snoozed</span>}
-                          {isDone && <span style={{...styles.badge, borderColor: '#00ff00', color: '#00ff00'}}>Completed</span>}
+                          {isDone && (
+                            <span
+                              style={{
+                                ...styles.badge,
+                                borderColor: '#00ff00',
+                                color: '#00ff00',
+                              }}
+                            >
+                              Completed
+                            </span>
+                          )}
+                          <span style={styles.badgePink}>
+                            {task.task_type === 'follow_up' ? 'Call' : 'Task'}
+                          </span>
                         </div>
-                        {!isDone && (
-                          <div style={styles.followUpActions}>
-                            <button type="button" style={{...styles.followUpBtn, borderColor: '#ff00ff', backgroundColor: 'rgba(255,0,255,0.1)', color: '#ff00ff'}} onClick={() => handleSnooze(task.id)}><Hourglass size={12}/> Snooze</button>
-                            <button type="button" style={{...styles.followUpBtn, borderColor: '#00ff00', backgroundColor: 'rgba(0,255,0,0.1)', color: '#00ff00'}} onClick={() => handleDone(task.id)}><CheckCircle2 size={12}/> Done</button>
-                          </div>
-                        )}
+
+                        <div style={styles.followUpActions}>
+                          {!isDone ? (
+                            <>
+                              <button
+                                type="button"
+                                style={{
+                                  ...styles.followUpBtn,
+                                  borderColor: '#ff00ff',
+                                  backgroundColor: 'rgba(255, 0, 255, 0.1)',
+                                  color: '#ff00ff',
+                                }}
+                                onClick={() => handleSnooze(task.id)}
+                              >
+                                <Hourglass size={12} /> Snooze 7d
+                              </button>
+                              <button
+                                type="button"
+                                style={{
+                                  ...styles.followUpBtn,
+                                  borderColor: '#00ff00',
+                                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                                  color: '#00ff00',
+                                }}
+                                onClick={() => handleDone(task.id)}
+                              >
+                                <CheckCircle2 size={12} /> Done
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              style={{
+                                ...styles.followUpBtn,
+                                borderColor: '#ff00ff',
+                                backgroundColor: 'rgba(255, 0, 255, 0.1)',
+                                color: '#ff00ff',
+                              }}
+                              onClick={() => handleUndo(task.id)}
+                            >
+                              <RotateCcw size={12} /> Undo
+                            </button>
+                          )}
+                        </div>
                       </li>
                     );
                   })}
-                  {activeFollowUps.length === 0 && <li style={{ ...styles.cardItem, opacity: 0.6 }}>No pending tasks.</li>}
+                  {followUps.length === 0 && (
+                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>
+                      No tasks yet.
+                    </li>
+                  )}
                 </ul>
               )}
             </section>
@@ -621,31 +831,91 @@ export default function GathererPage() {
 
           {/* RIGHT COLUMN */}
           <div style={styles.columnStack}>
+            {/* Mini Calendar */}
             <section style={styles.calendarPanel}>
               <div style={styles.panelHeader}>
-                <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}><CalendarDays size={18} /> Visit Calendar</h3>
-                <Link href="/gatherer/calendar" style={styles.panelAction}>View Calendar</Link>
+                <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
+                  <CalendarDays size={18} /> Visit Calendar
+                </h3>
+                <Link href="/gatherer/calendar" style={styles.panelAction}>
+                  View Calendar
+                </Link>
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>{today.toLocaleString('default', { month: 'long' }).toUpperCase()} {calendarYear}</div>
+              <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>
+                {today.toLocaleString('default', { month: 'long' }).toUpperCase()}{' '}
+                {calendarYear}
+              </div>
               <div style={styles.calendarGrid}>
                 {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d, idx) => (
-                  <div key={idx} style={{ textAlign: 'center', fontSize: '0.65rem', color: '#a0a0ff', fontWeight: 'bold' }}>{d}</div>
+                  <div
+                    key={idx}
+                    style={{
+                      textAlign: 'center',
+                      fontSize: '0.65rem',
+                      color: '#a0a0ff',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {d}
+                  </div>
                 ))}
                 {calendarCells.map((cell, idx) => (
-                  <div key={idx} style={{...styles.calendarCell, backgroundColor: cell.color ? 'rgba(0,0,0,0.2)' : 'transparent', borderColor: cell.color || 'rgba(0,255,255,0.2)'}}>
-                    <span style={{ fontSize: '0.7rem', color: '#fff' }}>{cell.day ?? ''}</span>
-                    {cell.color && <span style={{alignSelf:'flex-end', width:'6px', height:'6px', borderRadius:'999px', backgroundColor: cell.color, boxShadow: `0 0 6px ${cell.color}`}}/>}
+                  <div
+                    key={idx}
+                    style={{
+                      ...styles.calendarCell,
+                      backgroundColor: cell.color ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
+                      borderColor: cell.color || 'rgba(0, 255, 255, 0.2)',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.7rem', color: '#ffffff' }}>
+                      {cell.day ?? ''}
+                    </span>
+                    {cell.color && (
+                      <span
+                        style={{
+                          alignSelf: 'flex-end',
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '999px',
+                          backgroundColor: cell.color,
+                          boxShadow: `0 0 6px ${cell.color}`,
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '12px', fontSize: '0.75rem', color: '#a0a0ff' }}>Colored days indicate at least one visit.</div>
+              <div
+                style={{
+                  marginTop: '12px',
+                  fontSize: '0.75rem',
+                  color: '#a0a0ff',
+                }}
+              >
+                Colored days indicate at least one visit.
+              </div>
             </section>
 
+            {/* Priority Alerts */}
             <section style={styles.panel}>
-              <div style={styles.panelHeader}><h3 style={{...styles.panelTitle, color:'#ff00ff'}}><Bell size={18}/> Priority Alerts</h3></div>
+              <div style={styles.panelHeader}>
+                <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
+                  <Bell size={18} /> Priority Alerts
+                </h3>
+              </div>
               <ul style={styles.list}>
-                <li style={styles.cardItem}><div style={{fontSize:'0.85rem'}}>High-budget client arriving next week.</div></li>
-                <li style={styles.cardItem}><div style={{fontSize:'0.85rem'}}>Several buyers have no updated criteria.</div></li>
+                <li style={styles.cardItem}>
+                  <div style={{ fontSize: '0.85rem' }}>
+                    High-budget client arriving next week – ensure fresh stock in key areas.
+                  </div>
+                </li>
+                <li style={styles.cardItem}>
+                  <div style={{ fontSize: '0.85rem' }}>
+                    Several buyers have no updated criteria in the last 90 days – schedule strategy
+                    calls.
+                  </div>
+                </li>
               </ul>
             </section>
           </div>
@@ -653,19 +923,45 @@ export default function GathererPage() {
       </main>
 
       {/* Popups */}
-      <CreateClientPopup isOpen={activePopup === 'client'} onClose={() => { setActivePopup(null); fetchRecentClients(); fetchTotalClients(); }} />
-      <CreateMandatePopup isOpen={activePopup === 'mandate'} onClose={() => setActivePopup(null)} />
-      <CreatePropertyPopup isOpen={activePopup === 'property'} onClose={() => setActivePopup(null)} />
-      <CreateTaskPopup isOpen={activePopup === 'task'} onClose={() => setActivePopup(null)} onTaskCreated={fetchFollowUps} />
-      <CreateVisitPopup isOpen={activePopup === 'visit'} onClose={() => setActivePopup(null)} onVisitCreated={fetchVisitingSoon} />
-      
-      {/* EDIT POPUPS */}
-      <EditVisitPopup isOpen={!!editingVisitId} visitId={editingVisitId} onClose={() => setEditingVisitId(null)} onVisitUpdated={fetchVisitingSoon} />
-      
+      <CreateClientPopup
+        isOpen={activePopup === 'client'}
+        onClose={() => {
+          setActivePopup(null);
+          fetchRecentClients();
+          fetchTotalClients();
+        }}
+      />
+      <CreateMandatePopup
+        isOpen={activePopup === 'mandate'}
+        onClose={() => setActivePopup(null)}
+      />
+      <CreatePropertyPopup
+        isOpen={activePopup === 'property'}
+        onClose={() => setActivePopup(null)}
+      />
+      <CreateTaskPopup
+        isOpen={activePopup === 'task'}
+        onClose={() => setActivePopup(null)}
+        onTaskCreated={fetchFollowUps}
+      />
+      <CreateVisitPopup
+        isOpen={activePopup === 'visit'}
+        onClose={() => setActivePopup(null)}
+        onVisitCreated={fetchVisitingSoon}
+      />
+      <EditVisitPopup
+        isOpen={!!editingVisitId}
+        visitId={editingVisitId}
+        onClose={() => setEditingVisitId(null)}
+        onVisitUpdated={fetchVisitingSoon}
+      />
       {editingClientId && (
-        <EditClientPopup 
-          isOpen={!!editingClientId} 
-          onClose={() => { setEditingClientId(null); fetchRecentClients(); }} 
+        <EditClientPopup
+          isOpen={!!editingClientId}
+          onClose={() => {
+            setEditingClientId(null);
+            fetchRecentClients();
+          }}
           clientId={editingClientId}
         />
       )}
