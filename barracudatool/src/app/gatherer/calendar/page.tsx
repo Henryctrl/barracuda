@@ -371,32 +371,40 @@ export default function CalendarPage() {
           <div className="flex items-center gap-2 text-xl md:text-2xl text-[#ff00ff] uppercase font-bold tracking-wider drop-shadow-[0_0_8px_rgba(255,0,255,0.7)]">
             <CalIcon size={24} />
             {'// MISSION CALENDAR'}
-          </div>
+          </div></div>
 
           <div className="flex items-center gap-4">
-            {/* View Toggle */}
-            <div className="flex rounded border border-[#00ffff] overflow-hidden">
-              {(['month', 'week', 'day'] as ViewMode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setViewMode(m)}
-                  className={`px-3 py-1.5 text-xs uppercase font-bold transition-colors ${viewMode === m ? 'bg-[#00ffff] text-[#0d0d21]' : 'bg-transparent text-[#00ffff] hover:bg-[#00ffff]/10'}`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
+  {/* View Toggle */}
+  <div className="flex rounded border border-[#00ffff] overflow-hidden">
+    {(['month', 'week', 'day'] as ViewMode[]).map((m) => (
+      <button
+        key={m}
+        onClick={() => setViewMode(m)}
+        className={`px-3 py-1.5 text-xs uppercase font-bold transition-colors ${viewMode === m ? 'bg-[#00ffff] text-[#0d0d21]' : 'bg-transparent text-[#00ffff] hover:bg-[#00ffff]/10'}`}
+      >
+        {m}
+      </button>
+    ))}
+  </div>
 
-            {/* Nav */}
-            <div className="flex items-center gap-2">
-              <button onClick={goPrev} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10"><ChevronLeft size={16} /></button>
-              <div className="text-white font-bold w-32 text-center text-sm md:text-base">
-                {currentDate.toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase()}
-              </div>
-              <button onClick={goNext} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10"><ChevronRight size={16} /></button>
-            </div>
-          </div>
-        </div>
+  {/* Nav */}
+  <div className="flex items-center gap-2">
+    <button onClick={goPrev} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10"><ChevronLeft size={16} /></button>
+    <div className="text-white font-bold w-32 text-center text-sm md:text-base">
+      {currentDate.toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase()}
+    </div>
+    <button onClick={goNext} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10"><ChevronRight size={16} /></button>
+  </div>
+
+  {/* TODAY BUTTON */}
+  <button 
+    onClick={() => setCurrentDate(new Date())}
+    className="px-4 py-2 bg-[#ff00ff] text-white font-bold text-xs uppercase rounded hover:bg-[#ff00ff]/80 transition-colors shadow-[0_0_10px_rgba(255,0,255,0.5)]"
+  >
+    Today
+  </button>
+</div>
+
 
         {loading ? (
           <div className="flex justify-center py-20 text-[#00ffff]">
