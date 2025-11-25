@@ -619,6 +619,9 @@ export default function GathererPage() {
                 <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
                   <CalendarDays size={18} /> Visit Calendar
                 </h3>
+                <Link href="/gatherer/calendar" style={styles.panelAction}>
+                  View Calendar
+                </Link>
               </div>
               <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>
                 {today.toLocaleString('default', { month: 'long' }).toUpperCase()} {calendarYear}
