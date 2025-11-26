@@ -17,14 +17,13 @@ interface SearchCriteriaData {
   minBudget: string; maxBudget: string; locations: string; propertyTypes: string[];
   minSurface: string; maxSurface: string; minRooms: string; minBedrooms: string;
   desiredDPE: string; features: string[]; notes: string;
-  circleCenterLabel: string; circleCenterLat: number | null; circleCenterLon: number | null; circleRadiusKm: number;
   visitStartDate: string; visitEndDate: string; visitNotes: string;
 }
 
 const initialFormData: ClientFormData = { firstName: '', lastName: '', address: '', email: '', mobile: '', landline: '', dob: '', pob: '' };
 const initialSearchData: SearchCriteriaData = { 
   minBudget: '', maxBudget: '', locations: '', propertyTypes: [], minSurface: '', maxSurface: '', minRooms: '', minBedrooms: '', 
-  desiredDPE: '', features: [], notes: '', circleCenterLabel: '', circleCenterLat: null, circleCenterLon: null, circleRadiusKm: 25,
+  desiredDPE: '', features: [], notes: '', 
   visitStartDate: '', visitEndDate: '', visitNotes: '' 
 };
 
@@ -63,12 +62,11 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
   const [relations, setRelations] = useState<RelationData[]>([]);
   const [expandedRelation, setExpandedRelation] = useState<number | null>(null);
   const [searchCriteria, setSearchCriteria] = useState<SearchCriteriaData>(initialSearchData);
-  const [isCircleSearchActive, setIsCircleSearchActive] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
       setStage(1); setRelations([]); setExpandedRelation(null); setPrimaryClientData(initialFormData);
-      setSearchCriteria(initialSearchData); setErrorMessage(''); setIsSubmitting(false); setIsCircleSearchActive(false);
+      setSearchCriteria(initialSearchData); setErrorMessage(''); setIsSubmitting(false);
     }
   }, [isOpen]);
 
@@ -98,6 +96,9 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
       }]).select().single();
 
       if (primaryError) throw primaryError;
+      if (!primaryData) throw new Error("Failed to create client record");
+      
+      console.log("✅ Client created:", primaryData.id);
       
       // 2. Create Relations
       for (const rel of relations) {
@@ -116,27 +117,41 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         await supabase.from('client_relationships').insert([{ primary_client_id: primaryData.id, related_client_id: relData.id, relationship_type: rel.type }]);
       }
       
-      // 3. Create Criteria - Safe Parsing
-      const safeInt = (val: string) => (val && !isNaN(parseInt(val))) ? parseInt(val) : null;
+      // 3. Create Criteria - CLEAN VERSION
+      const toNumber = (val: string): number | null => {
+        if (val === '') return null;
+        const parsed = parseFloat(val);
+        return isNaN(parsed) ? null : parsed;
+      };
 
-      await supabase.from('client_search_criteria').insert([{ 
+      const criteriaPayload = { 
         client_id: primaryData.id,
-        min_budget: safeInt(searchCriteria.minBudget), 
-        max_budget: safeInt(searchCriteria.maxBudget), 
-        locations: searchCriteria.locations,
-        property_types: searchCriteria.propertyTypes, 
-        min_surface: safeInt(searchCriteria.minSurface), 
-        max_surface: safeInt(searchCriteria.maxSurface),
-        min_rooms: safeInt(searchCriteria.minRooms), 
-        min_bedrooms: safeInt(searchCriteria.minBedrooms), 
+        min_budget: toNumber(searchCriteria.minBudget), 
+        max_budget: toNumber(searchCriteria.maxBudget), 
+        locations: searchCriteria.locations || null,
+        property_types: searchCriteria.propertyTypes.length > 0 ? searchCriteria.propertyTypes : null, 
+        min_surface: toNumber(searchCriteria.minSurface), 
+        max_surface: toNumber(searchCriteria.maxSurface),
+        min_rooms: toNumber(searchCriteria.minRooms), 
+        min_bedrooms: toNumber(searchCriteria.minBedrooms), 
         desired_dpe: searchCriteria.desiredDPE || null,
-        features: searchCriteria.features, 
-        notes: searchCriteria.notes,
-        circle_center_label: isCircleSearchActive ? searchCriteria.circleCenterLabel : null,
-        circle_center_lat: isCircleSearchActive ? searchCriteria.circleCenterLat : null,
-        circle_center_lon: isCircleSearchActive ? searchCriteria.circleCenterLon : null,
-        circle_radius_km: isCircleSearchActive ? searchCriteria.circleRadiusKm : null,
-      }]);
+        features: searchCriteria.features.length > 0 ? searchCriteria.features : null, 
+        notes: searchCriteria.notes || null,
+      };
+
+      console.log("📤 Sending Criteria:", criteriaPayload);
+
+      const { data: criteriaData, error: criteriaError } = await supabase
+        .from('client_search_criteria')
+        .insert([criteriaPayload])
+        .select();
+
+      if (criteriaError) {
+        console.error("❌ Criteria Error:", criteriaError);
+        throw new Error(`Criteria save failed: ${criteriaError.message}`);
+      }
+
+      console.log("✅ Criteria saved:", criteriaData);
       
       // 4. Insert Visit
       if (searchCriteria.visitStartDate) {
@@ -144,15 +159,16 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
           client_id: primaryData.id,
           visit_start_date: searchCriteria.visitStartDate,
           visit_end_date: searchCriteria.visitEndDate || searchCriteria.visitStartDate,
-          notes: searchCriteria.visitNotes,
-          color: '#ff00ff' // Default color
+          notes: searchCriteria.visitNotes || null,
+          color: '#ff00ff'
         }]);
       }
 
+      alert("✅ Client created successfully!");
       onClose();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'An unknown error occurred';
-      console.error("Submission error:", error);
+      console.error("💥 Submission error:", error);
       setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
@@ -214,31 +230,15 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         </>}
 
         {stage === 2 && <div className="space-y-6">
-          {/* BUDGET & LOCATION */}
           <div>
             <div className={sectionHeaderClass}>Budget & Locations</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className={labelClass}>Min Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} /></div>
-              <div><label className={labelClass}>Max Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} /></div>
+              <div><label className={labelClass}>Min Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} placeholder="e.g., 400000" /></div>
+              <div><label className={labelClass}>Max Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} placeholder="e.g., 600000" /></div>
               <div className="md:col-span-2"><label className={labelClass}>Named Locations (Cities, Depts, Regions)</label><LocationSelector value={searchCriteria.locations} onChange={val => updateSearchCriteria('locations', val)} /></div>
             </div>
           </div>
           
-          {/* RADIUS SEARCH */}
-          <div>
-            <div className={sectionHeaderClass}>Radius Search</div>
-            <div className="flex flex-col gap-4 p-4 border border-dashed border-[#00ffff]/30 rounded">
-              {isCircleSearchActive ? (<>
-                <div><label className={labelClass}>Center Point</label><LocationSelector value={searchCriteria.circleCenterLabel} onChange={(val) => updateSearchCriteria('circleCenterLabel', val)} /></div>
-                <div><label className={labelClass}>Radius: {searchCriteria.circleRadiusKm} km</label><input type="range" min="1" max="200" value={searchCriteria.circleRadiusKm} onChange={e => updateSearchCriteria('circleRadiusKm', e.target.valueAsNumber)} className="w-full h-2 bg-[#0d0d21] rounded-lg appearance-none cursor-pointer range-thumb:bg-[#ff00ff]" /></div>
-                <button onClick={() => setIsCircleSearchActive(false)} className="text-xs text-red-400 self-start">Remove Radius Search</button>
-              </>) : (
-                <button onClick={() => setIsCircleSearchActive(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-dashed border-[#00ffff] text-[#00ffff] rounded hover:bg-[#00ffff]/20 font-bold uppercase text-sm"><Plus size={16} /> Define a Search Radius</button>
-              )}
-            </div>
-          </div>
-
-          {/* NEW: VISIT PLANNING */}
           <div>
             <div className={sectionHeaderClass}>Visit Planning</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-[#ff00ff]/30 rounded bg-[#ff00ff]/5">
@@ -248,7 +248,6 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
             </div>
           </div>
 
-          {/* SPECS */}
           <div>
             <div className={sectionHeaderClass}>Property Specs</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -260,7 +259,6 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
             </div>
           </div>
           
-          {/* FEATURES */}
           <div>
             <div className={sectionHeaderClass}>Type & Features</div>
             <div className="flex flex-wrap gap-2 mb-4">{propertyTypes.map(type => <label key={type} className={`flex items-center px-3 py-1 border rounded cursor-pointer text-xs ${searchCriteria.propertyTypes.includes(type) ? 'bg-[#ff00ff]/20 border-[#ff00ff]' : 'border-gray-600 hover:border-[#ff00ff]'}`}><input type="checkbox" className="hidden" checked={searchCriteria.propertyTypes.includes(type)} onChange={() => toggleCheckbox('propertyTypes', type)} /> {type}</label>)}</div>
