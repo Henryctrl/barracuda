@@ -6,19 +6,15 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   ArrowLeft, 
   User, 
-  MapPin, 
-  Euro, 
-  Maximize, 
   Globe, 
   Radar, 
-  Search,
   ExternalLink,
   Phone,
   Mail,
   BellRing,
   CheckCircle2,
   XCircle,
-  Loader2 // Add this
+  Loader2 
 } from 'lucide-react';
 import MainHeader from '../../../../components/MainHeader';
 
@@ -64,7 +60,7 @@ export default function ClientDetailPage() {
 
   useEffect(() => {
     const fetchClient = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('clients')
         .select(`*, client_search_criteria (*)`)
         .eq('id', clientId)

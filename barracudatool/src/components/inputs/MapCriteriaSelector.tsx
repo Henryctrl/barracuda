@@ -323,13 +323,13 @@ export default function MapCriteriaSelector({
     });
   }, [radiusSearches]);
 
-  const updateRadiusCenter = (placeCode: string, newCenter: [number, number]) => {
+  const updateRadiusCenter = useCallback((placeCode: string, newCenter: [number, number]) => {
     onRadiusChange(
       radiusSearches.map(r =>
         r.place_code === placeCode ? { ...r, center: newCenter } : r
       )
     );
-  };
+  }, [radiusSearches, onRadiusChange]);
 
   useEffect(() => {
     if (!map.current?.isStyleLoaded()) return;
@@ -378,7 +378,7 @@ export default function MapCriteriaSelector({
       map.current.flyTo({ center: [lon, lat], zoom: 14 });
     }
 
-    // NEW: Automatically add this place to selectedPlaces
+    // Automatically add this place to selectedPlaces
     try {
       const response = await fetch(
         `https://geo.api.gouv.fr/communes?lat=${lat}&lon=${lon}&fields=nom,code,centre,contour`
@@ -394,7 +394,6 @@ export default function MapCriteriaSelector({
           center: [lon, lat],
         };
 
-        // Only add if not already selected
         if (!selectedPlaces.find(p => p.code === commune.code)) {
           onPlacesChange([...selectedPlaces, newPlace]);
         }
@@ -460,7 +459,6 @@ export default function MapCriteriaSelector({
       }
     };
   }, [mode, selectedPlaces, onPlacesChange]);
-
   // Polygon drawing
   const handleMapClick = useCallback((e: maptilersdk.MapMouseEvent) => {
     if (mode !== 'sectors' || !isDrawing) return;
@@ -494,11 +492,10 @@ export default function MapCriteriaSelector({
     };
   }, [mode, isDrawing, handleMapClick]);
 
-  // NEW: Toggle boundary visibility based on mode
+  // Toggle boundary visibility based on mode
   useEffect(() => {
     if (!map.current?.isStyleLoaded()) return;
 
-    // Show/hide administrative boundaries based on mode
     const visibility = mode === 'places' ? 'visible' : 'none';
 
     const layers = [

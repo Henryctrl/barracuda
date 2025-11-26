@@ -348,7 +348,7 @@ export default function CalendarPage() {
               {`${h.toString().padStart(2, '0')}:00`}
             </div>
             
-            {days.map((d, idx) => {
+            {days.map((d) => {
               const dayVisits = visits.filter(v => isVisitDay(d, v));
               const dayTasks = tasks.filter(t => isSameDay(d, t.due_date));
               

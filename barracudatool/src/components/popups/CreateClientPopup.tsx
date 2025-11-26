@@ -99,7 +99,7 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
   const removeRelation = (id: number) => { setRelations(relations.filter(r => r.id !== id)); if (expandedRelation === id) setExpandedRelation(null); };
   const updateRelationData = (id: number, field: keyof ClientFormData, value: string) => setRelations(prev => prev.map(r => r.id === id ? { ...r, data: { ...r.data, [field]: value } } : r));
   const updateRelationType = (id: number, type: string) => setRelations(prev => prev.map(r => r.id === id ? { ...r, type } : r));
-  const updateSearchCriteria = (field: keyof SearchCriteriaData, value: any) => setSearchCriteria(prev => ({ ...prev, [field]: value }));
+  const updateSearchCriteria = (field: keyof SearchCriteriaData, value: unknown) => setSearchCriteria(prev => ({ ...prev, [field]: value }));
   const toggleCheckbox = (field: 'propertyTypes' | 'features', value: string) => setSearchCriteria(prev => ({ ...prev, [field]: prev[field].includes(value) ? prev[field].filter(i => i !== value) : [...prev[field], value] }));
 
   const handleFinalSubmit = async () => {

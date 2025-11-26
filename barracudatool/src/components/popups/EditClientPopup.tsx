@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Popup from '../Popup';
 import ClientFormFields, { ClientFormData } from './ClientFormFields';
 import MapCriteriaSelector from '../inputs/MapCriteriaSelector';
-import { User, ArrowRight, ArrowLeft, Loader2, Save, AlertCircle } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Loader2, Save, AlertCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -59,11 +59,7 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
     desiredDPE: '', features: [], notes: ''
   });
 
-  useEffect(() => {
-    if (isOpen && clientId) fetchClientData();
-  }, [isOpen, clientId]);
-
-  const fetchClientData = async () => {
+  const fetchClientData = useCallback(async () => {
     setLoading(true);
     setError('');
     
@@ -114,7 +110,11 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
     } finally {
       setLoading(false);
     }
-  };
+  }, [clientId]);
+
+  useEffect(() => {
+    if (isOpen && clientId) fetchClientData();
+  }, [isOpen, clientId, fetchClientData]);
 
   const handleSave = async () => {
     setIsSubmitting(true);
@@ -198,9 +198,10 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
   };
 
   // Helper
-  const updateCriteria = (field: keyof SearchCriteriaData, value: any) => {
+  const updateCriteria = (field: keyof SearchCriteriaData, value: unknown) => {
     setCriteriaData(prev => ({ ...prev, [field]: value }));
   };
+  
   const toggleCheckbox = (field: 'propertyTypes' | 'features', value: string) => {
     setCriteriaData(prev => ({
       ...prev,
@@ -212,7 +213,6 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
 
   const propertyTypes = ['Apartment', 'House/Villa', 'Mansion (Hôtel Particulier)', 'Castle (Château)', 'Loft/Atelier', 'Building (Immeuble)', 'Land (Terrain)'];
   const featuresList = ['Elevator (Ascenseur)', 'Balcony', 'Terrace', 'Garden (Jardin)', 'Parking', 'Garage', 'Cellar (Cave)', 'Haussmannian (Parquet/Moulures)', 'Fireplace', 'Top Floor', 'Ground Floor Garden', 'Sea View', 'Renovated (Refait à neuf)', 'Works Needed (Travaux)', 'Quiet (Calme)'];
-  const dpeRatings = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 
   return (
     <Popup isOpen={isOpen} onClose={onClose} title="Edit Client">
