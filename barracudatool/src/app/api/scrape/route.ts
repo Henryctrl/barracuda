@@ -48,30 +48,27 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
   let browser;
   
   try {
-    console.log('🚀 Launching browser...');
+    console.log('🔌 Connecting to existing Chrome instance...');
     const puppeteer = await initPuppeteer();
     
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    // Connect to your running Chrome instead of launching new browser
+    browser = await puppeteer.connect({
+      browserURL: 'http://localhost:9222',
     });
 
-    const page = await browser.newPage();
+    const pages = await browser.pages();
+    const page = pages[0] || await browser.newPage();
     
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
     console.log('🔍 Navigating to:', searchUrl);
     await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
     await page.screenshot({ path: 'leboncoin_screenshot.png', fullPage: true });
-    console.log('Screenshot taken at leboncoin_screenshot.png');
+    console.log('📸 Screenshot saved');
 
-    console.log('⏳ Waiting for listings to load...');
-    
+    console.log('⏳ Waiting for listings...');
     await page.waitForSelector('a[href*="/ventes_immobilieres/"]', { timeout: 15000 });
 
-    console.log('📄 Extracting data from page...');
+    console.log('📄 Extracting data...');
 
     const properties = await page.evaluate(() => {
       const listings: any[] = [];
@@ -151,14 +148,15 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
       };
     });
 
-    await browser.close();
+    await browser.disconnect();
     return formattedProperties;
   } catch (error) {
     console.error('❌ Puppeteer scrape error:', error);
-    if (browser) await browser.close();
+    if (browser) await browser.disconnect();
     return [];
   }
 }
+
 
 async function saveProperties(properties: ScrapedProperty[]) {
   const results = {
