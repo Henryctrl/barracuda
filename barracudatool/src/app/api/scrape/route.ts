@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import axios from 'axios';
-import * as cheerio from 'cheerio';
+import puppeteer from 'puppeteer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!; // Add this to .env.local
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 interface ScrapedProperty {
@@ -23,13 +22,11 @@ interface ScrapedProperty {
   raw_data: any;
 }
 
-// Helper: Extract postal code from location string
 function extractPostalCode(location: string): string | null {
   const match = location.match(/\b\d{5}\b/);
   return match ? match[0] : null;
 }
 
-// Helper: Determine property type from title
 function guessPropertyType(title: string): string | null {
   const lower = title.toLowerCase();
   if (lower.includes('appartement') || lower.includes('appart')) return 'Apartment';
@@ -40,77 +37,128 @@ function guessPropertyType(title: string): string | null {
   return null;
 }
 
-// LEBONCOIN RSS SCRAPER
-async function scrapeLeboncoinRSS(searchUrl: string): Promise<ScrapedProperty[]> {
+async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedProperty[]> {
+  let browser;
+  
   try {
-    // Leboncoin RSS URL format: https://www.leboncoin.fr/recherche?category=9&locations=Nice_06000&real_estate_type=1&rss=1
-    const response = await axios.get(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-      timeout: 10000,
+    console.log('🚀 Launching browser...');
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
-    const $ = cheerio.load(response.data, { xmlMode: true });
-    const properties: ScrapedProperty[] = [];
+    const page = await browser.newPage();
+    
+    // Set realistic viewport and user agent
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    $('item').each((_, item) => {
-      const $item = $(item);
-      
-      const title = $item.find('title').text().trim();
-      const link = $item.find('link').text().trim();
-      const description = $item.find('description').text().trim();
-      const pubDate = $item.find('pubDate').text().trim();
-      
-      // Extract data from description (Leboncoin puts it in CDATA)
-      const priceMatch = description.match(/(\d[\d\s]*)\s*€/);
-      const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
-      
-      const locationMatch = description.match(/Ville:\s*([^<]+)/);
-      const location = locationMatch ? locationMatch[1].trim() : null;
-      
-      const surfaceMatch = description.match(/(\d+)\s*m²/);
-      const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
-      
-      const roomsMatch = description.match(/(\d+)\s*pièces?/);
-      const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
-      
-      // Extract ID from URL
-      const idMatch = link.match(/\/(\d+)\.htm/);
-      const sourceId = idMatch ? idMatch[1] : link;
-      
-      const postalCode = location ? extractPostalCode(location) : null;
+    console.log('🔍 Navigating to:', searchUrl);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    console.log('⏳ Waiting for listings to load...');
+    
+    // Wait for listings to appear (Leboncoin uses this CSS selector)
+    await page.waitForSelector('[data-qa-id="aditem_container"]', { timeout: 10000 });
+
+    console.log('📄 Extracting data from page...');
+
+    // Extract listings from the page
+    const properties = await page.evaluate(() => {
+      const listings: any[] = [];
+      const cards = document.querySelectorAll('[data-qa-id="aditem_container"]');
+
+      cards.forEach((card) => {
+        try {
+          // Extract link and ID
+          const linkEl = card.querySelector('a[href*="/ventes_immobilieres/"]');
+          const url = linkEl ? (linkEl as HTMLAnchorElement).href : '';
+          const idMatch = url.match(/\/(\d+)\.htm/);
+          const sourceId = idMatch ? idMatch[1] : url;
+
+          // Extract title
+          const titleEl = card.querySelector('[data-qa-id="aditem_title"]');
+          const title = titleEl ? titleEl.textContent?.trim() || '' : '';
+
+          // Extract price
+          const priceEl = card.querySelector('[data-qa-id="aditem_price"]');
+          const priceText = priceEl ? priceEl.textContent?.trim() || '' : '';
+          const priceMatch = priceText.match(/(\d[\d\s]*)/);
+          const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
+
+          // Extract location
+          const locationEl = card.querySelector('[data-qa-id="aditem_location"]');
+          const location = locationEl ? locationEl.textContent?.trim() || '' : '';
+
+          // Extract attributes (surface, rooms)
+          const attributesEl = card.querySelector('[data-qa-id="aditem_attributes"]');
+          const attributesText = attributesEl ? attributesEl.textContent?.trim() || '' : '';
+          
+          const surfaceMatch = attributesText.match(/(\d+)\s*m²/);
+          const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+          
+          const roomsMatch = attributesText.match(/(\d+)\s*pièces?/);
+          const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
+
+          // Extract image
+          const imgEl = card.querySelector('img[src*="leboncoin"]');
+          const image = imgEl ? (imgEl as HTMLImageElement).src : '';
+
+          listings.push({
+            sourceId,
+            url,
+            title,
+            price,
+            location,
+            surface,
+            rooms,
+            image,
+            attributesText,
+          });
+        } catch (err) {
+          console.error('Error parsing listing:', err);
+        }
+      });
+
+      return listings;
+    });
+
+    console.log(`✅ Found ${properties.length} listings`);
+
+    // Transform to our format
+    const formattedProperties: ScrapedProperty[] = properties.map((p) => {
+      const postalCode = extractPostalCode(p.location);
       const department = postalCode ? postalCode.substring(0, 2) : null;
 
-      properties.push({
+      return {
         source: 'leboncoin',
-        source_id: sourceId,
-        url: link,
-        title,
-        price,
-        location_city: location,
+        source_id: p.sourceId,
+        url: p.url,
+        title: p.title,
+        price: p.price,
+        location_city: p.location,
         location_department: department,
         location_postal_code: postalCode,
-        property_type: guessPropertyType(title),
-        surface,
-        rooms,
-        images: [],
+        property_type: guessPropertyType(p.title),
+        surface: p.surface,
+        rooms: p.rooms,
+        images: p.image ? [p.image] : [],
         raw_data: {
-          description,
-          pubDate,
+          attributesText: p.attributesText,
           scrapedAt: new Date().toISOString(),
         },
-      });
+      };
     });
 
-    return properties;
+    await browser.close();
+    return formattedProperties;
   } catch (error) {
-    console.error('Leboncoin RSS scrape error:', error);
+    console.error('❌ Puppeteer scrape error:', error);
+    if (browser) await browser.close();
     return [];
   }
 }
 
-// Save properties to database
 async function saveProperties(properties: ScrapedProperty[]) {
   const results = {
     inserted: 0,
@@ -156,11 +204,12 @@ async function saveProperties(properties: ScrapedProperty[]) {
   return results;
 }
 
-// API Handler
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { searchUrl, source = 'leboncoin' } = body;
+
+    console.log('🚀 Scrape request:', { searchUrl, source });
 
     if (!searchUrl) {
       return NextResponse.json({ error: 'searchUrl required' }, { status: 400 });
@@ -169,7 +218,7 @@ export async function POST(request: NextRequest) {
     let properties: ScrapedProperty[] = [];
 
     if (source === 'leboncoin') {
-      properties = await scrapeLeboncoinRSS(searchUrl);
+      properties = await scrapeLeboncoinPuppeteer(searchUrl);
     } else {
       return NextResponse.json({ error: 'Unsupported source' }, { status: 400 });
     }
@@ -180,10 +229,10 @@ export async function POST(request: NextRequest) {
       success: true,
       scraped: properties.length,
       ...results,
-      properties: properties.slice(0, 5), // Return first 5 as preview
+      properties: properties.slice(0, 5),
     });
   } catch (error) {
-    console.error('Scrape API error:', error);
+    console.error('❌ Scrape API error:', error);
     return NextResponse.json(
       { error: 'Scraping failed', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -191,10 +240,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET handler for testing
 export async function GET() {
   return NextResponse.json({
-    message: 'Scraper API ready',
-    usage: 'POST with { "searchUrl": "leboncoin_rss_url", "source": "leboncoin" }',
+    message: 'Scraper API ready (Puppeteer mode)',
+    usage: 'POST with { "searchUrl": "leboncoin_search_url", "source": "leboncoin" }',
   });
 }
