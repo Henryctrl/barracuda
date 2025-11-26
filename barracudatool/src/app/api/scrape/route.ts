@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import puppeteer from 'puppeteer';
+
+// Dynamic puppeteer setup
+async function initPuppeteer() {
+  const puppeteerExtra = (await import('puppeteer-extra')).default;
+  const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+  puppeteerExtra.use(StealthPlugin());
+  return puppeteerExtra;
+}
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -42,6 +49,8 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
   
   try {
     console.log('🚀 Launching browser...');
+    const puppeteer = await initPuppeteer();
+    
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -49,48 +58,42 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
 
     const page = await browser.newPage();
     
-    // Set realistic viewport and user agent
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     console.log('🔍 Navigating to:', searchUrl);
     await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
+    await page.screenshot({ path: 'leboncoin_screenshot.png', fullPage: true });
+    console.log('Screenshot taken at leboncoin_screenshot.png');
+
     console.log('⏳ Waiting for listings to load...');
     
-    // Wait for listings to appear (Leboncoin uses this CSS selector)
-    await page.waitForSelector('[data-qa-id="aditem_container"]', { timeout: 10000 });
+    await page.waitForSelector('a[href*="/ventes_immobilieres/"]', { timeout: 15000 });
 
     console.log('📄 Extracting data from page...');
 
-    // Extract listings from the page
     const properties = await page.evaluate(() => {
       const listings: any[] = [];
-      const cards = document.querySelectorAll('[data-qa-id="aditem_container"]');
+      const cards = document.querySelectorAll('a[href*="/ventes_immobilieres/"]');
 
       cards.forEach((card) => {
         try {
-          // Extract link and ID
-          const linkEl = card.querySelector('a[href*="/ventes_immobilieres/"]');
-          const url = linkEl ? (linkEl as HTMLAnchorElement).href : '';
+          const url = (card as HTMLAnchorElement).href;
           const idMatch = url.match(/\/(\d+)\.htm/);
           const sourceId = idMatch ? idMatch[1] : url;
 
-          // Extract title
           const titleEl = card.querySelector('[data-qa-id="aditem_title"]');
           const title = titleEl ? titleEl.textContent?.trim() || '' : '';
 
-          // Extract price
           const priceEl = card.querySelector('[data-qa-id="aditem_price"]');
           const priceText = priceEl ? priceEl.textContent?.trim() || '' : '';
           const priceMatch = priceText.match(/(\d[\d\s]*)/);
           const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
 
-          // Extract location
           const locationEl = card.querySelector('[data-qa-id="aditem_location"]');
           const location = locationEl ? locationEl.textContent?.trim() || '' : '';
 
-          // Extract attributes (surface, rooms)
           const attributesEl = card.querySelector('[data-qa-id="aditem_attributes"]');
           const attributesText = attributesEl ? attributesEl.textContent?.trim() || '' : '';
           
@@ -100,7 +103,6 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
           const roomsMatch = attributesText.match(/(\d+)\s*pièces?/);
           const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
 
-          // Extract image
           const imgEl = card.querySelector('img[src*="leboncoin"]');
           const image = imgEl ? (imgEl as HTMLImageElement).src : '';
 
@@ -125,7 +127,6 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
 
     console.log(`✅ Found ${properties.length} listings`);
 
-    // Transform to our format
     const formattedProperties: ScrapedProperty[] = properties.map((p) => {
       const postalCode = extractPostalCode(p.location);
       const department = postalCode ? postalCode.substring(0, 2) : null;
@@ -242,7 +243,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({
-    message: 'Scraper API ready (Puppeteer mode)',
+    message: 'Scraper API ready (Puppeteer Stealth mode)',
     usage: 'POST with { "searchUrl": "leboncoin_search_url", "source": "leboncoin" }',
   });
 }
