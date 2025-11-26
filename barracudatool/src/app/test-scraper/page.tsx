@@ -4,7 +4,8 @@ import { useState } from 'react';
 
 export default function TestScraper() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{ success: boolean; scraped: number; inserted: number; updated: number; errors: number; properties: unknown[] } | null>(null);
+
 
   const testScrape = async () => {
     setLoading(true);

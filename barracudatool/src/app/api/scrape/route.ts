@@ -26,7 +26,8 @@ interface ScrapedProperty {
   surface: number | null;
   rooms: number | null;
   images: string[];
-  raw_data: any;
+  raw_data: Record<string, unknown>;
+
 }
 
 function extractPostalCode(location: string): string | null {
@@ -71,7 +72,18 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
     console.log('📄 Extracting data...');
 
     const properties = await page.evaluate(() => {
-      const listings: any[] = [];
+      const listings: Array<{
+  sourceId: string;
+  url: string;
+  title: string;
+  price: number | null;
+  location: string;
+  surface: number | null;
+  rooms: number | null;
+  image: string;
+  attributesText: string;
+}> = [];
+
       const cards = document.querySelectorAll('a[href*="/ventes_immobilieres/"]');
 
       cards.forEach((card) => {
