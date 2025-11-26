@@ -452,14 +452,14 @@ export default function GathererPage() {
             <UserPlus size={16} />
             <span>Add New Client</span>
           </button>
-          <button style={styles.actionButton} onClick={() => setActivePopup('mandate')}>
+          {/* <button style={styles.actionButton} onClick={() => setActivePopup('mandate')}>
             <FilePlus size={16} />
             <span>Create New Mandate</span>
-          </button>
-          <button style={styles.actionButton} onClick={() => setActivePopup('property')}>
+          </button> */}
+          {/* <button style={styles.actionButton} onClick={() => setActivePopup('property')}>
             <Home size={16} />
             <span>Add New Property</span>
-          </button>
+          </button> */}
         </div>
 
         {/* Main layout */}
