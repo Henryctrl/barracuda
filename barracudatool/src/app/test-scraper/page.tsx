@@ -10,7 +10,7 @@ export default function TestScraper() {
     setLoading(true);
     
     // Leboncoin RSS URL for Nice apartments
-    const searchUrl = 'https://www.leboncoin.fr/recherche?category=9&locations=Nice_06000&real_estate_type=1&rss=1';
+    const searchUrl = 'https://www.leboncoin.fr/recherche?category=9&locations=Nice_06000&real_estate_type=1';
     
     const response = await fetch('/api/scrape', {
       method: 'POST',
