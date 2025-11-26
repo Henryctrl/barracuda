@@ -3,7 +3,7 @@
 import React, { useState, CSSProperties } from 'react';
 import Popup from '../Popup';
 import ClientFormFields, { ClientFormData } from './ClientFormFields';
-import LocationSelector from '../inputs/LocationSelector';
+import MapCriteriaSelector from '../inputs/MapCriteriaSelector';
 import { User, Plus, Trash2, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, CheckCircle, Loader2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -13,8 +13,27 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // --- TYPES ---
 interface RelationData { id: number; type: string; data: ClientFormData; }
+
+interface Place {
+  type: 'commune' | 'department' | 'region';
+  code: string;
+  name: string;
+  center: [number, number];
+}
+
+interface RadiusSearch {
+  place_code: string;
+  place_name: string;
+  center: [number, number];
+  radius_km: number;
+}
+
 interface SearchCriteriaData {
-  minBudget: string; maxBudget: string; locations: string; propertyTypes: string[];
+  minBudget: string; maxBudget: string; 
+  selectedPlaces: Place[];
+  radiusSearches: RadiusSearch[];
+  customSectors: GeoJSON.FeatureCollection | null;
+  propertyTypes: string[];
   minSurface: string; maxSurface: string; minRooms: string; minBedrooms: string;
   desiredDPE: string; features: string[]; notes: string;
   visitStartDate: string; visitEndDate: string; visitNotes: string;
@@ -22,7 +41,11 @@ interface SearchCriteriaData {
 
 const initialFormData: ClientFormData = { firstName: '', lastName: '', address: '', email: '', mobile: '', landline: '', dob: '', pob: '' };
 const initialSearchData: SearchCriteriaData = { 
-  minBudget: '', maxBudget: '', locations: '', propertyTypes: [], minSurface: '', maxSurface: '', minRooms: '', minBedrooms: '', 
+  minBudget: '', maxBudget: '', 
+  selectedPlaces: [],
+  radiusSearches: [],
+  customSectors: null,
+  propertyTypes: [], minSurface: '', maxSurface: '', minRooms: '', minBedrooms: '', 
   desiredDPE: '', features: [], notes: '', 
   visitStartDate: '', visitEndDate: '', visitNotes: '' 
 };
@@ -76,7 +99,7 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
   const removeRelation = (id: number) => { setRelations(relations.filter(r => r.id !== id)); if (expandedRelation === id) setExpandedRelation(null); };
   const updateRelationData = (id: number, field: keyof ClientFormData, value: string) => setRelations(prev => prev.map(r => r.id === id ? { ...r, data: { ...r.data, [field]: value } } : r));
   const updateRelationType = (id: number, type: string) => setRelations(prev => prev.map(r => r.id === id ? { ...r, type } : r));
-  const updateSearchCriteria = (field: keyof SearchCriteriaData, value: string | number | boolean | string[] | null) => setSearchCriteria(prev => ({ ...prev, [field]: value }));
+  const updateSearchCriteria = (field: keyof SearchCriteriaData, value: any) => setSearchCriteria(prev => ({ ...prev, [field]: value }));
   const toggleCheckbox = (field: 'propertyTypes' | 'features', value: string) => setSearchCriteria(prev => ({ ...prev, [field]: prev[field].includes(value) ? prev[field].filter(i => i !== value) : [...prev[field], value] }));
 
   const handleFinalSubmit = async () => {
@@ -117,18 +140,35 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         await supabase.from('client_relationships').insert([{ primary_client_id: primaryData.id, related_client_id: relData.id, relationship_type: rel.type }]);
       }
       
-      // 3. Create Criteria - CLEAN VERSION
+      // 3. Create Criteria with NEW location system
       const toNumber = (val: string): number | null => {
         if (val === '') return null;
         const parsed = parseFloat(val);
         return isNaN(parsed) ? null : parsed;
       };
 
+      // Determine location mode based on what's filled
+      let locationMode = 'places';
+      if (searchCriteria.customSectors && searchCriteria.customSectors.features.length > 0) {
+        locationMode = 'sectors';
+      } else if (searchCriteria.radiusSearches.length > 0) {
+        locationMode = 'radius';
+      }
+
       const criteriaPayload = { 
         client_id: primaryData.id,
         min_budget: toNumber(searchCriteria.minBudget), 
         max_budget: toNumber(searchCriteria.maxBudget), 
-        locations: searchCriteria.locations || null,
+        
+        // NEW: Advanced location fields
+        location_mode: locationMode,
+        selected_places: searchCriteria.selectedPlaces.length > 0 ? searchCriteria.selectedPlaces : null,
+        radius_searches: searchCriteria.radiusSearches.length > 0 ? searchCriteria.radiusSearches : null,
+        custom_sectors: searchCriteria.customSectors,
+        
+        // Keep old locations field for backwards compatibility
+        locations: searchCriteria.selectedPlaces.map(p => p.name).join(', ') || null,
+        
         property_types: searchCriteria.propertyTypes.length > 0 ? searchCriteria.propertyTypes : null, 
         min_surface: toNumber(searchCriteria.minSurface), 
         max_surface: toNumber(searchCriteria.maxSurface),
@@ -231,12 +271,23 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
 
         {stage === 2 && <div className="space-y-6">
           <div>
-            <div className={sectionHeaderClass}>Budget & Locations</div>
+            <div className={sectionHeaderClass}>Budget</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><label className={labelClass}>Min Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} placeholder="e.g., 400000" /></div>
               <div><label className={labelClass}>Max Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} placeholder="e.g., 600000" /></div>
-              <div className="md:col-span-2"><label className={labelClass}>Named Locations (Cities, Depts, Regions)</label><LocationSelector value={searchCriteria.locations} onChange={val => updateSearchCriteria('locations', val)} /></div>
             </div>
+          </div>
+
+          <div>
+            <div className={sectionHeaderClass}>Location Criteria</div>
+            <MapCriteriaSelector
+              selectedPlaces={searchCriteria.selectedPlaces}
+              radiusSearches={searchCriteria.radiusSearches}
+              customSectors={searchCriteria.customSectors}
+              onPlacesChange={(places) => updateSearchCriteria('selectedPlaces', places)}
+              onRadiusChange={(radius) => updateSearchCriteria('radiusSearches', radius)}
+              onSectorsChange={(sectors) => updateSearchCriteria('customSectors', sectors)}
+            />
           </div>
           
           <div>
