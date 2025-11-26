@@ -1,3 +1,5 @@
+//src/app/gatherer/page.tsx
+
 'use client';
 
 import React, { useState, useEffect, CSSProperties } from 'react';
@@ -368,7 +370,7 @@ export default function GathererPage() {
     await supabase.from('client_tasks').update({ status: 'pending' }).eq('id', taskId);
   };
 
-  // ---------- Calendar logic ----------
+    // ---------- Calendar logic with TASKS ----------
   const today = new Date();
   const [calendarMonth] = useState(today.getMonth());
   const [calendarYear] = useState(today.getFullYear());
@@ -377,6 +379,7 @@ export default function GathererPage() {
   const firstDayIndex = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
 
+  // Map visit dates to colors
   const visitDateColors = new Map<string, string>();
   visitingSoon.forEach(v => {
     const start = v.visit_start_date;
@@ -387,17 +390,34 @@ export default function GathererPage() {
     });
   });
 
-  const calendarCells: Array<{ day: number | null; color: string | null }> = [];
-  for (let i = 0; i < firstDayIndex; i++) calendarCells.push({ day: null, color: null });
+  // Map task dates to counts
+  const taskDateCounts = new Map<string, number>();
+  followUps.forEach(task => {
+    const dateStr = task.due_date;
+    taskDateCounts.set(dateStr, (taskDateCounts.get(dateStr) || 0) + 1);
+  });
+
+  const calendarCells: Array<{ 
+    day: number | null; 
+    color: string | null; 
+    taskCount: number;
+  }> = [];
+  
+  for (let i = 0; i < firstDayIndex; i++) {
+    calendarCells.push({ day: null, color: null, taskCount: 0 });
+  }
+  
   for (let d = 1; d <= daysInMonth; d++) {
     const monthStr = String(calendarMonth + 1).padStart(2, '0');
     const dayStr = String(d).padStart(2, '0');
     const key = `${calendarYear}-${monthStr}-${dayStr}`;
     const color = visitDateColors.get(key) || null;
-    calendarCells.push({ day: d, color });
+    const taskCount = taskDateCounts.get(key) || 0;
+    calendarCells.push({ day: d, color, taskCount });
   }
 
   const pendingTasksCount = followUps.filter(t => t.status !== 'done').length;
+
 
   return (
     <div style={styles.pageContainer}>
@@ -845,7 +865,7 @@ export default function GathererPage() {
                 {today.toLocaleString('default', { month: 'long' }).toUpperCase()}{' '}
                 {calendarYear}
               </div>
-              <div style={styles.calendarGrid}>
+                            <div style={styles.calendarGrid}>
                 {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d, idx) => (
                   <div
                     key={idx}
@@ -866,23 +886,55 @@ export default function GathererPage() {
                       ...styles.calendarCell,
                       backgroundColor: cell.color ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
                       borderColor: cell.color || 'rgba(0, 255, 255, 0.2)',
+                      position: 'relative',
                     }}
                   >
                     <span style={{ fontSize: '0.7rem', color: '#ffffff' }}>
                       {cell.day ?? ''}
                     </span>
-                    {cell.color && (
-                      <span
-                        style={{
-                          alignSelf: 'flex-end',
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '999px',
-                          backgroundColor: cell.color,
-                          boxShadow: `0 0 6px ${cell.color}`,
-                        }}
-                      />
-                    )}
+                    
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'flex-end', 
+                      gap: '2px',
+                      position: 'absolute',
+                      bottom: '2px',
+                      right: '2px',
+                    }}>
+                      {/* Visit indicator dot */}
+                      {cell.color && (
+                        <span
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '999px',
+                            backgroundColor: cell.color,
+                            boxShadow: `0 0 6px ${cell.color}`,
+                          }}
+                        />
+                      )}
+                      
+                      {/* Task count badge */}
+                      {cell.taskCount > 0 && (
+                        <span
+                          style={{
+                            fontSize: '0.55rem',
+                            fontWeight: 'bold',
+                            color: '#000',
+                            backgroundColor: '#ffff00',
+                            borderRadius: '999px',
+                            padding: '1px 3px',
+                            lineHeight: '1',
+                            boxShadow: '0 0 4px rgba(255, 255, 0, 0.8)',
+                            minWidth: '12px',
+                            textAlign: 'center',
+                          }}
+                        >
+                          {cell.taskCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -891,10 +943,37 @@ export default function GathererPage() {
                   marginTop: '12px',
                   fontSize: '0.75rem',
                   color: '#a0a0ff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
                 }}
               >
-                Colored days indicate at least one visit.
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ 
+                    width: '8px', 
+                    height: '8px', 
+                    borderRadius: '50%', 
+                    backgroundColor: '#ff00ff',
+                    boxShadow: '0 0 6px #ff00ff',
+                  }} />
+                  <span>Visit scheduled</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ 
+                    fontSize: '0.6rem',
+                    fontWeight: 'bold',
+                    color: '#000',
+                    backgroundColor: '#ffff00',
+                    borderRadius: '999px',
+                    padding: '1px 4px',
+                    boxShadow: '0 0 4px rgba(255, 255, 0, 0.8)',
+                  }}>
+                    #
+                  </span>
+                  <span>Task count</span>
+                </div>
               </div>
+
             </section>
 
             {/* Priority Alerts */}
