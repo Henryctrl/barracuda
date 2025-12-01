@@ -3,7 +3,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Dynamic puppeteer setup
 async function initPuppeteer() {
   const puppeteerExtra = (await import('puppeteer-extra')).default;
   const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
@@ -48,40 +47,25 @@ function guessPropertyType(title: string): string | null {
   return null;
 }
 
-// CAD-IMMO SCRAPER
 async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
   let browser;
   
   try {
-    console.log('🚀 Launching browser for CAD-IMMO...');
     const puppeteer = await initPuppeteer();
-    
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const page = await browser.newPage();
-    
-    console.log('🔍 Navigating to:', searchUrl);
     await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-
     await page.screenshot({ path: 'cadimmo_screenshot.png', fullPage: true });
-    console.log('📸 Screenshot saved');
 
-    console.log('⏳ Waiting for listings...');
-    
-    // Wait for property cards
     await Promise.race([
-      page.waitForSelector('article', { timeout: 10000 }),
-      page.waitForSelector('.property-card', { timeout: 10000 }),
-      page.waitForSelector('[class*="property"]', { timeout: 10000 }),
       page.waitForSelector('a[href*="/property/"]', { timeout: 10000 }),
-    ]).catch(() => {
-      console.log('⚠️ Timeout on selectors, will try extraction anyway');
-    });
-
-    console.log('📄 Extracting data from CAD-IMMO...');
+      page.waitForSelector('article', { timeout: 10000 }),
+      page.waitForSelector('[class*="card"]', { timeout: 10000 }),
+    ]).catch(() => undefined);
 
     const properties = await page.evaluate(() => {
       const listings: Array<{
@@ -97,81 +81,60 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
         description: string;
       }> = [];
 
-      // Try multiple selectors to find property cards
-      const possibleSelectors = [
-        'article',
-        '.property-card',
-        '[class*="property"]',
-        'a[href*="/property/"]',
-        '[class*="bien"]',
-        '[class*="annonce"]'
-      ];
-
-      let cards: NodeListOf<Element> | null = null;
+      // Find all links that point to individual property pages
+      const propertyLinks = document.querySelectorAll('a[href*="/property/"]');
       
-      for (const selector of possibleSelectors) {
-        const elements = document.querySelectorAll(selector);
-        if (elements.length > 0) {
-          cards = elements;
-          console.log('Found elements with selector:', selector, '- Count:', elements.length);
-          break;
-        }
-      }
+      console.log('Found property links:', propertyLinks.length);
 
-      if (!cards || cards.length === 0) {
-        console.log('No property cards found with any selector');
-        return [];
-      }
-
-      cards.forEach((card) => {
+      propertyLinks.forEach((link) => {
         try {
-          // Extract URL
-          let url = '';
-          const linkEl = card.querySelector('a[href*="/property/"], a[href*="/bien/"], a[href*="/vente/"]') || 
-                        (card.tagName === 'A' ? card : null);
-          if (linkEl) {
-            url = (linkEl as HTMLAnchorElement).href;
-          }
+          const card = link.closest('article') || link.closest('[class*="card"]') || link;
+          const url = (link as HTMLAnchorElement).href;
 
-          // Extract title
-          const titleEl = card.querySelector('h2, h3, h4, .title, [class*="title"]');
-          const title = titleEl ? titleEl.textContent?.trim() || 'Property' : 'Property';
+          // Extract title and clean it
+          const titleEl = card.querySelector('h2, h3, h4, .title, [class*="title"]') || link.querySelector('h2, h3, h4');
+          let title = titleEl ? titleEl.textContent?.trim() || 'Property' : 'Property';
+          title = title.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+          // Extract location from title (format: "Type, City")
+          const locationMatch = title.match(/,\s*([^,]+)$/);
+          const location = locationMatch ? locationMatch[1].trim() : 'Unknown';
 
           // Extract price
           const priceText = card.textContent || '';
-          const priceMatch = priceText.match(/(\d[\d\s]*)\s*€/) || priceText.match(/€\s*(\d[\d\s]*)/);
+          const priceMatch = priceText.match(/(\d[\d\s]+)\s*€/);
           const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
-
-          // Extract location
-          const locationEl = card.querySelector('[class*="location"], [class*="ville"], [class*="city"]');
-          const location = locationEl ? locationEl.textContent?.trim() || 'Bergerac' : 'Bergerac';
 
           // Extract details from text
           const text = card.textContent || '';
-          
           const surfaceMatch = text.match(/(\d+)\s*m²/);
           const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
-          
           const roomsMatch = text.match(/(\d+)\s*pièces?/);
           const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
-          
           const bedroomsMatch = text.match(/(\d+)\s*chambres?/);
           const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
-
           const bathroomsMatch = text.match(/(\d+)\s*salles?\s+de\s+bains?/);
           const bathrooms = bathroomsMatch ? parseInt(bathroomsMatch[1]) : null;
 
-          // Extract image
-          const imgEl = card.querySelector('img');
-          const image = imgEl ? (imgEl as HTMLImageElement).src : '';
+          // Extract image URL
+          const imgEl = card.querySelector('img') || link.querySelector('img');
+          let image = '';
+          if (imgEl) {
+            const imgSrc = (imgEl as HTMLImageElement).src;
+            const imgDataSrc = (imgEl as HTMLImageElement).getAttribute('data-src');
+            image = imgDataSrc || imgSrc || '';
+          }
 
-          // Extract description
-          const descEl = card.querySelector('p, .description, [class*="desc"]');
-          const description = descEl ? descEl.textContent?.trim() || '' : '';
+          // Extract description (look for paragraph text, not price)
+          const descEl = card.querySelector('p:not(:has(.price))');
+          let description = descEl ? descEl.textContent?.trim() || '' : '';
+          description = description.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+          // Remove price from description if it snuck in
+          description = description.replace(/\d+\s*€/g, '').trim();
 
-          if (price) {
+          if (price && url) {
             listings.push({
-              url: url || window.location.href,
+              url,
               title,
               price,
               location,
@@ -184,27 +147,32 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
             });
           }
         } catch (err) {
-          console.error('Error parsing listing:', err);
+          console.error('Error parsing property:', err);
         }
       });
 
       return listings;
     });
 
-    console.log(`✅ Found ${properties.length} CAD-IMMO listings`);
+    const formattedProperties: ScrapedProperty[] = properties.map((p) => {
+      // Extract unique ID from URL (e.g., /property/sale+house+bergerac+12345)
+      const urlParts = p.url.split('/');
+      const lastPart = urlParts[urlParts.length - 1];
+      const idMatch = lastPart.match(/\+(\d+)$/) || lastPart.match(/(\d+)$/);
+      const uniqueId = idMatch ? idMatch[1] : lastPart || `cadimmo-${Date.now()}-${Math.random()}`;
 
-    const formattedProperties: ScrapedProperty[] = properties.map((p, index) => {
+      // Extract postal code from location or default
       const postalCode = extractPostalCode(p.location) || '24100';
-      const department = postalCode ? postalCode.substring(0, 2) : '24';
+      const department = postalCode.substring(0, 2);
 
       return {
         source: 'cadimmo',
-        source_id: p.url ? p.url.split('/').pop() || `cadimmo-${index}` : `cadimmo-${index}`,
+        source_id: uniqueId,
         url: p.url,
         title: p.title,
         description: p.description || undefined,
         price: p.price,
-        location_city: p.location || 'Bergerac',
+        location_city: p.location,
         location_department: department,
         location_postal_code: postalCode,
         property_type: guessPropertyType(p.title),
@@ -222,37 +190,24 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
     await browser.close();
     return formattedProperties;
   } catch (error) {
-    console.error('❌ CAD-IMMO scrape error:', error);
     if (browser) await browser.close();
-    return [];
+    throw error;
   }
 }
 
-// LEBONCOIN SCRAPER (for future use)
 async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedProperty[]> {
   let browser;
   
   try {
-    console.log('🔌 Connecting to existing Chrome instance...');
     const puppeteer = await initPuppeteer();
-    
-    browser = await puppeteer.connect({
-      browserURL: 'http://localhost:9222',
-    });
+    browser = await puppeteer.connect({ browserURL: 'http://localhost:9222' });
 
     const pages = await browser.pages();
     const page = pages[0] || await browser.newPage();
     
-    console.log('🔍 Navigating to:', searchUrl);
     await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-
     await page.screenshot({ path: 'leboncoin_screenshot.png', fullPage: true });
-    console.log('📸 Screenshot saved');
-
-    console.log('⏳ Waiting for listings...');
     await page.waitForSelector('a[href*="/ventes_immobilieres/"]', { timeout: 15000 });
-
-    console.log('📄 Extracting data...');
 
     const properties = await page.evaluate(() => {
       const listings: Array<{
@@ -291,33 +246,20 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
           
           const surfaceMatch = attributesText.match(/(\d+)\s*m²/);
           const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
-          
           const roomsMatch = attributesText.match(/(\d+)\s*pièces?/);
           const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
 
           const imgEl = card.querySelector('img[src*="leboncoin"]');
           const image = imgEl ? (imgEl as HTMLImageElement).src : '';
 
-          listings.push({
-            sourceId,
-            url,
-            title,
-            price,
-            location,
-            surface,
-            rooms,
-            image,
-            attributesText,
-          });
+          listings.push({ sourceId, url, title, price, location, surface, rooms, image, attributesText });
         } catch (err) {
-          console.error('Error parsing listing:', err);
+          // Skip
         }
       });
 
       return listings;
     });
-
-    console.log(`✅ Found ${properties.length} listings`);
 
     const formattedProperties: ScrapedProperty[] = properties.map((p) => {
       const postalCode = extractPostalCode(p.location);
@@ -337,62 +279,48 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
         rooms: p.rooms,
         bedrooms: null,
         images: p.image ? [p.image] : [],
-        raw_data: {
-          attributesText: p.attributesText,
-          scrapedAt: new Date().toISOString(),
-        },
+        raw_data: { attributesText: p.attributesText, scrapedAt: new Date().toISOString() },
       };
     });
 
     await browser.disconnect();
     return formattedProperties;
   } catch (error) {
-    console.error('❌ Puppeteer scrape error:', error);
     if (browser) await browser.disconnect();
-    return [];
+    throw error;
   }
 }
 
 async function saveProperties(properties: ScrapedProperty[]) {
-  const results = {
-    inserted: 0,
-    updated: 0,
-    errors: 0,
-  };
+  const results = { inserted: 0, updated: 0, errors: 0 };
 
   for (const prop of properties) {
     try {
-      const { error } = await supabase
-        .from('properties')
-        .upsert({
-          source: prop.source,
-          source_id: prop.source_id,
-          url: prop.url,
-          title: prop.title,
-          description: prop.description || null,
-          price: prop.price,
-          location_city: prop.location_city,
-          location_department: prop.location_department,
-          location_postal_code: prop.location_postal_code,
-          property_type: prop.property_type,
-          surface: prop.surface,
-          rooms: prop.rooms,
-          bedrooms: prop.bedrooms,
-          images: prop.images,
-          raw_data: prop.raw_data,
-          last_seen_at: new Date().toISOString(),
-        }, {
-          onConflict: 'source,source_id',
-        });
+      const { error } = await supabase.from('properties').upsert({
+        source: prop.source,
+        source_id: prop.source_id,
+        url: prop.url,
+        title: prop.title,
+        description: prop.description || null,
+        price: prop.price,
+        location_city: prop.location_city,
+        location_department: prop.location_department,
+        location_postal_code: prop.location_postal_code,
+        property_type: prop.property_type,
+        surface: prop.surface,
+        rooms: prop.rooms,
+        bedrooms: prop.bedrooms,
+        images: prop.images,
+        raw_data: prop.raw_data,
+        last_seen_at: new Date().toISOString(),
+      }, { onConflict: 'source,source_id' });
 
       if (error) {
-        console.error('Error saving property:', error);
         results.errors++;
       } else {
         results.inserted++;
       }
     } catch (err) {
-      console.error('Exception saving property:', err);
       results.errors++;
     }
   }
@@ -404,8 +332,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { searchUrl, source = 'cadimmo' } = body;
-
-    console.log('🚀 Scrape request:', { searchUrl, source });
 
     if (!searchUrl) {
       return NextResponse.json({ error: 'searchUrl required' }, { status: 400 });
@@ -430,7 +356,6 @@ export async function POST(request: NextRequest) {
       properties: properties.slice(0, 5),
     });
   } catch (error) {
-    console.error('❌ Scrape API error:', error);
     return NextResponse.json(
       { error: 'Scraping failed', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
