@@ -179,34 +179,41 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
     });
 
     const formattedProperties: ScrapedProperty[] = properties.map((p) => {
-      const urlParts = p.url.split('+');
-      const lastPart = urlParts[urlParts.length - 1];
-      const uniqueId = lastPart || `cadimmo-${Date.now()}-${Math.random()}`;
+  const urlParts = p.url.split('+');
+  const lastPart = urlParts[urlParts.length - 1];
+  const uniqueId = lastPart || `cadimmo-${Date.now()}-${Math.random()}`;
 
-      const postalCode = extractPostalCode(p.location) || '24100';
-      const department = postalCode.substring(0, 2);
+  // Extract city from URL: vente+type+CITY+description+id
+  let city = p.location !== 'Unknown' ? p.location : 'Bergerac';
+  if (urlParts.length >= 3) {
+    // urlParts[2] is the city (after type)
+    city = urlParts[2].charAt(0).toUpperCase() + urlParts[2].slice(1);
+  }
 
-      return {
-        source: 'cadimmo',
-        source_id: uniqueId,
-        url: p.url,
-        title: p.title,
-        description: p.description || undefined,
-        price: p.price,
-        location_city: p.location,
-        location_department: department,
-        location_postal_code: postalCode,
-        property_type: guessPropertyType(p.title),
-        surface: p.surface,
-        rooms: p.rooms,
-        bedrooms: p.bedrooms,
-        images: p.image ? [p.image] : [],
-        raw_data: {
-          bathrooms: p.bathrooms,
-          scrapedAt: new Date().toISOString(),
-        },
-      };
-    });
+  const postalCode = extractPostalCode(city) || '24100';
+  const department = postalCode.substring(0, 2);
+
+  return {
+    source: 'cadimmo',
+    source_id: uniqueId,
+    url: p.url,
+    title: p.title,
+    description: p.description || undefined,
+    price: p.price,
+    location_city: city,
+    location_department: department,
+    location_postal_code: postalCode,
+    property_type: guessPropertyType(p.title),
+    surface: p.surface,
+    rooms: p.rooms,
+    bedrooms: p.bedrooms,
+    images: p.image ? [p.image] : [],
+    raw_data: {
+      bathrooms: p.bathrooms,
+      scrapedAt: new Date().toISOString(),
+    },
+  };
+});
 
     await browser.close();
     return formattedProperties;
