@@ -1,3 +1,5 @@
+// src/app/api/scrape/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -18,6 +20,7 @@ interface ScrapedProperty {
   source_id: string;
   url: string;
   title: string;
+  description?: string;
   price: number | null;
   location_city: string | null;
   location_department: string | null;
@@ -25,9 +28,9 @@ interface ScrapedProperty {
   property_type: string | null;
   surface: number | null;
   rooms: number | null;
+  bedrooms: number | null;
   images: string[];
   raw_data: Record<string, unknown>;
-
 }
 
 function extractPostalCode(location: string): string | null {
@@ -45,6 +48,193 @@ function guessPropertyType(title: string): string | null {
   return null;
 }
 
+// ===== NEW: CAD-IMMO SCRAPER =====
+async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
+  let browser;
+  
+  try {
+    console.log('🚀 Launching browser for CAD-IMMO...');
+    const puppeteer = await initPuppeteer();
+    
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const page = await browser.newPage();
+    
+    console.log('🔍 Navigating to:', searchUrl);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    await page.screenshot({ path: 'cadimmo_screenshot.png', fullPage: true });
+    console.log('📸 Screenshot saved');
+
+    console.log('⏳ Waiting for listings...');
+    
+    // Wait for property cards - try multiple possible selectors
+    await Promise.race([
+      page.waitForSelector('article', { timeout: 10000 }),
+      page.waitForSelector('.property-card', { timeout: 10000 }),
+      page.waitForSelector('[class*="property"]', { timeout: 10000 }),
+      page.waitForSelector('a[href*="/property/"]', { timeout: 10000 }),
+    ]).catch(() => console.log('⚠️ No standard selectors found, will try generic extraction'));
+
+    console.log('📄 Extracting data from CAD-IMMO...');
+
+    const properties = await page.evaluate(() => {
+      const listings: Array<{
+        url: string;
+        title: string;
+        price: number | null;
+        location: string;
+        surface: number | null;
+        rooms: number | null;
+        bedrooms: number | null;
+        bathrooms: number | null;
+        image: string;
+        description: string;
+      }> = [];
+
+      // Try to find property cards with various selectors
+      const possibleSelectors = [
+        'article',
+        '.property-card',
+        '[class*="property"]',
+        'a[href*="/property/"]',
+        '[class*="bien"]',
+        '[class*="annonce"]'
+      ];
+
+      let cards: NodeListOf<Element> | null = null;
+      
+      for (const selector of possibleSelectors) {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          cards = elements;
+          console.log(`✅ Found ${elements.length} elements with selector: ${selector}`);
+          break;
+        }
+      }
+
+      if (!cards || cards.length === 0) {
+        console.log('❌ No property cards found');
+        return [];
+      }
+
+      cards.forEach((card) => {
+        try {
+          // Extract URL - look for links containing /property/, /bien/, /vente/, etc.
+          let url = '';
+          const linkEl = card.querySelector('a[href*="/property/"], a[href*="/bien/"], a[href*="/vente/"]') || 
+                        (card.tagName === 'A' ? card : null);
+          if (linkEl) {
+            url = (linkEl as HTMLAnchorElement).href;
+          }
+
+          // Extract unique ID from URL
+          const idMatch = url.match(/\/(\d+)/) || url.match(/[a-z]+-([a-f0-9]+)/);
+          const sourceId = idMatch ? idMatch[1] : url || `cadimmo-${Date.now()}-${Math.random()}`;
+
+          // Extract title - multiple possible locations
+          const titleEl = card.querySelector('h2, h3, h4, .title, [class*="title"]');
+          const title = titleEl ? titleEl.textContent?.trim() || 'Property' : 'Property';
+
+          // Extract price - look for € symbol
+          const priceText = card.textContent || '';
+          const priceMatch = priceText.match(/(\d[\d\s]*)\s*€/) || priceText.match(/€\s*(\d[\d\s]*)/);
+          const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
+
+          // Extract location
+          const locationEl = card.querySelector('[class*="location"], [class*="ville"], [class*="city"]');
+          const location = locationEl ? locationEl.textContent?.trim() || 'Bergerac' : 'Bergerac';
+
+          // Extract details from text content
+          const text = card.textContent || '';
+          
+          // Surface (m²)
+          const surfaceMatch = text.match(/(\d+)\s*m²/);
+          const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+          
+          // Rooms (pièces)
+          const roomsMatch = text.match(/(\d+)\s*pièces?/);
+          const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
+          
+          // Bedrooms (chambres)
+          const bedroomsMatch = text.match(/(\d+)\s*chambres?/);
+          const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
+
+          // Bathrooms (salles de bains)
+          const bathroomsMatch = text.match(/(\d+)\s*salles?\s+de\s+bains?/);
+          const bathrooms = bathroomsMatch ? parseInt(bathroomsMatch[1]) : null;
+
+          // Extract image
+          const imgEl = card.querySelector('img');
+          const image = imgEl ? (imgEl as HTMLImageElement).src : '';
+
+          // Extract description
+          const descEl = card.querySelector('p, .description, [class*="desc"]');
+          const description = descEl ? descEl.textContent?.trim() || '' : '';
+
+          if (price) { // Only add if we found a price
+            listings.push({
+              url: url || window.location.href,
+              title,
+              price,
+              location,
+              surface,
+              rooms,
+              bedrooms,
+              bathrooms,
+              image,
+              description,
+            });
+          }
+        } catch (err) {
+          console.error('Error parsing listing:', err);
+        }
+      });
+
+      return listings;
+    });
+
+    console.log(`✅ Found ${properties.length} CAD-IMMO listings`);
+
+    const formattedProperties: ScrapedProperty[] = properties.map((p, index) => {
+      const postalCode = extractPostalCode(p.location) || '24100'; // Default to Bergerac
+      const department = postalCode ? postalCode.substring(0, 2) : '24';
+
+      return {
+        source: 'cadimmo',
+        source_id: p.url ? p.url.split('/').pop() || `cadimmo-${index}` : `cadimmo-${index}`,
+        url: p.url,
+        title: p.title,
+        description: p.description || undefined,
+        price: p.price,
+        location_city: p.location || 'Bergerac',
+        location_department: department,
+        location_postal_code: postalCode,
+        property_type: guessPropertyType(p.title),
+        surface: p.surface,
+        rooms: p.rooms,
+        bedrooms: p.bedrooms,
+        images: p.image ? [p.image] : [],
+        raw_data: {
+          bathrooms: p.bathrooms,
+          scrapedAt: new Date().toISOString(),
+        },
+      };
+    });
+
+    await browser.close();
+    return formattedProperties;
+  } catch (error) {
+    console.error('❌ CAD-IMMO scrape error:', error);
+    if (browser) await browser.close();
+    return [];
+  }
+}
+
+// ===== EXISTING LEBONCOIN SCRAPER (keep this for future use) =====
 async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedProperty[]> {
   let browser;
   
@@ -52,7 +242,6 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
     console.log('🔌 Connecting to existing Chrome instance...');
     const puppeteer = await initPuppeteer();
     
-    // Connect to your running Chrome instead of launching new browser
     browser = await puppeteer.connect({
       browserURL: 'http://localhost:9222',
     });
@@ -73,16 +262,16 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
 
     const properties = await page.evaluate(() => {
       const listings: Array<{
-  sourceId: string;
-  url: string;
-  title: string;
-  price: number | null;
-  location: string;
-  surface: number | null;
-  rooms: number | null;
-  image: string;
-  attributesText: string;
-}> = [];
+        sourceId: string;
+        url: string;
+        title: string;
+        price: number | null;
+        location: string;
+        surface: number | null;
+        rooms: number | null;
+        image: string;
+        attributesText: string;
+      }> = [];
 
       const cards = document.querySelectorAll('a[href*="/ventes_immobilieres/"]');
 
@@ -152,6 +341,7 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
         property_type: guessPropertyType(p.title),
         surface: p.surface,
         rooms: p.rooms,
+        bedrooms: null,
         images: p.image ? [p.image] : [],
         raw_data: {
           attributesText: p.attributesText,
@@ -169,7 +359,6 @@ async function scrapeLeboncoinPuppeteer(searchUrl: string): Promise<ScrapedPrope
   }
 }
 
-
 async function saveProperties(properties: ScrapedProperty[]) {
   const results = {
     inserted: 0,
@@ -186,6 +375,7 @@ async function saveProperties(properties: ScrapedProperty[]) {
           source_id: prop.source_id,
           url: prop.url,
           title: prop.title,
+          description: prop.description || null,
           price: prop.price,
           location_city: prop.location_city,
           location_department: prop.location_department,
@@ -193,6 +383,7 @@ async function saveProperties(properties: ScrapedProperty[]) {
           property_type: prop.property_type,
           surface: prop.surface,
           rooms: prop.rooms,
+          bedrooms: prop.bedrooms,
           images: prop.images,
           raw_data: prop.raw_data,
           last_seen_at: new Date().toISOString(),
@@ -218,7 +409,7 @@ async function saveProperties(properties: ScrapedProperty[]) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { searchUrl, source = 'leboncoin' } = body;
+    const { searchUrl, source = 'cadimmo' } = body;
 
     console.log('🚀 Scrape request:', { searchUrl, source });
 
@@ -228,7 +419,9 @@ export async function POST(request: NextRequest) {
 
     let properties: ScrapedProperty[] = [];
 
-    if (source === 'leboncoin') {
+    if (source === 'cadimmo') {
+      properties = await scrapeCadImmo(searchUrl);
+    } else if (source === 'leboncoin') {
       properties = await scrapeLeboncoinPuppeteer(searchUrl);
     } else {
       return NextResponse.json({ error: 'Unsupported source' }, { status: 400 });
@@ -253,7 +446,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({
-    message: 'Scraper API ready (Puppeteer Stealth mode)',
-    usage: 'POST with { "searchUrl": "leboncoin_search_url", "source": "leboncoin" }',
+    message: 'Scraper API ready (Supports: cadimmo, leboncoin)',
+    usage: 'POST with { "searchUrl": "url", "source": "cadimmo" }',
   });
 }
