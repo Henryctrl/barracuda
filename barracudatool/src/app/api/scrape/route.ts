@@ -61,7 +61,6 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
     await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await page.screenshot({ path: 'cadimmo_screenshot.png', fullPage: true });
 
-    // Wait for French property links
     await page.waitForSelector('a[href*="/propriete/"]', { timeout: 10000 });
 
     const properties = await page.evaluate(() => {
@@ -78,59 +77,86 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
         description: string;
       }> = [];
 
-      // Find all property links (French: /propriete/)
       const propertyLinks = document.querySelectorAll('a[href*="/propriete/"]');
 
       propertyLinks.forEach((link) => {
         try {
-          const card = link.closest('article') || link.closest('div') || link;
           const url = (link as HTMLAnchorElement).href;
+          
+          // Find the CLOSEST parent container
+          let card: HTMLElement | null = (link as HTMLElement).parentElement;
+          
+          // Try to find a more specific card container
+          while (card && !card.classList.contains('property') && !card.classList.contains('card') && card.tagName !== 'ARTICLE') {
+            card = card.parentElement;
+            // Stop if we've gone too far up
+            if (card && (card.tagName === 'BODY' || card.tagName === 'MAIN' || card.id === 'root')) {
+              card = (link as HTMLElement).parentElement;
+              break;
+            }
+          }
 
-          // Get all text from card
-          const text = card.textContent || '';
+          if (!card) card = link as HTMLElement;
+
+          // Get text ONLY from this specific card
+          const cardText = card.textContent || '';
 
           // Extract price
-          const priceMatch = text.match(/(\d[\d\s]+)\s*€/);
+          const priceMatch = cardText.match(/(\d[\d\s]+)\s*€/);
           const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
 
-          if (!price) return; // Skip if no price found
+          if (!price) return; // Skip if no price
 
-          // Extract title from link or heading
-          const titleEl = card.querySelector('h2, h3, h4, .title') || link.querySelector('h2, h3, h4');
-          let title = titleEl ? titleEl.textContent?.trim() || 'Property' : 'Property';
-          title = title.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
-
-          // Extract location from title (format: "Type, City")
-          const locationMatch = title.match(/,\s*([^,]+)$/);
-          const location = locationMatch ? locationMatch[1].trim() : 'Unknown';
-
-          // Extract details
-          const surfaceMatch = text.match(/(\d+)\s*m²/);
-          const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
-
-          const roomsMatch = text.match(/(\d+)\s*pièces?/);
-          const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
-
-          const bedroomsMatch = text.match(/(\d+)\s*chambres?/);
-          const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
-
-          const bathroomsMatch = text.match(/(\d+)\s*salles?\s+de\s+bains?/);
-          const bathrooms = bathroomsMatch ? parseInt(bathroomsMatch[1]) : null;
-
-          // Extract image
-          const imgEl = card.querySelector('img.propertiesPicture') || card.querySelector('img');
+          // Extract image from THIS card's image
+          const imgEl = link.querySelector('img.propertiesPicture') || 
+                       link.querySelector('img') ||
+                       (card ? card.querySelector('img.propertiesPicture') : null) ||
+                       (card ? card.querySelector('img') : null);
+          
           let image = '';
           if (imgEl) {
             image = (imgEl as HTMLImageElement).src;
           }
 
-          // Extract alt text as fallback title if needed
-          if (title === 'Property' && imgEl) {
-            const alt = (imgEl as HTMLImageElement).alt;
-            if (alt) {
-              title = alt.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+          // Get title from image alt or from heading
+          let title = '';
+          if (imgEl && (imgEl as HTMLImageElement).alt) {
+            title = (imgEl as HTMLImageElement).alt;
+          } else {
+            const titleEl = card ? card.querySelector('h2, h3, h4, .title') : null;
+            title = titleEl ? titleEl.textContent?.trim() || '' : '';
+          }
+          
+          // Clean title
+          title = title.replace(/[\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+          
+          // If title is still empty, try to parse from URL
+          if (!title) {
+            const urlParts = url.split('+');
+            if (urlParts.length > 1) {
+              const type = urlParts[0].split('/').pop();
+              const propertyType = urlParts[1];
+              const city = urlParts[2];
+              title = `${propertyType}, ${city}`;
             }
           }
+
+          // Extract location from title
+          const locationMatch = title.match(/,\s*([A-Za-zÀ-ÿ\s-]+)$/);
+          const location = locationMatch ? locationMatch[1].trim() : 'Unknown';
+
+          // Extract details from card text
+          const surfaceMatch = cardText.match(/(\d+)\s*m²/);
+          const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+
+          const roomsMatch = cardText.match(/(\d+)\s*pièces?/);
+          const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
+
+          const bedroomsMatch = cardText.match(/(\d+)\s*chambres?/);
+          const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
+
+          const bathroomsMatch = cardText.match(/(\d+)\s*salles?\s+de\s+bains?/);
+          const bathrooms = bathroomsMatch ? parseInt(bathroomsMatch[1]) : null;
 
           listings.push({
             url,
@@ -153,12 +179,10 @@ async function scrapeCadImmo(searchUrl: string): Promise<ScrapedProperty[]> {
     });
 
     const formattedProperties: ScrapedProperty[] = properties.map((p) => {
-      // Extract unique ID from URL: vente+maison+city+86300280
       const urlParts = p.url.split('+');
       const lastPart = urlParts[urlParts.length - 1];
       const uniqueId = lastPart || `cadimmo-${Date.now()}-${Math.random()}`;
 
-      // Extract postal code from location or default
       const postalCode = extractPostalCode(p.location) || '24100';
       const department = postalCode.substring(0, 2);
 
