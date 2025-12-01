@@ -49,6 +49,21 @@ export default function TestScraper() {
     setLoading(false);
   };
 
+  const testMatching = async () => {
+  setLoading(true);
+  
+  const response = await fetch('/api/match-properties', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}), // Empty = match all clients
+  });
+  
+  const data = await response.json();
+  setResult(data);
+  setLoading(false);
+};
+
+
   return (
     <div className="min-h-screen bg-[#0d0d21] p-8 text-white">
       <h1 className="text-2xl font-bold mb-4">🔍 Property Scraper Test Dashboard</h1>
@@ -77,6 +92,15 @@ export default function TestScraper() {
         </div>
       )}
 
+      <button
+  onClick={testMatching}
+  disabled={loading}
+  className="px-6 py-3 bg-[#ff00ff] rounded font-bold hover:bg-[#ff00ff]/80 disabled:opacity-50"
+>
+  {loading ? 'Matching...' : '🎯 Run Property Matching'}
+</button>
+
+
       {result && (
         <div className="space-y-4">
           <div className={`p-4 rounded ${result.success ? 'bg-green-500/20 border border-green-500' : 'bg-red-500/20 border border-red-500'}`}>
@@ -102,6 +126,8 @@ export default function TestScraper() {
               </div>
             </div>
           </div>
+
+          
 
           <div className="bg-white/10 p-4 rounded">
             <h3 className="font-bold mb-2">📦 Sample Properties (first 5):</h3>
