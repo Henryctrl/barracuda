@@ -9,44 +9,74 @@ const supabase = createClient(
 export async function GET(request: NextRequest) {
   try {
     // Verify this is coming from Vercel Cron
-    // const authHeader = request.headers.get('authorization');
-    // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    //   console.error('❌ Unauthorized cron request');
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
+    const authHeader = request.headers.get('authorization');
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      console.error('❌ Unauthorized cron request');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     console.log('🚀 Starting daily scrape job...');
     const startTime = Date.now();
 
     // Step 1: Scrape CAD-IMMO properties
-    console.log('📡 Calling scraper API...');
-    const scrapeResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/scrape`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-cron-secret': process.env.CRON_SECRET!,
-      },
-      body: JSON.stringify({
-        source: 'cadimmo',
-        maxPages: 5, // Scrape first 5 pages
-      }),
-    });
+    console.log('📡 Starting property scraping...');
+    
+    const urlsToScrape = [
+      'https://www.cad-immo.com/vente/bien/maison',
+      'https://www.cad-immo.com/vente/bien/appartement',
+      'https://www.cad-immo.com/vente/bien/terrain',
+    ];
 
-    const scrapeResult = await scrapeResponse.json();
-    console.log('✅ Scrape completed:', scrapeResult);
+    let totalScraped = 0;
+
+    for (const searchUrl of urlsToScrape) {
+      console.log(`📡 Scraping: ${searchUrl}`);
+      
+      try {
+        const scrapeResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/scrape`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-cron-secret': process.env.CRON_SECRET!,
+          },
+          body: JSON.stringify({
+            searchUrl: searchUrl,
+            maxPages: 3,
+          }),
+        });
+
+        const scrapeResult = await scrapeResponse.json();
+        console.log(`✅ Scraped from ${searchUrl}:`, scrapeResult);
+        
+        if (scrapeResult.totalScraped) {
+          totalScraped += scrapeResult.totalScraped;
+        }
+      } catch (scrapeError) {
+        console.error(`❌ Failed to scrape ${searchUrl}:`, scrapeError);
+      }
+    }
+
+    console.log(`✅ Total properties scraped: ${totalScraped}`);
 
     // Step 2: Run property matching for all active clients
     console.log('🎯 Running property matching...');
-    const matchResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/match-properties`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-cron-secret': process.env.CRON_SECRET!,
-      },
-    });
+    let matchResult: any = {};
+    
+    try {
+      const matchResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/match-properties`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-cron-secret': process.env.CRON_SECRET!,
+        },
+        body: JSON.stringify({}),
+      });
 
-    const matchResult = await matchResponse.json();
-    console.log('✅ Matching completed:', matchResult);
+      matchResult = await matchResponse.json();
+      console.log('✅ Matching completed:', matchResult);
+    } catch (matchError) {
+      console.error('❌ Matching failed:', matchError);
+    }
 
     const duration = Date.now() - startTime;
 
@@ -55,11 +85,11 @@ export async function GET(request: NextRequest) {
       job_name: 'daily-scrape',
       status: 'success',
       duration_ms: duration,
-      properties_scraped: scrapeResult.totalScraped || 0,
+      properties_scraped: totalScraped,
       matches_created: matchResult.newMatches || 0,
       details: {
-        scrape: scrapeResult,
-        match: matchResult,
+        totalScraped,
+        matchResult,
       },
       executed_at: new Date().toISOString(),
     });
@@ -67,7 +97,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       duration: `${duration}ms`,
-      scraped: scrapeResult.totalScraped || 0,
+      scraped: totalScraped,
       matched: matchResult.newMatches || 0,
       message: 'Daily scrape completed successfully',
     });

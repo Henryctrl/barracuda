@@ -135,9 +135,19 @@ export async function POST(request: NextRequest) {
       console.log('✅ Authenticated cron request');
     }
 
-    const body = await request.json();
-    const { clientId } = body;
+    // Handle empty body gracefully
+    let body: any = {};
+    try {
+      const text = await request.text();
+      if (text) {
+        body = JSON.parse(text);
+      }
+    } catch (parseError) {
+      console.log('No body provided, will match all clients');
+    }
 
+    const { clientId } = body;
+    
     // If clientId provided, match for that client only. Otherwise, match for all clients
     let clientsQuery = supabase.from('clients').select('id, first_name, last_name');
     
