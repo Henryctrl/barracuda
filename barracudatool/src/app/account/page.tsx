@@ -12,7 +12,6 @@ import {
   CheckCircle2, 
   XCircle,
   Crown,
-  Settings,
   Mail,
   Calendar
 } from 'lucide-react';
@@ -27,7 +26,7 @@ interface UserProfile {
 }
 
 export default function AccountPage() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [portalLoading, setPortalLoading] = useState(false);
