@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
 
     // Step 2: Run property matching for all active clients
     console.log('🎯 Running property matching...');
-    let matchResult: any = {};
+    let matchResult: { newMatches?: number; [key: string]: unknown } = {};
+
     
     try {
       const matchResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/match-properties`, {

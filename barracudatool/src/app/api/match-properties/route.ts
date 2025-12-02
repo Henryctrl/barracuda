@@ -136,18 +136,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle empty body gracefully
-    let body: any = {};
+    let body: { clientId?: string } = {};
+
     try {
       const text = await request.text();
       if (text) {
         body = JSON.parse(text);
       }
-    } catch (parseError) {
+    } catch {
+
       console.log('No body provided, will match all clients');
     }
 
     const { clientId } = body;
-    
+
     // If clientId provided, match for that client only. Otherwise, match for all clients
     let clientsQuery = supabase.from('clients').select('id, first_name, last_name');
     
