@@ -129,16 +129,16 @@ export default function AccountPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div className="text-center mb-8">
-  <h1 
-    className="text-4xl font-bold text-[#ff00ff] tracking-wider mb-2"
-    style={{ textShadow: '0 0 15px #ff00ff' }}
-  >
-    ACCOUNT CONTROL
-  </h1>
-  <p className="text-sm text-[#00ffff] italic">
-    // MANAGE YOUR PROFILE &amp; SUBSCRIPTION
-  </p>
-</div>
+            <h1 
+                className="text-4xl font-bold text-[#ff00ff] tracking-wider mb-2"
+                style={{ textShadow: '0 0 15px #ff00ff' }}
+            >
+                ACCOUNT CONTROL
+            </h1>
+                <p className="text-sm text-[#00ffff] italic">
+                {`// MANAGE YOUR PROFILE & SUBSCRIPTION`}
+                </p>
+            </div>
 
           <Link
             href="/gatherer"
