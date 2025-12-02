@@ -128,17 +128,18 @@ export default function AccountPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 
-              className="text-4xl font-bold text-[#ff00ff] tracking-wider mb-2"
-              style={{ textShadow: '0 0 15px #ff00ff' }}
-            >
-              ACCOUNT CONTROL
-            </h1>
-            <p className="text-sm text-[#00ffff] italic">
-              {`// MANAGE YOUR PROFILE & SUBSCRIPTION`}
-            </p>
-          </div>
+          <div className="text-center mb-8">
+  <h1 
+    className="text-4xl font-bold text-[#ff00ff] tracking-wider mb-2"
+    style={{ textShadow: '0 0 15px #ff00ff' }}
+  >
+    ACCOUNT CONTROL
+  </h1>
+  <p className="text-sm text-[#00ffff] italic">
+    // MANAGE YOUR PROFILE &amp; SUBSCRIPTION
+  </p>
+</div>
+
           <Link
             href="/gatherer"
             className="px-4 py-2 border border-[#00ffff] text-[#00ffff] hover:bg-[#00ffff]/10 rounded uppercase text-xs font-bold"
