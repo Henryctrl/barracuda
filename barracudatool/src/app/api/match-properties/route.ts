@@ -129,6 +129,12 @@ if (criteria.locations) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Allow cron jobs to call this
+    const cronSecret = request.headers.get('x-cron-secret');
+    if (cronSecret && cronSecret === process.env.CRON_SECRET) {
+      console.log('✅ Authenticated cron request');
+    }
+
     const body = await request.json();
     const { clientId } = body;
 

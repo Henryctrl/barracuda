@@ -358,6 +358,11 @@ async function saveProperties(properties: ScrapedProperty[]) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Allow cron jobs to call this
+    const cronSecret = request.headers.get('x-cron-secret');
+    if (cronSecret && cronSecret === process.env.CRON_SECRET) {
+      console.log('✅ Authenticated cron request');
+    }
     const body = await request.json();
     const { searchUrl, source = 'cadimmo' } = body;
 
@@ -390,6 +395,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 export async function GET() {
   return NextResponse.json({
