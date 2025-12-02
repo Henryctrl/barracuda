@@ -9,26 +9,34 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Use serverExternalPackages instead of experimental
   serverExternalPackages: [
     'puppeteer-core',
-    '@sparticuz/chromium'
+    '@sparticuz/chromium',
+    'puppeteer-extra',
+    'puppeteer-extra-plugin-stealth',
+    'clone-deep',
+    'merge-deep'
   ],
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Make sure puppeteer-extra and stealth are BUNDLED, not externalized
-      config.externals = config.externals || [];
+      // Ignore all the problematic dynamic requires
+      config.ignoreWarnings = [
+        { module: /clone-deep/ },
+        { module: /merge-deep/ }
+      ];
       
-      // Filter out any existing puppeteer-extra externalizations
-      if (Array.isArray(config.externals)) {
-        config.externals = config.externals.filter((external: any) => {
-          if (typeof external === 'string') {
-            return !external.includes('puppeteer-extra');
-          }
-          return true;
-        });
-      }
+      config.resolve = config.resolve || {};
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        'clone-deep': false,
+        'merge-deep': false,
+      };
+      
+      // Mark these as external for server-side
+      config.externals = config.externals || [];
+      config.externals.push('clone-deep', 'merge-deep');
     }
+    
     return config;
   },
 };
