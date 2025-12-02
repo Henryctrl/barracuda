@@ -20,6 +20,7 @@
     "@turf/turf": "^7.2.0",
     "axios": "^1.13.2",
     "cheerio": "^1.1.2",
+    "clone-deep": "^4.0.1",
     "lucide-react": "^0.542.0",
     "next": "15.5.0",
     "puppeteer": "^24.31.0",
