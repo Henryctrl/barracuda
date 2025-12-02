@@ -136,7 +136,7 @@ export default function AccountPage() {
               ACCOUNT CONTROL
             </h1>
             <p className="text-sm text-[#00ffff] italic">
-              {'// MANAGE YOUR PROFILE & SUBSCRIPTION'}
+              {'// MANAGE YOUR PROFILE AND SUBSCRIPTION'}
             </p>
           </div>
           <Link
