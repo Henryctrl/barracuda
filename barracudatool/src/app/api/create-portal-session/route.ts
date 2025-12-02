@@ -38,7 +38,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (!profile?.customer_id) {
-      return NextResponse.json({ error: 'No subscription found' }, { status: 404 });
+      return NextResponse.json({ 
+        error: 'No subscription found. Please subscribe first.' 
+      }, { status: 404 });
+    }
+
+    // Check if this is a manually created subscription (for dev testing)
+    if (profile.customer_id.startsWith('cus_manual') || profile.customer_id.startsWith('cus_test')) {
+      return NextResponse.json({ 
+        error: 'This is a test subscription. Billing portal is not available for manually activated accounts. To test the billing portal, complete a payment through the subscribe page.' 
+      }, { status: 400 });
     }
 
     // Create Stripe Customer Portal session

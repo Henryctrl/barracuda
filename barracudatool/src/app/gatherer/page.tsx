@@ -15,6 +15,7 @@ import {
   Loader2,
   Edit,
   RotateCcw,
+  Crown,
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import MainHeader from '../../components/MainHeader';
@@ -445,6 +446,24 @@ export default function GathererPage() {
             SYSTEM STATUS: <strong style={{ color: '#00ff00' }}>NOMINAL</strong>
           </span>
         </div>
+
+        {/* Subscription Status Badge */}
+<div className="mb-6 p-4 bg-[#00ff00]/10 border border-[#00ff00] rounded-lg flex items-center justify-between">
+  <div className="flex items-center gap-3">
+    <Crown className="text-[#00ff00]" size={24} />
+    <div>
+      <p className="text-white font-bold">Barracuda Pro Active</p>
+      <p className="text-sm text-gray-400">Full access to all features</p>
+    </div>
+  </div>
+  <Link
+    href="/account"
+    className="px-4 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold"
+  >
+    Manage
+  </Link>
+</div>
+
 
         {/* Quick actions */}
         <div style={styles.quickActions}>

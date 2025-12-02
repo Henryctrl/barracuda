@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Search } from 'lucide-react'
+import { Search, Settings } from 'lucide-react'
 
 export default function MainHeader() {
   const styles = {
@@ -70,6 +70,14 @@ export default function MainHeader() {
         <Link href="/gatherer/clients" style={styles.navLink}>CLIENTS</Link>
         <Link href="/gatherer/tools" style={styles.navLink}>TOOLS</Link>
         <Link href="/gatherer/mandates" style={styles.navLink}>MANDATES</Link>
+        <Link
+  href="/account"
+  className="px-4 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold flex items-center gap-2"
+>
+  <Settings size={14} />
+  Account
+</Link>
+
       </nav>
       <div style={styles.searchBar}>
         <input type="text" placeholder="Search Protocol..." style={styles.searchInput} />
