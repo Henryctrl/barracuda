@@ -9,17 +9,25 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['puppeteer', 'puppeteer-extra', 'puppeteer-extra-plugin-stealth'],
-  },
+  // Use serverExternalPackages instead of experimental
+  serverExternalPackages: [
+    'puppeteer-core',
+    '@sparticuz/chromium'
+  ],
   webpack: (config, { isServer }) => {
     if (isServer) {
+      // Make sure puppeteer-extra and stealth are BUNDLED, not externalized
       config.externals = config.externals || [];
-      config.externals.push({
-        'puppeteer': 'commonjs puppeteer',
-        'puppeteer-extra': 'commonjs puppeteer-extra',
-        'puppeteer-extra-plugin-stealth': 'commonjs puppeteer-extra-plugin-stealth',
-      });
+      
+      // Filter out any existing puppeteer-extra externalizations
+      if (Array.isArray(config.externals)) {
+        config.externals = config.externals.filter((external: any) => {
+          if (typeof external === 'string') {
+            return !external.includes('puppeteer-extra');
+          }
+          return true;
+        });
+      }
     }
     return config;
   },
