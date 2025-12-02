@@ -9,11 +9,11 @@ const supabase = createClient(
 export async function GET(request: NextRequest) {
   try {
     // Verify this is coming from Vercel Cron
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('❌ Unauthorized cron request');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // const authHeader = request.headers.get('authorization');
+    // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    //   console.error('❌ Unauthorized cron request');
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // }
 
     console.log('🚀 Starting daily scrape job...');
     const startTime = Date.now();
