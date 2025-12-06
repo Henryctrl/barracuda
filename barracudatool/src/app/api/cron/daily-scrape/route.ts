@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       console.log(`📡 Scraping: ${searchUrl}`);
       
       try {
-        const scrapeResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/scrape`, {
+        const scrapeResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/scrape`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
