@@ -5,7 +5,15 @@ import { Loader2 } from 'lucide-react';
 
 export default function TestCronPage() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{
+    success: boolean;
+    duration: string;
+    scraped: number;
+    inserted: number;
+    matched: number;
+    message: string;
+  } | null>(null);
+  
   const [error, setError] = useState('');
 
   const triggerCron = async () => {
