@@ -3,7 +3,11 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chromium = require('@sparticuz/chromium');
 const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
+// Railway injects env vars directly, no dotenv needed in production
+if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config();
+  }
+  
 
 puppeteer.use(StealthPlugin());
 
