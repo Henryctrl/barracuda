@@ -23,6 +23,7 @@
         "Biot",
         "CADASTRALPARCELS",
         "cadastre",
+        "cadimmo",
         "Calme",
         "cartographique",
         "Chambres",
@@ -100,6 +101,7 @@
         "Sayed",
         "SKYBREAKER",
         "Sona",
+        "sparticuz",
         "SRID",
         "sterr",
         "Tanaka",
@@ -117,6 +119,7 @@
         "Villefranche",
         "visite",
         "Voss",
+        "XVCJ",
         "Yuki"
     ],
     "findUnusedExports.detectCircularImports": true
