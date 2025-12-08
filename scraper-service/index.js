@@ -1,6 +1,3 @@
-
-improved-scraper-service.js
-
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
