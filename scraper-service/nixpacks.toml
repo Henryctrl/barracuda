@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ['nodejs-18_x', 'chromium', 'nss', 'nspr', 'atk', 'cups', 'libdrm', 'gtk3', 'pango', 'cairo', 'glib', 'dbus', 'at-spi2-atk', 'libxkbcommon', 'libxcomposite', 'libxdamage', 'libxext', 'libxfixes', 'libxrandr', 'mesa', 'expat', 'libxcb', 'alsa-lib', 'at-spi2-core']
-
-[phases.install]
-cmds = ['npm ci --production']
-
-[start]
-cmd = 'npm start'

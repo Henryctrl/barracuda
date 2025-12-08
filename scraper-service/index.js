@@ -35,12 +35,19 @@ app.post('/scrape', async (req, res) => {
   console.log('🎯 Starting scrape:', searchUrl);
 
   try {
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
+    // Launch browser (use system chromium in production)
+const browser = await puppeteer.launch({
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
+    headless: true,
+    args: [
+      ...chromium.args,
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  });
+  
 
     const page = await browser.newPage();
     
