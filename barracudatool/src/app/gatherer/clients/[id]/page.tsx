@@ -19,7 +19,9 @@ import {
   MapPin,
   Home,
   Maximize2,
-  Bed
+  Bed,
+  AlertTriangle,
+  Database
 } from 'lucide-react';
 import MainHeader from '../../../../components/MainHeader';
 
@@ -66,6 +68,8 @@ interface PropertyMatch {
     url: string;
     source: string;
     images: string[];
+    data_quality_score: string;
+    validation_errors: string[];
   } | null;
 }
 
@@ -79,76 +83,106 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'market_scan' | 'shortlist'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
+  const [isScraping, setIsScraping] = useState(false);
   const [updatingMatchId, setUpdatingMatchId] = useState<string | null>(null);
+  const [scrapeStatus, setScrapeStatus] = useState<string>('');
 
   useEffect(() => {
     fetchClientData();
   }, [clientId]);
 
   const fetchClientData = async () => {
-  setLoading(true);
-  
-  console.log('🔍 Fetching data for client:', clientId);
-  
-  // Fetch client details
-  const { data: clientData } = await supabase
-    .from('clients')
-    .select(`*, client_search_criteria (*)`)
-    .eq('id', clientId)
-    .single();
-  
-  if (clientData) {
-    console.log('✅ Client loaded:', clientData.first_name, clientData.last_name);
-    setClient(clientData as unknown as ClientDetails);
-  }
-
-  // Fetch matches first
-  const { data: matchesData, error: matchError } = await supabase
-    .from('property_matches')
-    .select('*')
-    .eq('client_id', clientId)
-    .order('match_score', { ascending: false });
-
-  console.log('📊 Matches found:', matchesData?.length || 0);
-  console.log('📊 Matches data:', matchesData);
-  console.log('❌ Match error:', matchError);
-
-  if (matchesData && matchesData.length > 0) {
-    // Get all property IDs
-    const propertyIds = matchesData.map(m => m.property_id);
-    console.log('🔑 Property IDs to fetch:', propertyIds);
+    setLoading(true);
     
-    // Fetch properties separately
-    const { data: propertiesData, error: propError } = await supabase
-      .from('properties')
+    console.log('🔍 Fetching data for client:', clientId);
+    
+    // Fetch client details
+    const { data: clientData } = await supabase
+      .from('clients')
+      .select(`*, client_search_criteria (*)`)
+      .eq('id', clientId)
+      .single();
+    
+    if (clientData) {
+      console.log('✅ Client loaded:', clientData.first_name, clientData.last_name);
+      setClient(clientData as unknown as ClientDetails);
+    }
+
+    // Fetch matches first
+    const { data: matchesData, error: matchError } = await supabase
+      .from('property_matches')
       .select('*')
-      .in('id', propertyIds);
+      .eq('client_id', clientId)
+      .order('match_score', { ascending: false });
 
-    console.log('🏠 Properties found:', propertiesData?.length || 0);
-    console.log('🏠 Properties data:', propertiesData);
-    console.log('❌ Properties error:', propError);
+    console.log('📊 Matches found:', matchesData?.length || 0);
 
-    // Merge the data manually
-    const mergedMatches = matchesData.map(match => {
-      const matchedProperty = propertiesData?.find(p => p.id === match.property_id);
-      console.log(`🔗 Matching property ${match.property_id}:`, matchedProperty ? '✓ Found' : '✗ Missing');
-      return {
-        ...match,
-        properties: matchedProperty || null,
-      };
-    }).filter(m => m.properties !== null);
+    if (matchesData && matchesData.length > 0) {
+      // Get all property IDs
+      const propertyIds = matchesData.map(m => m.property_id);
+      
+      // Fetch properties separately
+      const { data: propertiesData } = await supabase
+        .from('properties')
+        .select('*')
+        .in('id', propertyIds);
 
-    console.log('✨ Final merged matches:', mergedMatches.length);
-    console.log('✨ Merged data:', mergedMatches);
-    setMatches(mergedMatches as unknown as PropertyMatch[]);
-  } else {
-    console.log('⚠️ No matches found for this client');
-    setMatches([]);
-  }
+      // Merge the data manually
+      const mergedMatches = matchesData.map(match => {
+        const matchedProperty = propertiesData?.find(p => p.id === match.property_id);
+        return {
+          ...match,
+          properties: matchedProperty || null,
+        };
+      }).filter(m => m.properties !== null);
 
-  setLoading(false);
-};
+      setMatches(mergedMatches as unknown as PropertyMatch[]);
+    } else {
+      setMatches([]);
+    }
 
+    setLoading(false);
+  };
+
+  // NEW: Trigger scraper + matching
+  const handleRunFullScan = async () => {
+    setIsScraping(true);
+    setScrapeStatus('Starting scraper...');
+    
+    try {
+      // Step 1: Trigger scraper
+      setScrapeStatus('🔄 Scraping CAD-IMMO...');
+      const scrapeResponse = await fetch('/api/trigger-scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          searchUrl: 'https://cad-immo.com/fr/ventes' 
+        }),
+      });
+
+      const scrapeResult = await scrapeResponse.json();
+      
+      if (!scrapeResponse.ok) {
+        throw new Error(scrapeResult.error || 'Scraping failed');
+      }
+
+      setScrapeStatus(`✅ Scraped ${scrapeResult.stats.total} properties`);
+      
+      // Step 2: Run matching
+      setScrapeStatus('🎯 Running property matching...');
+      await handleRunScan();
+      
+      setScrapeStatus('✨ Complete!');
+      setTimeout(() => setScrapeStatus(''), 3000);
+      
+    } catch (error) {
+      console.error('Full scan error:', error);
+      setScrapeStatus(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setTimeout(() => setScrapeStatus(''), 5000);
+    } finally {
+      setIsScraping(false);
+    }
+  };
 
   const handleRunScan = async () => {
     setIsScanning(true);
@@ -193,6 +227,18 @@ export default function ClientDetailPage() {
     if (score >= 60) return 'text-[#00ffff] border-[#00ffff] bg-[#00ffff]/10';
     if (score >= 50) return 'text-[#ff00ff] border-[#ff00ff] bg-[#ff00ff]/10';
     return 'text-gray-500 border-gray-500 bg-gray-500/10';
+  };
+
+  const getQualityBadge = (score: string, errors: string[]) => {
+    const numScore = parseFloat(score);
+    if (numScore === 1.0) return null;
+    
+    return (
+      <div className="absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-yellow-500/20 border border-yellow-500 text-yellow-500 flex items-center gap-1">
+        <AlertTriangle size={10} />
+        Quality: {(numScore * 100).toFixed(0)}%
+      </div>
+    );
   };
 
   if (loading) return (
@@ -389,11 +435,11 @@ export default function ClientDetailPage() {
                           Market Scanner Status
                         </h3>
                         
-                        {isScanning ? (
+                        {isScraping || isScanning ? (
                             <div className="flex flex-col items-center py-4">
                                 <Loader2 size={40} className="animate-spin text-[#ff00ff] mb-2"/>
                                 <span className="text-white text-sm animate-pulse">
-                                  Scanning Properties...
+                                  {scrapeStatus || 'Processing...'}
                                 </span>
                             </div>
                         ) : (
@@ -405,12 +451,24 @@ export default function ClientDetailPage() {
                                   New Matches Found
                                 </div>
                                 <button 
-                                    onClick={handleRunScan}
-                                    className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all"
+                                    onClick={handleRunFullScan}
+                                    className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2"
                                 >
-                                    Run Instant Scan
+                                    <Database size={16} />
+                                    Scrape & Match
+                                </button>
+                                <button 
+                                    onClick={handleRunScan}
+                                    className="w-full mt-2 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold"
+                                >
+                                    Match Existing Only
                                 </button>
                             </div>
+                        )}
+                        {scrapeStatus && (
+                          <div className="mt-3 text-xs text-white/70">
+                            {scrapeStatus}
+                          </div>
                         )}
                         <div className="text-[0.65rem] text-[#a0a0ff] mt-4">
                           {matches.length} total matches in database
@@ -450,11 +508,11 @@ export default function ClientDetailPage() {
                         }
                     </div>
                     <button 
-                      onClick={handleRunScan}
-                      disabled={isScanning}
+                      onClick={handleRunFullScan}
+                      disabled={isScraping}
                       className="text-xs text-[#ff00ff] border border-[#ff00ff] px-3 py-1 rounded uppercase hover:bg-[#ff00ff]/10 disabled:opacity-50"
                     >
-                      {isScanning ? 'Scanning...' : 'Refresh Matches'}
+                      {isScraping ? 'Scanning...' : 'Refresh Matches'}
                     </button>
                 </div>
 
@@ -468,7 +526,7 @@ export default function ClientDetailPage() {
                     </p>
                     {activeTab === 'market_scan' && (
                       <button 
-                        onClick={handleRunScan}
+                        onClick={handleRunFullScan}
                         className="px-6 py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded hover:bg-[#ff00ff]/80"
                       >
                         Run First Scan
@@ -483,6 +541,8 @@ export default function ClientDetailPage() {
 
                         const prop = match.properties;
                         const firstImage = Array.isArray(prop.images) ? prop.images[0] : null;
+                        const qualityScore = prop.data_quality_score || '1.0';
+                        const validationErrors = prop.validation_errors || [];
                         
                         return (
                           <div 
@@ -502,6 +562,9 @@ export default function ClientDetailPage() {
                                   <TrendingUp size={10} className="inline mr-1" />
                                   {match.match_score}%
                                 </div>
+
+                                {/* Quality Badge */}
+                                {getQualityBadge(qualityScore, validationErrors)}
                               </div>
                               
                               <div className="flex-1">
@@ -536,6 +599,12 @@ export default function ClientDetailPage() {
                                       </span>
                                     )}
                                   </div>
+                                  {validationErrors.length > 0 && (
+                                    <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
+                                      <AlertTriangle size={12} />
+                                      {validationErrors.join(', ')}
+                                    </div>
+                                  )}
                                   <div className="text-xl font-bold text-[#00ffff]">
                                     €{parseInt(prop.price || '0').toLocaleString()}
                                   </div>
