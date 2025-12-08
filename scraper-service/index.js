@@ -163,79 +163,95 @@ async function extractPropertyData(page, url) {
         data.property_type = null;
       }
 
-      // ===== IMAGES (UPDATED - MULTIPLE STRATEGIES) =====
-      const images = [];
-      const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880'; // The logo image to exclude
+// ===== IMAGES (UPDATED - PRIORITIZE HERO IMAGE) =====
+const images = [];
+const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880'; // The logo image to exclude
 
-      // Strategy 1: Look for gallery/slider images
-      const galleryImages = document.querySelectorAll(
-        '.slider-images img, ' +
-        '.property-gallery img, ' +
-        '.carousel img, ' +
-        '[class*="gallery"] img, ' +
-        '[class*="slider"] img, ' +
-        '[class*="photos"] img, ' +
-        '.pictures img'
-      );
+// Strategy 1: PRIORITY - Get the main/hero image first
+const heroSelectors = [
+  '.main-image img',
+  '.hero-image img',
+  '.property-main-image img',
+  '.slider-images img:first-child',
+  '.property-gallery img:first-child',
+  '.carousel-item:first-child img',
+  '[class*="main"] img:first-child',
+  'picture:first-of-type img',
+  '.pictures img:first-child'
+];
 
-      galleryImages.forEach(img => {
-        const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
-        if (src && 
-            src.includes('cloudfront') && 
-            !src.includes(LOGO_HASH) &&
-            img.naturalWidth > 200) {
-          images.push(src);
-        }
-      });
+let heroImage = null;
+for (const selector of heroSelectors) {
+  const img = document.querySelector(selector);
+  if (img) {
+    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
+    if (src && 
+        src.includes('cloudfront') && 
+        !src.includes(LOGO_HASH) &&
+        !src.includes('logo')) {
+      heroImage = src;
+      images.push(src);
+      break; // Found hero image, stop looking
+    }
+  }
+}
 
-      // Strategy 2: If no gallery images, get all large images
-      if (images.length === 0) {
-        const allImages = document.querySelectorAll('img[src*="cloudfront"]');
-        allImages.forEach(img => {
-          const src = img.src;
-          if (src && 
-              !src.includes(LOGO_HASH) &&
-              !src.includes('logo') &&
-              !src.includes('icon') &&
-              img.naturalWidth > 200 &&
-              img.naturalHeight > 150) {
-            images.push(src);
-          }
-        });
-      }
+// Strategy 2: Get additional gallery images (excluding hero)
+const galleryImages = document.querySelectorAll(
+  '.slider-images img, ' +
+  '.property-gallery img, ' +
+  '.carousel img, ' +
+  '[class*="gallery"] img, ' +
+  '[class*="slider"] img, ' +
+  '[class*="photos"] img, ' +
+  '.pictures img'
+);
 
-      // Strategy 3: Check for data attributes and lazy loading
-      if (images.length === 0) {
-        const lazyImages = document.querySelectorAll('img[data-src], img[data-lazy], img[data-original]');
-        lazyImages.forEach(img => {
-          const src = img.getAttribute('data-src') || 
-                      img.getAttribute('data-lazy') || 
-                      img.getAttribute('data-original');
-          if (src && 
-              src.includes('cloudfront') && 
-              !src.includes(LOGO_HASH)) {
-            images.push(src);
-          }
-        });
-      }
+galleryImages.forEach(img => {
+  const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
+  if (src && 
+      src.includes('cloudfront') && 
+      !src.includes(LOGO_HASH) &&
+      src !== heroImage && // Don't duplicate hero image
+      img.naturalWidth > 200) {
+    images.push(src);
+  }
+});
 
-      // Strategy 4: Check for picture elements
-      if (images.length === 0) {
-        const pictures = document.querySelectorAll('picture source, picture img');
-        pictures.forEach(el => {
-          const src = el.srcset || el.src;
-          if (src && 
-              src.includes('cloudfront') && 
-              !src.includes(LOGO_HASH)) {
-            // Extract URL from srcset if needed
-            const url = src.split(',')[0].split(' ')[0];
-            images.push(url);
-          }
-        });
-      }
+// Strategy 3: If still no images, get all large images
+if (images.length === 0) {
+  const allImages = document.querySelectorAll('img[src*="cloudfront"]');
+  allImages.forEach(img => {
+    const src = img.src;
+    if (src && 
+        !src.includes(LOGO_HASH) &&
+        !src.includes('logo') &&
+        !src.includes('icon') &&
+        img.naturalWidth > 200 &&
+        img.naturalHeight > 150) {
+      images.push(src);
+    }
+  });
+}
 
-      // Remove duplicates and limit to 10 images
-      data.images = [...new Set(images)].slice(0, 10);
+// Strategy 4: Check for data attributes and lazy loading
+if (images.length === 0) {
+  const lazyImages = document.querySelectorAll('img[data-src], img[data-lazy], img[data-original]');
+  lazyImages.forEach(img => {
+    const src = img.getAttribute('data-src') || 
+                img.getAttribute('data-lazy') || 
+                img.getAttribute('data-original');
+    if (src && 
+        src.includes('cloudfront') && 
+        !src.includes(LOGO_HASH)) {
+      images.push(src);
+    }
+  });
+}
+
+// Remove duplicates and limit to 10 images (hero is already first)
+data.images = [...new Set(images)].slice(0, 10);
+
 
       // ===== DESCRIPTION =====
       const descEl = document.querySelector('#description') || 
