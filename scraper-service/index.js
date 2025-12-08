@@ -259,7 +259,23 @@ while (currentPage <= maxPages) {
 
   try {
     await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // CRUCIAL: Wait longer and scroll to trigger lazy loading
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Increased wait
+    
+    // Scroll down to trigger any lazy-loaded images
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for lazy images
+    
+    // Scroll back up
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     const listings = await page.evaluate(() => {
       const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880';
@@ -281,37 +297,69 @@ while (currentPage <= maxPages) {
         const url = link.href;
         if (!url || !url.includes('cad-immo.com')) return;
 
-        // IMPROVED: Try multiple ways to get the image
-        const img = card.querySelector('img[src*="cloudfront"]') ||
-                    card.querySelector('img[data-src*="cloudfront"]') ||
-                    card.querySelector('img[data-lazy*="cloudfront"]') ||
-                    card.querySelector('img');
-
         let heroImage = null;
+
+        // Strategy 1: Look for img with actual cloudfront src (not data-src)
+        const images = card.querySelectorAll('img');
         
-        if (img) {
-          const src = img.src || 
-                      img.getAttribute('data-src') || 
-                      img.getAttribute('data-lazy') ||
-                      img.getAttribute('data-original') ||
-                      (img.dataset ? img.dataset.src : null);
-                      
-          if (src && 
-              src.includes('cloudfront') && 
-              !src.includes(LOGO_HASH) &&
-              !src.includes('logo') &&
-              !src.includes('icon')) {
-            heroImage = src;
+        for (const img of images) {
+          // Check if image is actually loaded (has naturalWidth)
+          if (img.complete && img.naturalWidth > 0) {
+            const src = img.currentSrc || img.src; // Use currentSrc first (the actually loaded image)
+            
+            if (src && 
+                src.includes('cloudfront') && 
+                !src.includes(LOGO_HASH) &&
+                !src.includes('logo') &&
+                !src.includes('icon') &&
+                !src.includes('placeholder')) {
+              heroImage = src;
+              break; // Found a good loaded image
+            }
           }
         }
 
-        // FALLBACK: Check for background images
+        // Strategy 2: If no loaded image, try data-src attributes
         if (!heroImage) {
-          const linkWithBg = card.querySelector('[style*="background-image"]');
-          if (linkWithBg) {
-            const bgMatch = linkWithBg.style.backgroundImage.match(/url\(['"]?([^'"]+)['"]?\)/);
-            if (bgMatch && bgMatch[1] && !bgMatch[1].includes(LOGO_HASH)) {
+          for (const img of images) {
+            const src = img.getAttribute('data-src') || 
+                        img.getAttribute('data-lazy') ||
+                        img.getAttribute('data-original') ||
+                        (img.dataset ? img.dataset.src : null);
+                        
+            if (src && 
+                src.includes('cloudfront') && 
+                !src.includes(LOGO_HASH) &&
+                !src.includes('logo') &&
+                !src.includes('icon') &&
+                !src.includes('placeholder')) {
+              heroImage = src;
+              break;
+            }
+          }
+        }
+
+        // Strategy 3: Check for background images in parent elements
+        if (!heroImage) {
+          const elementsWithBg = card.querySelectorAll('[style*="background-image"]');
+          for (const el of elementsWithBg) {
+            const bgMatch = el.style.backgroundImage.match(/url\(['"]?([^'"]+)['"]?\)/);
+            if (bgMatch && bgMatch[1] && 
+                bgMatch[1].includes('cloudfront') &&
+                !bgMatch[1].includes(LOGO_HASH)) {
               heroImage = bgMatch[1];
+              break;
+            }
+          }
+        }
+
+        // Strategy 4: Try to find image in link's child elements
+        if (!heroImage) {
+          const linkImg = link.querySelector('img');
+          if (linkImg) {
+            const src = linkImg.currentSrc || linkImg.src;
+            if (src && src.includes('cloudfront') && !src.includes(LOGO_HASH)) {
+              heroImage = src;
             }
           }
         }
@@ -336,6 +384,12 @@ while (currentPage <= maxPages) {
 
     console.log(`   Found ${listings.length} properties on page ${currentPage}`);
     console.log(`   With hero images: ${listings.filter(l => l.heroImage).length}`);
+    
+    // Log any missing images for debugging
+    const missing = listings.filter(l => !l.heroImage);
+    if (missing.length > 0) {
+      console.log(`   ⚠️  Missing hero images for ${missing.length} properties`);
+    }
 
     currentPage++;
   } catch (pageError) {
@@ -343,6 +397,7 @@ while (currentPage <= maxPages) {
     break;
   }
 }
+
 
 
     console.log(`\n✅ Found ${propertyUrls.size} unique properties to scrape\n`);
