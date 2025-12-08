@@ -163,95 +163,32 @@ async function extractPropertyData(page, url) {
         data.property_type = null;
       }
 
-// ===== IMAGES (UPDATED - PRIORITIZE HERO IMAGE) =====
-const images = [];
-const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880'; // The logo image to exclude
+      // ===== ADDITIONAL IMAGES FROM DETAIL PAGE (not hero) =====
+      const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880';
+      const images = [];
+      
+      const galleryImages = document.querySelectorAll(
+        '.slider-images img, ' +
+        '.property-gallery img, ' +
+        '.carousel img, ' +
+        '[class*="gallery"] img, ' +
+        '[class*="slider"] img, ' +
+        '[class*="photos"] img, ' +
+        '.pictures img'
+      );
 
-// Strategy 1: PRIORITY - Get the main/hero image first
-const heroSelectors = [
-  '.main-image img',
-  '.hero-image img',
-  '.property-main-image img',
-  '.slider-images img:first-child',
-  '.property-gallery img:first-child',
-  '.carousel-item:first-child img',
-  '[class*="main"] img:first-child',
-  'picture:first-of-type img',
-  '.pictures img:first-child'
-];
+      galleryImages.forEach(img => {
+        const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
+        if (src && 
+            src.includes('cloudfront') && 
+            !src.includes(LOGO_HASH) &&
+            !src.includes('logo') &&
+            img.naturalWidth > 200) {
+          images.push(src);
+        }
+      });
 
-let heroImage = null;
-for (const selector of heroSelectors) {
-  const img = document.querySelector(selector);
-  if (img) {
-    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
-    if (src && 
-        src.includes('cloudfront') && 
-        !src.includes(LOGO_HASH) &&
-        !src.includes('logo')) {
-      heroImage = src;
-      images.push(src);
-      break; // Found hero image, stop looking
-    }
-  }
-}
-
-// Strategy 2: Get additional gallery images (excluding hero)
-const galleryImages = document.querySelectorAll(
-  '.slider-images img, ' +
-  '.property-gallery img, ' +
-  '.carousel img, ' +
-  '[class*="gallery"] img, ' +
-  '[class*="slider"] img, ' +
-  '[class*="photos"] img, ' +
-  '.pictures img'
-);
-
-galleryImages.forEach(img => {
-  const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
-  if (src && 
-      src.includes('cloudfront') && 
-      !src.includes(LOGO_HASH) &&
-      src !== heroImage && // Don't duplicate hero image
-      img.naturalWidth > 200) {
-    images.push(src);
-  }
-});
-
-// Strategy 3: If still no images, get all large images
-if (images.length === 0) {
-  const allImages = document.querySelectorAll('img[src*="cloudfront"]');
-  allImages.forEach(img => {
-    const src = img.src;
-    if (src && 
-        !src.includes(LOGO_HASH) &&
-        !src.includes('logo') &&
-        !src.includes('icon') &&
-        img.naturalWidth > 200 &&
-        img.naturalHeight > 150) {
-      images.push(src);
-    }
-  });
-}
-
-// Strategy 4: Check for data attributes and lazy loading
-if (images.length === 0) {
-  const lazyImages = document.querySelectorAll('img[data-src], img[data-lazy], img[data-original]');
-  lazyImages.forEach(img => {
-    const src = img.getAttribute('data-src') || 
-                img.getAttribute('data-lazy') || 
-                img.getAttribute('data-original');
-    if (src && 
-        src.includes('cloudfront') && 
-        !src.includes(LOGO_HASH)) {
-      images.push(src);
-    }
-  });
-}
-
-// Remove duplicates and limit to 10 images (hero is already first)
-data.images = [...new Set(images)].slice(0, 10);
-
+      data.additionalImages = [...new Set(images)]; // Remove duplicates
 
       // ===== DESCRIPTION =====
       const descEl = document.querySelector('#description') || 
@@ -276,8 +213,8 @@ data.images = [...new Set(images)].slice(0, 10);
 
 app.get('/', (req, res) => {
   res.json({ 
-    status: 'Barracuda Scraper Service v2.0',
-    features: ['Data validation', 'Quality scoring', 'Separate fields', 'Multiple image extraction']
+    status: 'Barracuda Scraper Service v2.2',
+    features: ['Data validation', 'Quality scoring', 'Hero image from listings', 'Gallery images']
   });
 });
 
@@ -309,9 +246,9 @@ app.post('/scrape', async (req, res) => {
     const allProperties = [];
     const validationStats = { valid: 0, invalid: 0, total: 0 };
 
-    // Get property URLs from listing pages
+    // Get property URLs AND hero images from listing pages
     let currentPage = 1;
-    const propertyUrls = new Set();
+    const propertyUrls = new Map(); // Changed to Map to store URL -> heroImage
 
     while (currentPage <= maxPages) {
       console.log(`📄 Scraping listing page ${currentPage}...`);
@@ -324,15 +261,59 @@ app.post('/scrape', async (req, res) => {
         await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const urls = await page.evaluate(() => {
-          const links = document.querySelectorAll('a[href*="/fr/propriete/"]');
-          return Array.from(links)
-            .map(link => link.href)
-            .filter(href => href && href.includes('cad-immo.com'));
+        // UPDATED: Extract both URLs and hero images
+        const listings = await page.evaluate(() => {
+          const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880';
+          const results = [];
+
+          // Try multiple selectors for property cards
+          const cards = document.querySelectorAll(
+            'article, ' +
+            '.property, ' +
+            '.item, ' +
+            '.listing-card, ' +
+            '[class*="property-card"], ' +
+            '[class*="listing"]'
+          );
+
+          cards.forEach(card => {
+            // Get property URL
+            const link = card.querySelector('a[href*="/fr/propriete/"]');
+            if (!link) return;
+
+            const url = link.href;
+            if (!url || !url.includes('cad-immo.com')) return;
+
+            // Get the hero/thumbnail image from this card
+            const img = card.querySelector('img[src*="cloudfront"]');
+            let heroImage = null;
+            
+            if (img) {
+              const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
+              if (src && 
+                  src.includes('cloudfront') && 
+                  !src.includes(LOGO_HASH) &&
+                  !src.includes('logo') &&
+                  !src.includes('icon')) {
+                heroImage = src;
+              }
+            }
+
+            results.push({ url, heroImage });
+          });
+
+          return results;
         });
 
-        urls.forEach(url => propertyUrls.add(url));
-        console.log(`   Found ${urls.length} properties on page ${currentPage}`);
+        // Store URL and its hero image
+        listings.forEach(listing => {
+          if (listing.url && !propertyUrls.has(listing.url)) {
+            propertyUrls.set(listing.url, listing.heroImage);
+          }
+        });
+
+        console.log(`   Found ${listings.length} properties on page ${currentPage}`);
+        console.log(`   With hero images: ${listings.filter(l => l.heroImage).length}`);
 
         currentPage++;
       } catch (pageError) {
@@ -345,13 +326,33 @@ app.post('/scrape', async (req, res) => {
 
     // Scrape each property page
     let scrapedCount = 0;
-    for (const propUrl of Array.from(propertyUrls).slice(0, 36)) {
+    for (const [propUrl, heroImage] of Array.from(propertyUrls.entries()).slice(0, 36)) {
       const propertyData = await extractPropertyData(page, propUrl);
 
       if (!propertyData || !propertyData.price) {
         console.log(`⚠️  Skipping ${propUrl} - no valid data`);
         continue;
       }
+
+      // Combine hero image (from listing) + additional images (from detail page)
+      const finalImages = [];
+      
+      // PRIORITY: Hero image from listing page (agent's choice!)
+      if (heroImage) {
+        finalImages.push(heroImage);
+      }
+
+      // Add additional gallery images from detail page
+      if (propertyData.additionalImages && propertyData.additionalImages.length > 0) {
+        propertyData.additionalImages.forEach(img => {
+          if (img !== heroImage) { // Don't duplicate hero
+            finalImages.push(img);
+          }
+        });
+      }
+
+      // Store final image array (max 10)
+      propertyData.images = finalImages.slice(0, 10);
 
       // Validate the data
       const validation = validatePropertyData({
@@ -379,16 +380,17 @@ app.post('/scrape', async (req, res) => {
 
       scrapedCount++;
 
-      // Log progress and image count
+      // Log progress
       if (scrapedCount % 5 === 0) {
         console.log(`   Scraped ${scrapedCount}/${propertyUrls.size} properties...`);
       }
 
-      // Log image extraction success
-      if (propertyData.images && propertyData.images.length > 0) {
-        console.log(`   ✓ Found ${propertyData.images.length} images for ${propertyData.title}`);
+      // Log image success
+      const imageCount = propertyData.images.length;
+      if (imageCount > 0) {
+        console.log(`   ✓ ${imageCount} images for ${propertyData.title} (hero: ${heroImage ? '✓' : '✗'})`);
       } else {
-        console.log(`   ⚠️  No images found for ${propertyData.title}`);
+        console.log(`   ⚠️  No images for ${propertyData.title}`);
       }
     }
 
@@ -438,14 +440,15 @@ app.post('/scrape', async (req, res) => {
           rooms: prop.rooms,
           bedrooms: prop.bedrooms,
           floors: prop.floors,
-          images: prop.images || [], // Use the array of images
+          images: prop.images || [],
           data_quality_score: prop.data_quality_score,
           validation_errors: prop.validation_errors,
           last_seen_at: new Date().toISOString(),
           raw_data: { 
             scrapedAt: new Date().toISOString(),
-            scraper_version: '2.1',
-            imageCount: prop.images?.length || 0
+            scraper_version: '2.2',
+            imageCount: prop.images?.length || 0,
+            hasHeroImage: prop.images && prop.images.length > 0
           }
         };
 
@@ -475,7 +478,10 @@ app.post('/scrape', async (req, res) => {
       validation: validationStats,
       imageStats: {
         withImages: allProperties.filter(p => p.images && p.images.length > 0).length,
-        withoutImages: allProperties.filter(p => !p.images || p.images.length === 0).length
+        withoutImages: allProperties.filter(p => !p.images || p.images.length === 0).length,
+        avgImagesPerProperty: allProperties.length > 0 
+          ? (allProperties.reduce((sum, p) => sum + (p.images?.length || 0), 0) / allProperties.length).toFixed(1)
+          : 0
       },
       properties: allProperties.slice(0, 5).map(p => ({
         url: p.url,
@@ -500,5 +506,5 @@ app.post('/scrape', async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 Scraper service v2.1 running on port ${PORT}`);
+  console.log(`🚀 Scraper service v2.2 running on port ${PORT}`);
 });
