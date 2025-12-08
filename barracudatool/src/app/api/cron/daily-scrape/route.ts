@@ -27,8 +27,7 @@ export async function GET(request: NextRequest) {
     console.log('📡 Starting property scraping via Railway...');
     
     const urlsToScrape = [
-      'https://www.cad-immo.com/vente/bien/maison',
-      'https://www.cad-immo.com/vente/bien/appartement',
+      'https://cad-immo.com/fr/ventes',
     ];
 
     let totalScraped = 0;

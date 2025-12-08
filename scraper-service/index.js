@@ -69,36 +69,22 @@ app.post('/scrape', async (req, res) => {
           timeout: 30000 
         });
 
-        // Wait a bit for JavaScript to render
-        await page.waitForTimeout(2000);
+        // Wait for content to load (use setTimeout instead of waitForTimeout)
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Try multiple possible selectors
+        // Extract properties using new selectors for /fr/propriete/ URLs
         const properties = await page.evaluate(() => {
           const results = [];
           
-          // Try different selector strategies
-          const selectors = [
-            'a[href*="/propriete/"]',
-            'a[href*="/bien/"]',
-            '.property-card a',
-            '.listing-item a',
-            '[data-property] a',
-            'article a',
-          ];
-
-          let links = [];
-          for (const selector of selectors) {
-            links = document.querySelectorAll(selector);
-            if (links.length > 0) {
-              console.log(`Found ${links.length} links with selector: ${selector}`);
-              break;
-            }
-          }
+          // New selector for CAD-IMMO /fr/ventes page
+          const links = document.querySelectorAll('a[href*="/fr/propriete/"]');
+          
+          console.log(`Found ${links.length} property links`);
 
           if (links.length === 0) {
-            // Debug: log what we can find
+            // Debug info
             console.log('Page title:', document.title);
-            console.log('All links count:', document.querySelectorAll('a').length);
+            console.log('Total links:', document.querySelectorAll('a').length);
             return results;
           }
 
@@ -107,17 +93,18 @@ app.post('/scrape', async (req, res) => {
               const url = link.href;
               if (!url || !url.includes('cad-immo.com')) return;
 
-              // Find parent container
+              // Find parent card container
               let container = link.closest('article') || 
-                            link.closest('.property') ||
-                            link.closest('.card') ||
-                            link.parentElement;
+                            link.closest('.property-card') ||
+                            link.closest('.listing') ||
+                            link.closest('[class*="card"]') ||
+                            link.parentElement?.parentElement;
 
               if (!container) container = link;
 
               const text = container.textContent || '';
 
-              // Extract price
+              // Extract price (format: 190 000 €)
               const priceMatch = text.match(/(\d[\d\s]+)\s*€/);
               const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
 
@@ -125,15 +112,23 @@ app.post('/scrape', async (req, res) => {
 
               // Get image
               const img = link.querySelector('img') || container.querySelector('img');
-              const image = img ? img.src : '';
+              const image = img ? (img.src || img.dataset.src) : '';
 
-              // Get title from image alt or heading
+              // Get title
               let title = '';
               if (img && img.alt) {
                 title = img.alt;
               } else {
-                const heading = container.querySelector('h2, h3, h4, .title');
+                const heading = container.querySelector('h2, h3, h4, [class*="title"]');
                 title = heading ? heading.textContent.trim() : '';
+              }
+
+              // If no title, extract from URL
+              if (!title) {
+                const urlParts = url.split('+');
+                if (urlParts.length > 1) {
+                  title = urlParts.slice(1, -1).join(' ');
+                }
               }
 
               // Extract details
@@ -156,32 +151,30 @@ app.post('/scrape', async (req, res) => {
                 image,
               });
             } catch (err) {
-              console.error('Error parsing property:', err);
+              console.error('Error parsing property:', err.message);
             }
           });
 
           return results;
         });
 
-        console.log(`Found ${properties.length} properties on page ${currentPage}`);
+        console.log(`✅ Found ${properties.length} properties on page ${currentPage}`);
         
         if (properties.length === 0) {
-          console.log('No properties found on page');
-          // Take screenshot for debugging
-          await page.screenshot({ path: `/tmp/debug-page-${currentPage}.png` });
+          console.log('⚠️ No properties found on page');
         }
 
         allProperties.push(...properties);
         currentPage++;
       } catch (pageError) {
-        console.error(`Error on page ${currentPage}:`, pageError.message);
+        console.error(`❌ Error on page ${currentPage}:`, pageError.message);
         break;
       }
     }
 
     await browser.close();
 
-    console.log(`✅ Scraping complete: ${allProperties.length} properties`);
+    console.log(`✅ Scraping complete: ${allProperties.length} total properties`);
 
     // Save to Supabase
     let inserted = 0;
@@ -189,15 +182,14 @@ app.post('/scrape', async (req, res) => {
 
     for (const prop of allProperties) {
       try {
-        // Extract source_id from URL
-        const urlParts = prop.url.split('/');
+        // Extract source_id from URL (last part after +)
+        const urlParts = prop.url.split('+');
         const sourceId = urlParts[urlParts.length - 1] || `cadimmo-${Date.now()}`;
 
-        // Determine location from title or URL
+        // Extract city from URL
         let city = 'Bergerac';
-        const cityMatch = prop.title.match(/,\s*([A-Za-zÀ-ÿ\s-]+)$/);
-        if (cityMatch) {
-          city = cityMatch[1].trim();
+        if (urlParts.length >= 3) {
+          city = urlParts[2].charAt(0).toUpperCase() + urlParts[2].slice(1);
         }
 
         const { error } = await supabase.from('properties').upsert({
@@ -218,12 +210,12 @@ app.post('/scrape', async (req, res) => {
         }, { onConflict: 'source,source_id' });
 
         if (error) {
-          console.error('Insert error:', error);
+          console.error('❌ Insert error:', error.message);
         } else {
           inserted++;
         }
       } catch (err) {
-        console.error('Save error:', err);
+        console.error('❌ Save error:', err.message);
       }
     }
 
