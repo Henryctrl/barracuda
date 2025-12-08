@@ -163,11 +163,79 @@ async function extractPropertyData(page, url) {
         data.property_type = null;
       }
 
-      // ===== IMAGE =====
-      const imgEl = document.querySelector('img[src*="cloudfront"]') || 
-                    document.querySelector('.picture img') ||
-                    document.querySelector('[class*="slider"] img');
-      data.image = imgEl ? imgEl.src : '';
+      // ===== IMAGES (UPDATED - MULTIPLE STRATEGIES) =====
+      const images = [];
+      const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880'; // The logo image to exclude
+
+      // Strategy 1: Look for gallery/slider images
+      const galleryImages = document.querySelectorAll(
+        '.slider-images img, ' +
+        '.property-gallery img, ' +
+        '.carousel img, ' +
+        '[class*="gallery"] img, ' +
+        '[class*="slider"] img, ' +
+        '[class*="photos"] img, ' +
+        '.pictures img'
+      );
+
+      galleryImages.forEach(img => {
+        const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
+        if (src && 
+            src.includes('cloudfront') && 
+            !src.includes(LOGO_HASH) &&
+            img.naturalWidth > 200) {
+          images.push(src);
+        }
+      });
+
+      // Strategy 2: If no gallery images, get all large images
+      if (images.length === 0) {
+        const allImages = document.querySelectorAll('img[src*="cloudfront"]');
+        allImages.forEach(img => {
+          const src = img.src;
+          if (src && 
+              !src.includes(LOGO_HASH) &&
+              !src.includes('logo') &&
+              !src.includes('icon') &&
+              img.naturalWidth > 200 &&
+              img.naturalHeight > 150) {
+            images.push(src);
+          }
+        });
+      }
+
+      // Strategy 3: Check for data attributes and lazy loading
+      if (images.length === 0) {
+        const lazyImages = document.querySelectorAll('img[data-src], img[data-lazy], img[data-original]');
+        lazyImages.forEach(img => {
+          const src = img.getAttribute('data-src') || 
+                      img.getAttribute('data-lazy') || 
+                      img.getAttribute('data-original');
+          if (src && 
+              src.includes('cloudfront') && 
+              !src.includes(LOGO_HASH)) {
+            images.push(src);
+          }
+        });
+      }
+
+      // Strategy 4: Check for picture elements
+      if (images.length === 0) {
+        const pictures = document.querySelectorAll('picture source, picture img');
+        pictures.forEach(el => {
+          const src = el.srcset || el.src;
+          if (src && 
+              src.includes('cloudfront') && 
+              !src.includes(LOGO_HASH)) {
+            // Extract URL from srcset if needed
+            const url = src.split(',')[0].split(' ')[0];
+            images.push(url);
+          }
+        });
+      }
+
+      // Remove duplicates and limit to 10 images
+      data.images = [...new Set(images)].slice(0, 10);
 
       // ===== DESCRIPTION =====
       const descEl = document.querySelector('#description') || 
@@ -193,7 +261,7 @@ async function extractPropertyData(page, url) {
 app.get('/', (req, res) => {
   res.json({ 
     status: 'Barracuda Scraper Service v2.0',
-    features: ['Data validation', 'Quality scoring', 'Separate fields']
+    features: ['Data validation', 'Quality scoring', 'Separate fields', 'Multiple image extraction']
   });
 });
 
@@ -260,6 +328,7 @@ app.post('/scrape', async (req, res) => {
     console.log(`\n✅ Found ${propertyUrls.size} unique properties to scrape\n`);
 
     // Scrape each property page
+    let scrapedCount = 0;
     for (const propUrl of Array.from(propertyUrls).slice(0, 36)) {
       const propertyData = await extractPropertyData(page, propUrl);
 
@@ -292,9 +361,18 @@ app.post('/scrape', async (req, res) => {
         validation_errors: validation.errors
       });
 
-      // Log progress
-      if (allProperties.length % 5 === 0) {
-        console.log(`   Scraped ${allProperties.length}/${propertyUrls.size} properties...`);
+      scrapedCount++;
+
+      // Log progress and image count
+      if (scrapedCount % 5 === 0) {
+        console.log(`   Scraped ${scrapedCount}/${propertyUrls.size} properties...`);
+      }
+
+      // Log image extraction success
+      if (propertyData.images && propertyData.images.length > 0) {
+        console.log(`   ✓ Found ${propertyData.images.length} images for ${propertyData.title}`);
+      } else {
+        console.log(`   ⚠️  No images found for ${propertyData.title}`);
       }
     }
 
@@ -344,13 +422,14 @@ app.post('/scrape', async (req, res) => {
           rooms: prop.rooms,
           bedrooms: prop.bedrooms,
           floors: prop.floors,
-          images: prop.image ? [prop.image] : [],
+          images: prop.images || [], // Use the array of images
           data_quality_score: prop.data_quality_score,
           validation_errors: prop.validation_errors,
           last_seen_at: new Date().toISOString(),
           raw_data: { 
             scrapedAt: new Date().toISOString(),
-            scraper_version: '2.0'
+            scraper_version: '2.1',
+            imageCount: prop.images?.length || 0
           }
         };
 
@@ -378,12 +457,17 @@ app.post('/scrape', async (req, res) => {
       inserted,
       updated,
       validation: validationStats,
+      imageStats: {
+        withImages: allProperties.filter(p => p.images && p.images.length > 0).length,
+        withoutImages: allProperties.filter(p => !p.images || p.images.length === 0).length
+      },
       properties: allProperties.slice(0, 5).map(p => ({
         url: p.url,
         title: p.title,
         price: p.price,
         rooms: p.rooms,
         surface: p.building_surface,
+        imageCount: p.images?.length || 0,
         quality: p.data_quality_score,
         errors: p.validation_errors
       }))
@@ -400,5 +484,5 @@ app.post('/scrape', async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 Scraper service v2.0 running on port ${PORT}`);
+  console.log(`🚀 Scraper service v2.1 running on port ${PORT}`);
 });
