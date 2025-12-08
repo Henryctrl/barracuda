@@ -247,80 +247,103 @@ app.post('/scrape', async (req, res) => {
     const validationStats = { valid: 0, invalid: 0, total: 0 };
 
     // Get property URLs AND hero images from listing pages
-    let currentPage = 1;
-    const propertyUrls = new Map(); // Changed to Map to store URL -> heroImage
+let currentPage = 1;
+const propertyUrls = new Map();
 
-    while (currentPage <= maxPages) {
-      console.log(`📄 Scraping listing page ${currentPage}...`);
+while (currentPage <= maxPages) {
+  console.log(`📄 Scraping listing page ${currentPage}...`);
 
-      const pageUrl = currentPage === 1 
-        ? searchUrl 
-        : `${searchUrl}?page=${currentPage}`;
+  const pageUrl = currentPage === 1 
+    ? searchUrl 
+    : `${searchUrl}?page=${currentPage}`;
 
-      try {
-        await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-        await new Promise(resolve => setTimeout(resolve, 2000));
+  try {
+    await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // UPDATED: Extract both URLs and hero images
-        const listings = await page.evaluate(() => {
-          const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880';
-          const results = [];
+    const listings = await page.evaluate(() => {
+      const LOGO_HASH = '52600504a0dbbe5c433dd0e783a78880';
+      const results = [];
 
-          // Try multiple selectors for property cards
-          const cards = document.querySelectorAll(
-            'article, ' +
-            '.property, ' +
-            '.item, ' +
-            '.listing-card, ' +
-            '[class*="property-card"], ' +
-            '[class*="listing"]'
-          );
+      const cards = document.querySelectorAll(
+        'article, ' +
+        '.property, ' +
+        '.item, ' +
+        '.listing-card, ' +
+        '[class*="property-card"], ' +
+        '[class*="listing"]'
+      );
 
-          cards.forEach(card => {
-            // Get property URL
-            const link = card.querySelector('a[href*="/fr/propriete/"]');
-            if (!link) return;
+      cards.forEach(card => {
+        const link = card.querySelector('a[href*="/fr/propriete/"]');
+        if (!link) return;
 
-            const url = link.href;
-            if (!url || !url.includes('cad-immo.com')) return;
+        const url = link.href;
+        if (!url || !url.includes('cad-immo.com')) return;
 
-            // Get the hero/thumbnail image from this card
-            const img = card.querySelector('img[src*="cloudfront"]');
-            let heroImage = null;
-            
-            if (img) {
-              const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
-              if (src && 
-                  src.includes('cloudfront') && 
-                  !src.includes(LOGO_HASH) &&
-                  !src.includes('logo') &&
-                  !src.includes('icon')) {
-                heroImage = src;
-              }
-            }
+        // IMPROVED: Try multiple ways to get the image
+        const img = card.querySelector('img[src*="cloudfront"]') ||
+                    card.querySelector('img[data-src*="cloudfront"]') ||
+                    card.querySelector('img[data-lazy*="cloudfront"]') ||
+                    card.querySelector('img');
 
-            results.push({ url, heroImage });
-          });
-
-          return results;
-        });
-
-        // Store URL and its hero image
-        listings.forEach(listing => {
-          if (listing.url && !propertyUrls.has(listing.url)) {
-            propertyUrls.set(listing.url, listing.heroImage);
+        let heroImage = null;
+        
+        if (img) {
+          const src = img.src || 
+                      img.getAttribute('data-src') || 
+                      img.getAttribute('data-lazy') ||
+                      img.getAttribute('data-original') ||
+                      (img.dataset ? img.dataset.src : null);
+                      
+          if (src && 
+              src.includes('cloudfront') && 
+              !src.includes(LOGO_HASH) &&
+              !src.includes('logo') &&
+              !src.includes('icon')) {
+            heroImage = src;
           }
-        });
+        }
 
-        console.log(`   Found ${listings.length} properties on page ${currentPage}`);
-        console.log(`   With hero images: ${listings.filter(l => l.heroImage).length}`);
+        // FALLBACK: Check for background images
+        if (!heroImage) {
+          const linkWithBg = card.querySelector('[style*="background-image"]');
+          if (linkWithBg) {
+            const bgMatch = linkWithBg.style.backgroundImage.match(/url\(['"]?([^'"]+)['"]?\)/);
+            if (bgMatch && bgMatch[1] && !bgMatch[1].includes(LOGO_HASH)) {
+              heroImage = bgMatch[1];
+            }
+          }
+        }
 
-        currentPage++;
-      } catch (pageError) {
-        console.error(`Error on listing page ${currentPage}:`, pageError.message);
-        break;
-      }
+        results.push({ url, heroImage });
+      });
+
+      return results;
+    });
+
+    // STOP if no properties found (reached last page)
+    if (listings.length === 0) {
+      console.log(`   ✅ Reached end of listings at page ${currentPage - 1}`);
+      break;
     }
+
+    listings.forEach(listing => {
+      if (listing.url && !propertyUrls.has(listing.url)) {
+        propertyUrls.set(listing.url, listing.heroImage);
+      }
+    });
+
+    console.log(`   Found ${listings.length} properties on page ${currentPage}`);
+    console.log(`   With hero images: ${listings.filter(l => l.heroImage).length}`);
+
+    currentPage++;
+  } catch (pageError) {
+    console.error(`Error on listing page ${currentPage}:`, pageError.message);
+    break;
+  }
+}
+
 
     console.log(`\n✅ Found ${propertyUrls.size} unique properties to scrape\n`);
 
