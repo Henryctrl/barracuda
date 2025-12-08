@@ -4,7 +4,6 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chromium = require('@sparticuz/chromium');
 const { createClient } = require('@supabase/supabase-js');
 
-// Railway injects env vars directly
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -21,12 +20,10 @@ const supabase = createClient(
 
 console.log('✅ Supabase client created successfully');
 
-// Health check
 app.get('/', (req, res) => {
   res.json({ status: 'Barracuda Scraper Service Running', version: '1.0.0' });
 });
 
-// Scraping endpoint
 app.post('/scrape', async (req, res) => {
   try {
     const { searchUrl, maxPages = 3 } = req.body;
@@ -37,7 +34,6 @@ app.post('/scrape', async (req, res) => {
 
     console.log('🎯 Starting scrape:', searchUrl);
 
-    // Launch browser
     const browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
       headless: true,
@@ -69,105 +65,73 @@ app.post('/scrape', async (req, res) => {
           timeout: 30000 
         });
 
-        // Wait for content to load (use setTimeout instead of waitForTimeout)
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Extract properties using new selectors for /fr/propriete/ URLs
-        const properties = await page.evaluate(() => {
-          const results = [];
-          
-          // New selector for CAD-IMMO /fr/ventes page
+        // Extract each property link individually
+        const propertyUrls = await page.evaluate(() => {
           const links = document.querySelectorAll('a[href*="/fr/propriete/"]');
-          
-          console.log(`Found ${links.length} property links`);
-
-          if (links.length === 0) {
-            // Debug info
-            console.log('Page title:', document.title);
-            console.log('Total links:', document.querySelectorAll('a').length);
-            return results;
-          }
-
-          links.forEach((link) => {
-            try {
-              const url = link.href;
-              if (!url || !url.includes('cad-immo.com')) return;
-
-              // Find parent card container
-              let container = link.closest('article') || 
-                            link.closest('.property-card') ||
-                            link.closest('.listing') ||
-                            link.closest('[class*="card"]') ||
-                            link.parentElement?.parentElement;
-
-              if (!container) container = link;
-
-              const text = container.textContent || '';
-
-              // Extract price (format: 190 000 €)
-              const priceMatch = text.match(/(\d[\d\s]+)\s*€/);
-              const price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
-
-              if (!price || price < 10000) return; // Skip if no valid price
-
-              // Get image
-              const img = link.querySelector('img') || container.querySelector('img');
-              const image = img ? (img.src || img.dataset.src) : '';
-
-              // Get title
-              let title = '';
-              if (img && img.alt) {
-                title = img.alt;
-              } else {
-                const heading = container.querySelector('h2, h3, h4, [class*="title"]');
-                title = heading ? heading.textContent.trim() : '';
-              }
-
-              // If no title, extract from URL
-              if (!title) {
-                const urlParts = url.split('+');
-                if (urlParts.length > 1) {
-                  title = urlParts.slice(1, -1).join(' ');
-                }
-              }
-
-              // Extract details
-              const surfaceMatch = text.match(/(\d+)\s*m²/);
-              const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
-
-              const roomsMatch = text.match(/(\d+)\s*pièces?/);
-              const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
-
-              const bedroomsMatch = text.match(/(\d+)\s*chambres?/);
-              const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
-
-              results.push({
-                url,
-                title: title || 'Property',
-                price,
-                surface,
-                rooms,
-                bedrooms,
-                image,
-              });
-            } catch (err) {
-              console.error('Error parsing property:', err.message);
-            }
-          });
-
-          return results;
+          return Array.from(links).map(link => link.href).filter((url, index, self) => 
+            self.indexOf(url) === index // Remove duplicates
+          );
         });
 
-        console.log(`✅ Found ${properties.length} properties on page ${currentPage}`);
-        
-        if (properties.length === 0) {
-          console.log('⚠️ No properties found on page');
+        console.log(`Found ${propertyUrls.length} unique property URLs`);
+
+        // Visit each property page individually to get accurate data
+        for (const propUrl of propertyUrls.slice(0, 12)) { // Limit to 12 per page
+          try {
+            const propertyPage = await browser.newPage();
+            await propertyPage.goto(propUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const propertyData = await propertyPage.evaluate(() => {
+              const data = {};
+              
+              // Get title from h1
+              const titleEl = document.querySelector('h1');
+              data.title = titleEl ? titleEl.textContent.trim() : '';
+
+              // Get price
+              const priceEl = document.querySelector('[class*="price"], [class*="Price"]');
+              const priceText = priceEl ? priceEl.textContent : '';
+              const priceMatch = priceText.match(/(\d[\d\s]+)/);
+              data.price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
+
+              // Get details
+              const bodyText = document.body.textContent;
+              
+              const surfaceMatch = bodyText.match(/(\d+)\s*m²/);
+              data.surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+
+              const roomsMatch = bodyText.match(/(\d+)\s*pièces?/);
+              data.rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
+
+              const bedroomsMatch = bodyText.match(/(\d+)\s*chambres?/);
+              data.bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
+
+              // Get image
+              const imgEl = document.querySelector('img[src*="cloudfront"]');
+              data.image = imgEl ? imgEl.src : '';
+
+              return data;
+            });
+
+            if (propertyData.price && propertyData.price > 10000) {
+              allProperties.push({
+                url: propUrl,
+                ...propertyData
+              });
+            }
+
+            await propertyPage.close();
+          } catch (propError) {
+            console.error(`Error scraping ${propUrl}:`, propError.message);
+          }
         }
 
-        allProperties.push(...properties);
         currentPage++;
       } catch (pageError) {
-        console.error(`❌ Error on page ${currentPage}:`, pageError.message);
+        console.error(`Error on page ${currentPage}:`, pageError.message);
         break;
       }
     }
@@ -178,15 +142,12 @@ app.post('/scrape', async (req, res) => {
 
     // Save to Supabase
     let inserted = 0;
-    let updated = 0;
 
     for (const prop of allProperties) {
       try {
-        // Extract source_id from URL (last part after +)
         const urlParts = prop.url.split('+');
         const sourceId = urlParts[urlParts.length - 1] || `cadimmo-${Date.now()}`;
 
-        // Extract city from URL
         let city = 'Bergerac';
         if (urlParts.length >= 3) {
           city = urlParts[2].charAt(0).toUpperCase() + urlParts[2].slice(1);
@@ -209,13 +170,11 @@ app.post('/scrape', async (req, res) => {
           raw_data: { scrapedAt: new Date().toISOString() },
         }, { onConflict: 'source,source_id' });
 
-        if (error) {
-          console.error('❌ Insert error:', error.message);
-        } else {
+        if (!error) {
           inserted++;
         }
       } catch (err) {
-        console.error('❌ Save error:', err.message);
+        console.error('Save error:', err.message);
       }
     }
 
@@ -223,7 +182,7 @@ app.post('/scrape', async (req, res) => {
       success: true,
       totalScraped: allProperties.length,
       inserted,
-      updated,
+      updated: 0,
       properties: allProperties.slice(0, 5),
     });
 
