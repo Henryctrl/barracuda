@@ -867,6 +867,39 @@ app.post('/scrape-eleonor', async (req, res) => {
 // SERVER START (MUST BE AT BOTTOM!)
 // ========================================
 
+// DEBUG ENDPOINT - Add before app.listen()
+app.post('/debug-eleonor', async (req, res) => {
+    try {
+      const browser = await puppeteer.launch({
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
+        headless: true,
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      });
+  
+      const page = await browser.newPage();
+      await page.goto('https://www.agence-eleonor.fr/fr/vente', { waitUntil: 'networkidle2', timeout: 30000 });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+  
+      const debug = await page.evaluate(() => {
+        return {
+          html: document.body.innerHTML.substring(0, 2000), // First 2000 chars
+          allLinks: Array.from(document.querySelectorAll('a')).map(a => a.href).slice(0, 10),
+          allArticles: document.querySelectorAll('article').length,
+          allDivs: document.querySelectorAll('div').length,
+          propertyLinks: Array.from(document.querySelectorAll('a[href*="vente"]')).map(a => a.href).slice(0, 10)
+        };
+      });
+  
+      await browser.close();
+  
+      res.json(debug);
+  
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Scraper service v2.3 running on port ${PORT}`);
