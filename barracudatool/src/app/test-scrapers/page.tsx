@@ -22,7 +22,7 @@ type ScrapeResult = {
 
 export default function TestScrapersPage() {
   const [loading, setLoading] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<string, ScrapeResult>>({});
+  const [results, setResults] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
 
   const scrapeCadImmo = async () => {
@@ -74,6 +74,30 @@ export default function TestScrapersPage() {
       }
     } catch (err) {
       setError('Eleonor Error: ' + (err instanceof Error ? err.message : 'Unknown'));
+    }
+    setLoading(null);
+  };
+
+  // 🔍 DEBUG FUNCTION - Move it outside scrapeAll
+  const debugEleonor = async () => {
+    setLoading('debug');
+    setError('');
+
+    try {
+      const response = await fetch('https://barracuda-production.up.railway.app/debug-eleonor-property', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://www.agence-eleonor.fr/fr/vente/maison-ancienne-15-pieces-issigeac-24560,VM17325'
+        })
+      });
+      
+      const data = await response.json();
+      console.log('🔍 DEBUG DATA:', data);
+      alert('Debug complete! Check browser console (F12)');
+      setResults(prev => ({ ...prev, debug: data }));
+    } catch (err) {
+      setError('Debug Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
     setLoading(null);
   };
@@ -140,6 +164,15 @@ export default function TestScrapersPage() {
           >
             {loading === 'eleonor' && <Loader2 className="animate-spin" size={20} />}
             {loading === 'eleonor' ? 'Scraping Eleonor...' : '🏡 Scrape Agence Eleonor'}
+          </button>
+
+          <button
+            onClick={debugEleonor}
+            disabled={loading !== null}
+            className="px-6 py-3 bg-yellow-600 text-white font-bold rounded text-lg hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-3"
+          >
+            {loading === 'debug' && <Loader2 className="animate-spin" size={20} />}
+            🔍 Debug Eleonor Property
           </button>
 
           <button
@@ -232,6 +265,23 @@ export default function TestScrapersPage() {
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
                 {JSON.stringify(results.eleonor, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+
+        {/* Debug Results */}
+        {results.debug && (
+          <div className="mb-8 p-6 bg-yellow-900/30 border border-yellow-500 rounded">
+            <h2 className="text-2xl font-bold text-yellow-400 mb-4">
+              🔍 Debug Results
+            </h2>
+            <details open>
+              <summary className="cursor-pointer text-[#00ffff] hover:underline mb-4">
+                View Debug Data
+              </summary>
+              <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
+                {JSON.stringify(results.debug, null, 2)}
               </pre>
             </details>
           </div>

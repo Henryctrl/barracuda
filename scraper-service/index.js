@@ -892,37 +892,118 @@ app.post('/scrape-eleonor', async (req, res) => {
   }
 });
 
-// DEBUG ENDPOINT - Add before app.listen()
-app.post('/debug-eleonor', async (req, res) => {
+// DEBUG ENDPOINT - Inspect Eleonor property page structure
+app.post('/debug-eleonor-property', async (req, res) => {
     try {
+      const { url } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ error: 'url parameter required' });
+      }
+  
+      console.log('🔍 Debugging Eleonor property:', url);
+  
       const browser = await puppeteer.launch({
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
         headless: true,
-        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       });
   
       const page = await browser.newPage();
-      await page.goto('https://www.agence-eleonor.fr/fr/vente', { waitUntil: 'networkidle2', timeout: 30000 });
+      await page.setViewport({ width: 1920, height: 1080 });
+      
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
       await new Promise(resolve => setTimeout(resolve, 3000));
   
       const debug = await page.evaluate(() => {
+        // Helper to get text from multiple selectors
+        const trySelectors = (selectors) => {
+          for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && el.textContent.trim()) {
+              return {
+                selector: sel,
+                text: el.textContent.trim(),
+                html: el.innerHTML.substring(0, 200)
+              };
+            }
+          }
+          return null;
+        };
+  
         return {
-          html: document.body.innerHTML.substring(0, 2000), // First 2000 chars
-          allLinks: Array.from(document.querySelectorAll('a')).map(a => a.href).slice(0, 10),
-          allArticles: document.querySelectorAll('article').length,
-          allDivs: document.querySelectorAll('div').length,
-          propertyLinks: Array.from(document.querySelectorAll('a[href*="vente"]')).map(a => a.href).slice(0, 10)
+          // Try to find title
+          title: trySelectors([
+            'h1',
+            '[class*="title"]',
+            '[class*="Title"]',
+            '.property-title',
+            'h2'
+          ]),
+          
+          // Try to find price
+          price: trySelectors([
+            '[class*="price"]',
+            '[class*="Price"]',
+            '.price',
+            '[class*="montant"]',
+            '[class*="amount"]'
+          ]),
+          
+          // Try to find reference
+          reference: trySelectors([
+            '[class*="ref"]',
+            '[class*="Ref"]',
+            '[class*="reference"]',
+            '.reference'
+          ]),
+          
+          // Try to find features/metadata
+          features: trySelectors([
+            '[class*="feature"]',
+            '[class*="characteristic"]',
+            '[class*="detail"]',
+            'ul li',
+            '[class*="info"]'
+          ]),
+          
+          // Get all class names on page (first 50)
+          classNames: Array.from(document.querySelectorAll('[class]'))
+            .slice(0, 50)
+            .map(el => el.className)
+            .filter(c => c && typeof c === 'string'),
+          
+          // Get all elements with text containing numbers (likely features)
+          numberedElements: Array.from(document.querySelectorAll('*'))
+            .filter(el => {
+              const text = el.textContent;
+              return text && 
+                     text.length < 100 && 
+                     /\d+/.test(text) && 
+                     (text.includes('€') || text.includes('m²') || text.includes('pièce') || text.includes('chambre'));
+            })
+            .slice(0, 20)
+            .map(el => ({
+              tag: el.tagName.toLowerCase(),
+              class: el.className,
+              text: el.textContent.trim()
+            }))
         };
       });
   
       await browser.close();
   
-      res.json(debug);
+      res.json({
+        url,
+        debug
+      });
   
     } catch (error) {
+      console.error('Debug error:', error);
       res.status(500).json({ error: error.message });
     }
-  });  
+  });
+  
 
 
   // Simple test endpoint - add before app.listen()
