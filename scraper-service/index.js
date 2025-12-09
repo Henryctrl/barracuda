@@ -203,8 +203,8 @@ async function extractEleonorPropertyData(page, url) {
         const data = {};
   
         // ===== TITLE =====
-        const titleEl = document.querySelector('h1') || document.querySelector('title');
-        data.title = titleEl ? titleEl.textContent.trim() : '';
+        const h1 = document.querySelector('h1');
+        data.title = h1 ? h1.textContent.trim() : '';
         
         // Clean up title
         if (data.title.includes('À vendre -')) {
@@ -215,57 +215,8 @@ async function extractEleonorPropertyData(page, url) {
         const urlParts = window.location.pathname.split(',');
         data.reference = urlParts[urlParts.length - 1] || null;
   
-        // ===== EXTRACT FROM TEXT CONTENT (More Robust) =====
-        const bodyText = document.body.innerText;
-        
-        // PRICE - Look for pattern like "630 000 €"
-        const priceMatch = bodyText.match(/(\d[\d\s]{3,})\s*€/);
-        data.price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
-  
-        // ROOMS - Look for "X pièces" or "X pièce"
-        const roomsMatch = bodyText.match(/(\d+)\s*pièces?(?!\s*-)/i);
-        data.rooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
-  
-        // BEDROOMS - Look for "X chambre(s)"
-        const bedroomsMatch = bodyText.match(/(\d+)\s*chambres?/i);
-        data.bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
-  
-        // SURFACE - Look for "X m²" (building surface)
-        const surfaceMatches = bodyText.matchAll(/(\d+(?:\s?\d+)*)\s*m[²2]/gi);
-        const surfaces = Array.from(surfaceMatches).map(m => parseInt(m[1].replace(/\s/g, '')));
-        
-        // First surface is usually building, second might be land
-        if (surfaces.length > 0) {
-          data.building_surface = surfaces[0];
-        }
-        if (surfaces.length > 1 && surfaces[1] > 500) {
-          data.land_surface = surfaces[1];
-        }
-  
-        // CITY & POSTAL CODE - Extract from title or meta tags
-        // Title format: "Type - City Postal"
-        const titleText = data.title;
-        
-        // Try to extract from title: "Maison X pièces - City XXXXX"
-        const locationMatch = titleText.match(/[-–]\s*([A-Za-zÀ-ÿ\-'\s]+?)\s+(\d{5})/);
-        if (locationMatch) {
-          data.city = locationMatch[1].trim();
-          data.postal_code = locationMatch[2];
-        } else {
-          // Fallback: Look for standalone 5-digit code in body
-          const postalMatch = bodyText.match(/\b(\d{5})\b/);
-          data.postal_code = postalMatch ? postalMatch[1] : null;
-          
-          // Try to find city name near postal code
-          if (data.postal_code) {
-            const cityPattern = new RegExp(`([A-Za-zÀ-ÿ\\-'\\s]{3,30})\\s+${data.postal_code}`, 'i');
-            const cityMatch = bodyText.match(cityPattern);
-            data.city = cityMatch ? cityMatch[1].trim() : null;
-          }
-        }
-  
-        // PROPERTY TYPE - Detect from title
-        const titleLower = titleText.toLowerCase();
+        // ===== PROPERTY TYPE (from title first) =====
+        const titleLower = data.title.toLowerCase();
         if (titleLower.includes('maison') || titleLower.includes('villa') || titleLower.includes('manoir')) {
           data.property_type = 'House/Villa';
         } else if (titleLower.includes('appartement')) {
@@ -278,6 +229,129 @@ async function extractEleonorPropertyData(page, url) {
           data.property_type = null;
         }
   
+        // ===== EXTRACT FROM STRUCTURED ELEMENTS =====
+        // Find the price element specifically (usually has € symbol)
+        const priceElements = Array.from(document.querySelectorAll('*')).filter(el => {
+          const text = el.textContent;
+          const hasEuro = text.includes('€');
+          const hasNumbers = /\d/.test(text);
+          const isShortEnough = text.length < 30;
+          const noChildren = el.children.length === 0;
+          return hasEuro && hasNumbers && isShortEnough && noChildren;
+        });
+  
+        // Get the element with the largest number (likely the price)
+        let maxPrice = 0;
+        for (const el of priceElements) {
+          const match = el.textContent.match(/(\d[\d\s]+)\s*€/);
+          if (match) {
+            const price = parseInt(match[1].replace(/\s/g, ''));
+            if (price > maxPrice && price < 10000000) {
+              maxPrice = price;
+            }
+          }
+        }
+        data.price = maxPrice > 0 ? maxPrice : null;
+  
+        // ===== FIND ALL "FEATURE" ELEMENTS =====
+        // These are typically displayed as "Label: Value" pairs
+        // Look for elements that contain keywords followed by numbers
+        
+        const allTextElements = Array.from(document.querySelectorAll('*')).filter(el => {
+          const text = el.textContent;
+          return text && 
+                 text.length < 100 && 
+                 text.length > 2 &&
+                 el.children.length === 0;
+        });
+  
+        // Extract rooms - look for "X pièce(s)" in standalone elements
+        for (const el of allTextElements) {
+          const text = el.textContent.trim();
+          
+          // ROOMS
+          if (!data.rooms && /^\d+\s*pièces?$/i.test(text)) {
+            const match = text.match(/^(\d+)\s*pièces?$/i);
+            if (match) {
+              data.rooms = parseInt(match[1]);
+            }
+          }
+  
+          // BEDROOMS
+          if (!data.bedrooms && /^\d+\s*chambres?$/i.test(text)) {
+            const match = text.match(/^(\d+)\s*chambres?$/i);
+            if (match) {
+              data.bedrooms = parseInt(match[1]);
+            }
+          }
+  
+          // SURFACE - look for "X m²" or "X m2"
+          if (!data.building_surface && /^\d+\s*m[²2]$/i.test(text)) {
+            const match = text.match(/^(\d+)\s*m[²2]$/i);
+            if (match) {
+              const surface = parseInt(match[1]);
+              if (surface >= 10 && surface <= 2000) {
+                data.building_surface = surface;
+              }
+            }
+          }
+        }
+  
+        // ===== LOCATION FROM TITLE =====
+        // Title format: "Type - City Postal"
+        const locationMatch = data.title.match(/[-–]\s*([A-Za-zÀ-ÿ\-'\s]+?)\s+(\d{5})\s*$/);
+        if (locationMatch) {
+          data.city = locationMatch[1].trim();
+          data.postal_code = locationMatch[2];
+        } else {
+          // Try to find a standalone element with 5-digit postal code
+          for (const el of allTextElements) {
+            const text = el.textContent.trim();
+            if (/^\d{5}$/.test(text)) {
+              data.postal_code = text;
+              break;
+            }
+          }
+          
+          // Try to find city name in nearby elements
+          if (data.postal_code) {
+            // Look for elements near the postal code
+            const postalEl = Array.from(document.querySelectorAll('*')).find(el => 
+              el.textContent.trim() === data.postal_code && el.children.length === 0
+            );
+            
+            if (postalEl) {
+              // Check siblings
+              const parent = postalEl.parentElement;
+              if (parent) {
+                const siblings = Array.from(parent.children);
+                for (const sibling of siblings) {
+                  const sibText = sibling.textContent.trim();
+                  if (sibText !== data.postal_code && 
+                      /^[A-Za-zÀ-ÿ\-'\s]{3,30}$/.test(sibText) &&
+                      !sibText.match(/pièce|chambre|m²|€/i)) {
+                    data.city = sibText;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+  
+        // ===== FALLBACK: Extract from meta tags or structured data =====
+        if (!data.city) {
+          const metaDesc = document.querySelector('meta[name="description"]');
+          if (metaDesc) {
+            const desc = metaDesc.content;
+            const cityMatch = desc.match(/[-–,]\s*([A-Za-zÀ-ÿ\-'\s]+?)\s+(\d{5})/);
+            if (cityMatch) {
+              data.city = cityMatch[1].trim();
+              if (!data.postal_code) data.postal_code = cityMatch[2];
+            }
+          }
+        }
+  
         // ===== IMAGES =====
         const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
         const images = [];
@@ -286,7 +360,7 @@ async function extractEleonorPropertyData(page, url) {
         allImages.forEach(img => {
           const src = img.src || img.getAttribute('data-src') || img.getAttribute('srcset')?.split(' ')[0];
           if (src && 
-              src.includes('netty.immo') && 
+              src.includes('netty.') && 
               !LOGO_PATTERNS.some(pattern => src.toLowerCase().includes(pattern)) &&
               img.naturalWidth > 100) {
             images.push(src);
@@ -296,18 +370,17 @@ async function extractEleonorPropertyData(page, url) {
         data.additionalImages = [...new Set(images)];
   
         // ===== DESCRIPTION =====
-        const descSelectors = [
-          '[class*="description"]',
-          '[class*="comment"]',
-          'p[class*="_"]'
-        ];
-        
-        for (const selector of descSelectors) {
-          const descEl = document.querySelector(selector);
-          if (descEl && descEl.textContent.length > 100) {
-            data.description = descEl.textContent.trim().substring(0, 500);
-            break;
-          }
+        // Look for the longest text block that doesn't contain structured data
+        const longTexts = Array.from(document.querySelectorAll('p, div')).filter(el => {
+          const text = el.textContent.trim();
+          return text.length > 100 && 
+                 text.length < 5000 &&
+                 !text.includes('€') &&
+                 el.children.length <= 5;
+        }).sort((a, b) => b.textContent.length - a.textContent.length);
+  
+        if (longTexts.length > 0) {
+          data.description = longTexts[0].textContent.trim().substring(0, 500);
         }
   
         return data;
@@ -315,7 +388,7 @@ async function extractEleonorPropertyData(page, url) {
   
       // Server-side logging
       console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}`);
-      console.log(`   💰 €${propertyData.price} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${propertyData.bedrooms || 'N/A'} ch | 📐 ${propertyData.building_surface || 'N/A'}m²`);
+      console.log(`   💰 €${propertyData.price || 'N/A'} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${propertyData.bedrooms || 'N/A'} ch | 📐 ${propertyData.building_surface || 'N/A'}m²`);
       console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
   
       return propertyData;
@@ -324,7 +397,7 @@ async function extractEleonorPropertyData(page, url) {
       console.error(`❌ Error extracting ${url}:`, error.message);
       return null;
     }
-  }  
+  }
 
 // ========================================
 // HOME ROUTE
