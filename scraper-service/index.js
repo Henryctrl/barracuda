@@ -656,50 +656,77 @@ app.post('/scrape-eleonor', async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         const listings = await page.evaluate(() => {
-          const results = [];
-
-          const cards = document.querySelectorAll(
-            '.property-card, .property-item, .listing-card, article, [class*="property"], [class*="listing"]'
-          );
-
-          cards.forEach(card => {
-            const link = card.querySelector('a[href*="/fr/vente/"]');
-            if (!link) return;
-
-            const url = link.href;
-            if (!url || !url.includes('agence-eleonor.fr')) return;
-
-            let heroImage = null;
-
-            const images = card.querySelectorAll('img');
-            for (const img of images) {
-              if (img.complete && img.naturalWidth > 0) {
-                const src = img.currentSrc || img.src;
-                if (src && 
-                    !src.includes('logo') &&
-                    !src.includes('icon') &&
-                    !src.includes('placeholder')) {
-                  heroImage = src;
-                  break;
+            const results = [];
+          
+            // Get all links that contain property URLs
+            const propertyLinks = document.querySelectorAll('a[href*="/fr/vente/"][href*="VM"]');
+            
+            propertyLinks.forEach(link => {
+              const url = link.href;
+              
+              // Skip if it's not a property detail page
+              if (!url.includes(',VM') && !url.includes('VM1')) return;
+              
+              let heroImage = null;
+              
+              // Try to find the closest parent container (card)
+              const card = link.closest('div[class*="_"]'); // React components use these class names
+              
+              if (card) {
+                // Look for any image in the card
+                const images = card.querySelectorAll('img');
+                
+                for (const img of images) {
+                  // Check if image is loaded
+                  if (img.complete && img.naturalWidth > 0) {
+                    const src = img.currentSrc || img.src;
+                    
+                    if (src && 
+                        src.includes('netty.fr') && // Their CDN
+                        !src.includes('logo') &&
+                        !src.includes('icon')) {
+                      heroImage = src;
+                      break;
+                    }
+                  }
+                }
+                
+                // Fallback: try data-src or srcset
+                if (!heroImage) {
+                  for (const img of images) {
+                    const src = img.getAttribute('data-src') || 
+                                img.getAttribute('srcset')?.split(' ')[0] ||
+                                img.src;
+                    
+                    if (src && 
+                        src.includes('netty.fr') &&
+                        !src.includes('logo')) {
+                      heroImage = src;
+                      break;
+                    }
+                  }
                 }
               }
-            }
-
-            if (!heroImage) {
-              for (const img of images) {
-                const src = img.getAttribute('data-src') || img.getAttribute('data-lazy');
-                if (src && !src.includes('logo')) {
-                  heroImage = src;
-                  break;
+              
+              // If we still don't have an image, try finding ANY img near this link
+              if (!heroImage) {
+                const nearbyImg = link.querySelector('img') || 
+                                  link.parentElement?.querySelector('img') ||
+                                  link.parentElement?.parentElement?.querySelector('img');
+                
+                if (nearbyImg) {
+                  const src = nearbyImg.currentSrc || nearbyImg.src;
+                  if (src && src.includes('netty.fr') && !src.includes('logo')) {
+                    heroImage = src;
+                  }
                 }
               }
-            }
-
-            results.push({ url, heroImage });
-          });
-
-          return results;
-        });
+              
+              results.push({ url, heroImage });
+            });
+            
+            return results;
+          });          
 
         if (listings.length === 0) {
           console.log(`   ✅ Reached end of Eleonor listings at page ${currentPage - 1}`);
