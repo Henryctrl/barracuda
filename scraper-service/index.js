@@ -3,6 +3,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chromium = require('@sparticuz/chromium');
 const { createClient } = require('@supabase/supabase-js');
+const cors = require('cors'); // 👈 ADD THIS LINE
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -11,6 +12,7 @@ if (process.env.NODE_ENV !== 'production') {
 puppeteer.use(StealthPlugin());
 
 const app = express();
+app.use(cors()); // 👈 ADD THIS - Allows requests from any origin
 app.use(express.json());
 
 const supabase = createClient(
