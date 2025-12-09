@@ -863,10 +863,6 @@ app.post('/scrape-eleonor', async (req, res) => {
   }
 });
 
-// ========================================
-// SERVER START (MUST BE AT BOTTOM!)
-// ========================================
-
 // DEBUG ENDPOINT - Add before app.listen()
 app.post('/debug-eleonor', async (req, res) => {
     try {
@@ -897,8 +893,11 @@ app.post('/debug-eleonor', async (req, res) => {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  });
-  
+  });  
+
+// ========================================
+// SERVER START (MUST BE AT BOTTOM!)
+// ========================================
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
