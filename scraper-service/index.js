@@ -3,7 +3,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chromium = require('@sparticuz/chromium');
 const { createClient } = require('@supabase/supabase-js');
-const cors = require('cors'); // 👈 ADD THIS LINE
+const cors = require('cors');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -12,7 +12,7 @@ if (process.env.NODE_ENV !== 'production') {
 puppeteer.use(StealthPlugin());
 
 const app = express();
-app.use(cors()); // 👈 ADD THIS - Allows requests from any origin
+app.use(cors());
 app.use(express.json());
 
 const supabase = createClient(
@@ -190,18 +190,14 @@ async function extractPropertyData(page, url) {
   }
 }
 
-
-// INSERT EXTRA AGENCIES HERE ----------------------------------------------------------------
-
-
 // ========================================
-// AGENCE ELEONOR EXTRACTION
+// AGENCE ELEONOR EXTRACTION (FIXED!)
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
   try {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for React to render
 
     const propertyData = await page.evaluate(() => {
       const data = {};
@@ -211,28 +207,19 @@ async function extractEleonorPropertyData(page, url) {
         return el ? el.textContent.trim() : '';
       };
 
-      const getMetaValue = (label) => {
-        const items = document.querySelectorAll('.features-list li, .caracteristiques li, .property-features li');
-        for (const item of items) {
-          const text = item.textContent.toLowerCase();
-          if (text.includes(label)) {
-            const match = text.match(/\d+/);
-            return match ? parseInt(match[0]) : null;
-          }
-        }
-        return null;
-      };
+      // ===== TITLE =====
+      data.title = getText('h1._1xthx92') || getText('h1') || '';
 
-      data.title = getText('h1') || getText('.property-title') || getText('[class*="title"]');
-
-      const priceText = getText('.price') || getText('[class*="price"]') || getText('[class*="Price"]');
-      const priceMatch = priceText.match(/(\d[\d\s]+)\s*€/);
+      // ===== PRICE =====
+      const priceText = getText('p._1hxffol') || getText('._1hxffol') || '';
+      const priceMatch = priceText.match(/(\d[\d\s]*)\s*€/);
       data.price = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
 
-      const refText = getText('.reference') || getText('[class*="ref"]');
-      const refMatch = refText.match(/VM\d+|REF[\s:]?\d+/i);
-      data.reference = refMatch ? refMatch[0] : null;
+      // ===== REFERENCE (from URL) =====
+      const urlParts = window.location.pathname.split(',');
+      data.reference = urlParts[urlParts.length - 1] || null; // Gets VM17325
 
+      // ===== PROPERTY TYPE =====
       const titleLower = data.title.toLowerCase();
       if (titleLower.includes('maison') || titleLower.includes('villa')) {
         data.property_type = 'House/Villa';
@@ -240,58 +227,79 @@ async function extractEleonorPropertyData(page, url) {
         data.property_type = 'Apartment';
       } else if (titleLower.includes('terrain')) {
         data.property_type = 'Land (Terrain)';
-      } else if (titleLower.includes('immeuble')) {
-        data.property_type = 'Building';
       } else {
         data.property_type = null;
       }
 
+      // ===== ROOMS (from title) =====
       const piecesMatch = data.title.match(/(\d+)\s*pièces?/i);
-      data.rooms = piecesMatch ? parseInt(piecesMatch[1]) : getMetaValue('pièce');
+      data.rooms = piecesMatch ? parseInt(piecesMatch[1]) : null;
 
-      const chambresMatch = data.title.match(/(\d+)\s*chambres?/i);
-      data.bedrooms = chambresMatch ? parseInt(chambresMatch[1]) : getMetaValue('chambre');
-
-      const surfaceText = getText('[class*="surface"]') || getText('.area');
-      const surfaceMatch = surfaceText.match(/(\d+)\s*m/i) || data.title.match(/(\d+)\s*m²/);
-      data.building_surface = surfaceMatch ? parseInt(surfaceMatch[1]) : getMetaValue('surface');
-
-      data.land_surface = getMetaValue('terrain');
-
-      const urlParts = window.location.pathname.split('-');
-      if (urlParts.length >= 2) {
-        const lastPart = urlParts[urlParts.length - 2];
-        data.city = lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
+      // ===== CITY & POSTAL CODE (from title) =====
+      const locationMatch = data.title.match(/[-–]\s*([A-Za-zÀ-ÿ\s-]+)\s+(\d{5})/);
+      if (locationMatch) {
+        data.city = locationMatch[1].trim();
+        data.postal_code = locationMatch[2];
       }
 
-      const postalMatch = window.location.pathname.match(/(\d{5})/);
-      data.postal_code = postalMatch ? postalMatch[1] : null;
+      // ===== SURFACE & OTHER FEATURES (from list items) =====
+      const listItems = document.querySelectorAll('ul li, ._12o806z');
+      
+      listItems.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        
+        // Surface
+        if (text.includes('surface') && text.includes('m')) {
+          const surfaceMatch = text.match(/(\d+)\s*m/i);
+          if (surfaceMatch) {
+            data.building_surface = parseInt(surfaceMatch[1]);
+          }
+        }
+        
+        // Bedrooms (chambres)
+        if (text.includes('chambre')) {
+          const bedroomsMatch = text.match(/(\d+)\s*chambre/i);
+          if (bedroomsMatch) {
+            data.bedrooms = parseInt(bedroomsMatch[1]);
+          }
+        }
+        
+        // Land surface (terrain)
+        if (text.includes('terrain') && text.includes('m')) {
+          const landMatch = text.match(/(\d+)\s*m/i);
+          if (landMatch) {
+            data.land_surface = parseInt(landMatch[1]);
+          }
+        }
+      });
 
+      // ===== IMAGES =====
+      const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
       const images = [];
+      
       const galleryImages = document.querySelectorAll(
-        '.gallery img, ' +
-        '.slider img, ' +
+        'img, ' +
         '[class*="gallery"] img, ' +
         '[class*="slider"] img, ' +
-        '.property-images img, ' +
-        'img[src*="images"]'
+        '[class*="photo"] img'
       );
 
       galleryImages.forEach(img => {
         const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy');
         if (src && 
-            !src.includes('logo') &&
-            !src.includes('icon') &&
-            img.naturalWidth > 200) {
+            src.includes('netty.') && 
+            !LOGO_PATTERNS.some(pattern => src.toLowerCase().includes(pattern)) &&
+            img.naturalWidth > 100) {
           images.push(src);
         }
       });
 
-      data.additionalImages = [...new Set(images)];
+      data.additionalImages = [...new Set(images)]; // Remove duplicates
 
-      const descEl = document.querySelector('.description') || 
-                     document.querySelector('[class*="description"]') ||
-                     document.querySelector('.comment');
+      // ===== DESCRIPTION =====
+      const descEl = document.querySelector('[class*="description"]') || 
+                     document.querySelector('.comment') ||
+                     document.querySelector('p._5k1wy');
       data.description = descEl ? descEl.textContent.trim().substring(0, 500) : '';
 
       return data;
@@ -313,7 +321,7 @@ app.get('/', (req, res) => {
   res.json({ 
     status: 'Barracuda Scraper Service v2.3',
     features: ['CAD-IMMO scraper', 'Agence Eleonor scraper'],
-    endpoints: ['/scrape', '/scrape-eleonor']
+    endpoints: ['/scrape', '/scrape-eleonor', '/debug-eleonor-property']
   });
 });
 
@@ -323,7 +331,7 @@ app.get('/', (req, res) => {
 
 app.post('/scrape', async (req, res) => {
   try {
-    const { searchUrl, maxPages = 3 } = req.body; // CHANGED FROM 3 TO 999
+    const { searchUrl, maxPages = 3 } = req.body;
 
     if (!searchUrl) {
       return res.status(400).json({ error: 'searchUrl is required' });
@@ -602,12 +610,8 @@ app.post('/scrape', async (req, res) => {
   }
 });
 
-
-//INSERT NEW AGENCY SCRAPE ENDPOINT HERE -----------------------------------------------
-
-
 // ========================================
-// AGENCE ELEONOR SCRAPER ENDPOINT (👈 NEW!)
+// AGENCE ELEONOR SCRAPER ENDPOINT
 // ========================================
 
 app.post('/scrape-eleonor', async (req, res) => {
@@ -658,77 +662,45 @@ app.post('/scrape-eleonor', async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         const listings = await page.evaluate(() => {
-            const results = [];
+          const results = [];
           
-            // Get all links that contain property URLs
-            const propertyLinks = document.querySelectorAll('a[href*="/fr/vente/"][href*="VM"]');
-            
-            propertyLinks.forEach(link => {
-              const url = link.href;
-              
-              // Skip if it's not a property detail page
-              if (!url.includes(',VM') && !url.includes('VM1')) return;
-              
-              let heroImage = null;
-              
-              // Try to find the closest parent container (card)
-              const card = link.closest('div[class*="_"]'); // React components use these class names
-              
-              if (card) {
-                // Look for any image in the card
-                const images = card.querySelectorAll('img');
-                
-                for (const img of images) {
-                  // Check if image is loaded
-                  if (img.complete && img.naturalWidth > 0) {
-                    const src = img.currentSrc || img.src;
-                    
-                    if (src && 
-                        src.includes('netty.fr') && // Their CDN
-                        !src.includes('logo') &&
-                        !src.includes('icon')) {
-                      heroImage = src;
-                      break;
-                    }
-                  }
-                }
-                
-                // Fallback: try data-src or srcset
-                if (!heroImage) {
-                  for (const img of images) {
-                    const src = img.getAttribute('data-src') || 
-                                img.getAttribute('srcset')?.split(' ')[0] ||
-                                img.src;
-                    
-                    if (src && 
-                        src.includes('netty.fr') &&
-                        !src.includes('logo')) {
-                      heroImage = src;
-                      break;
-                    }
-                  }
-                }
+          // Build a map of all images first
+          const allImages = document.querySelectorAll('img');
+          const imageMap = new Map();
+          
+          allImages.forEach(img => {
+            const src = img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('srcset')?.split(' ')[0];
+            if (src && src.includes('netty.') && !src.includes('logo') && !src.includes('icon')) {
+              const closestLink = img.closest('a') || img.parentElement?.closest('a');
+              if (closestLink && closestLink.href) {
+                imageMap.set(closestLink.href, src);
               }
-              
-              // If we still don't have an image, try finding ANY img near this link
-              if (!heroImage) {
-                const nearbyImg = link.querySelector('img') || 
-                                  link.parentElement?.querySelector('img') ||
-                                  link.parentElement?.parentElement?.querySelector('img');
-                
-                if (nearbyImg) {
-                  const src = nearbyImg.currentSrc || nearbyImg.src;
-                  if (src && src.includes('netty.fr') && !src.includes('logo')) {
-                    heroImage = src;
-                  }
-                }
-              }
-              
-              results.push({ url, heroImage });
-            });
+            }
+          });
+          
+          // Now find all property links
+          const propertyLinks = document.querySelectorAll('a[href*="/fr/vente/"][href*=",VM"]');
+          
+          propertyLinks.forEach(link => {
+            const url = link.href;
+            const heroImage = imageMap.get(url) || null;
             
-            return results;
-          });          
+            results.push({ url, heroImage });
+          });
+          
+          // Remove duplicates
+          const unique = new Map();
+          results.forEach(r => {
+            if (!unique.has(r.url)) {
+              unique.set(r.url, r.heroImage);
+            }
+          });
+          
+          return Array.from(unique.entries()).map(([url, heroImage]) => ({
+            url,
+            heroImage
+          }));
+        });
 
         if (listings.length === 0) {
           console.log(`   ✅ Reached end of Eleonor listings at page ${currentPage - 1}`);
@@ -892,136 +864,101 @@ app.post('/scrape-eleonor', async (req, res) => {
   }
 });
 
-// DEBUG ENDPOINT - Inspect Eleonor property page structure
-app.post('/debug-eleonor-property', async (req, res) => {
-    try {
-      const { url } = req.body;
-      
-      if (!url) {
-        return res.status(400).json({ error: 'url parameter required' });
-      }
-  
-      console.log('🔍 Debugging Eleonor property:', url);
-  
-      const browser = await puppeteer.launch({
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
-        headless: true,
-        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-      });
-  
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1920, height: 1080 });
-      
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-      await new Promise(resolve => setTimeout(resolve, 3000));
-  
-      const debug = await page.evaluate(() => {
-        // Helper to get text from multiple selectors
-        const trySelectors = (selectors) => {
-          for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el && el.textContent.trim()) {
-              return {
-                selector: sel,
-                text: el.textContent.trim(),
-                html: el.innerHTML.substring(0, 200)
-              };
-            }
-          }
-          return null;
-        };
-  
-        return {
-          // Try to find title
-          title: trySelectors([
-            'h1',
-            '[class*="title"]',
-            '[class*="Title"]',
-            '.property-title',
-            'h2'
-          ]),
-          
-          // Try to find price
-          price: trySelectors([
-            '[class*="price"]',
-            '[class*="Price"]',
-            '.price',
-            '[class*="montant"]',
-            '[class*="amount"]'
-          ]),
-          
-          // Try to find reference
-          reference: trySelectors([
-            '[class*="ref"]',
-            '[class*="Ref"]',
-            '[class*="reference"]',
-            '.reference'
-          ]),
-          
-          // Try to find features/metadata
-          features: trySelectors([
-            '[class*="feature"]',
-            '[class*="characteristic"]',
-            '[class*="detail"]',
-            'ul li',
-            '[class*="info"]'
-          ]),
-          
-          // Get all class names on page (first 50)
-          classNames: Array.from(document.querySelectorAll('[class]'))
-            .slice(0, 50)
-            .map(el => el.className)
-            .filter(c => c && typeof c === 'string'),
-          
-          // Get all elements with text containing numbers (likely features)
-          numberedElements: Array.from(document.querySelectorAll('*'))
-            .filter(el => {
-              const text = el.textContent;
-              return text && 
-                     text.length < 100 && 
-                     /\d+/.test(text) && 
-                     (text.includes('€') || text.includes('m²') || text.includes('pièce') || text.includes('chambre'));
-            })
-            .slice(0, 20)
-            .map(el => ({
-              tag: el.tagName.toLowerCase(),
-              class: el.className,
-              text: el.textContent.trim()
-            }))
-        };
-      });
-  
-      await browser.close();
-  
-      res.json({
-        url,
-        debug
-      });
-  
-    } catch (error) {
-      console.error('Debug error:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-
-
-  // Simple test endpoint - add before app.listen()
-app.get('/test-logs', (req, res) => {
-    console.log('========================================');
-    console.log('🧪 TEST ENDPOINT CALLED');
-    console.log('Time:', new Date().toISOString());
-    console.log('========================================');
-    
-    res.json({ 
-      message: 'Check Railway logs now!',
-      time: new Date().toISOString()
-    });
-  });
-
-  
 // ========================================
-// SERVER START (MUST BE AT BOTTOM!)
+// DEBUG ENDPOINT
+// ========================================
+
+app.post('/debug-eleonor-property', async (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'url parameter required' });
+    }
+
+    console.log('🔍 Debugging Eleonor property:', url);
+
+    const browser = await puppeteer.launch({
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
+      headless: true,
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const debug = await page.evaluate(() => {
+      const trySelectors = (selectors) => {
+        for (const sel of selectors) {
+          const el = document.querySelector(sel);
+          if (el && el.textContent.trim()) {
+            return {
+              selector: sel,
+              text: el.textContent.trim(),
+              html: el.innerHTML.substring(0, 200)
+            };
+          }
+        }
+        return null;
+      };
+
+      return {
+        title: trySelectors(['h1', '[class*="title"]', '[class*="Title"]', '.property-title', 'h2']),
+        price: trySelectors(['[class*="price"]', '[class*="Price"]', '.price', '[class*="montant"]', '[class*="amount"]']),
+        reference: trySelectors(['[class*="ref"]', '[class*="Ref"]', '[class*="reference"]', '.reference']),
+        features: trySelectors(['[class*="feature"]', '[class*="characteristic"]', '[class*="detail"]', 'ul li', '[class*="info"]']),
+        classNames: Array.from(document.querySelectorAll('[class]'))
+          .slice(0, 50)
+          .map(el => el.className)
+          .filter(c => c && typeof c === 'string'),
+        numberedElements: Array.from(document.querySelectorAll('*'))
+          .filter(el => {
+            const text = el.textContent;
+            return text && 
+                   text.length < 100 && 
+                   /\d+/.test(text) && 
+                   (text.includes('€') || text.includes('m²') || text.includes('pièce') || text.includes('chambre'));
+          })
+          .slice(0, 20)
+          .map(el => ({
+            tag: el.tagName.toLowerCase(),
+            class: el.className,
+            text: el.textContent.trim()
+          }))
+      };
+    });
+
+    await browser.close();
+
+    res.json({ url, debug });
+
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// TEST ENDPOINT
+// ========================================
+
+app.get('/test-logs', (req, res) => {
+  console.log('========================================');
+  console.log('🧪 TEST ENDPOINT CALLED');
+  console.log('Time:', new Date().toISOString());
+  console.log('========================================');
+  
+  res.json({ 
+    message: 'Check Railway logs now!',
+    time: new Date().toISOString()
+  });
+});
+
+// ========================================
+// SERVER START
 // ========================================
 
 const PORT = process.env.PORT || 3001;
