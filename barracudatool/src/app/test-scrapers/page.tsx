@@ -20,9 +20,26 @@ type ScrapeResult = {
   message?: string;
 };
 
+type DebugResult = {
+  url: string;
+  debug: {
+    title: unknown;
+    price: unknown;
+    reference: unknown;
+    features: unknown;
+    classNames: string[];
+    numberedElements: unknown[];
+  };
+};
+
+// Type guard to check if result is ScrapeResult
+function isScrapeResult(result: ScrapeResult | DebugResult): result is ScrapeResult {
+  return 'totalScraped' in result;
+}
+
 export default function TestScrapersPage() {
   const [loading, setLoading] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<string, any>>({});
+  const [results, setResults] = useState<Record<string, ScrapeResult | DebugResult>>({});
   const [error, setError] = useState('');
 
   const scrapeCadImmo = async () => {
@@ -78,7 +95,6 @@ export default function TestScrapersPage() {
     setLoading(null);
   };
 
-  // 🔍 DEBUG FUNCTION - Move it outside scrapeAll
   const debugEleonor = async () => {
     setLoading('debug');
     setError('');
@@ -108,7 +124,6 @@ export default function TestScrapersPage() {
     setResults({});
 
     try {
-      // Scrape CAD-IMMO
       const cadResponse = await fetch('https://barracuda-production.up.railway.app/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -120,7 +135,6 @@ export default function TestScrapersPage() {
       const cadData = await cadResponse.json();
       setResults(prev => ({ ...prev, cadimmo: cadData }));
 
-      // Scrape Eleonor
       const eleoResponse = await fetch('https://barracuda-production.up.railway.app/scrape-eleonor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,6 +150,9 @@ export default function TestScrapersPage() {
     }
     setLoading(null);
   };
+
+  const cadResult = results.cadimmo && isScrapeResult(results.cadimmo) ? results.cadimmo : null;
+  const eleonorResult = results.eleonor && isScrapeResult(results.eleonor) ? results.eleonor : null;
 
   return (
     <div className="min-h-screen bg-[#0d0d21] p-8">
@@ -193,26 +210,26 @@ export default function TestScrapersPage() {
         )}
 
         {/* CAD-IMMO Results */}
-        {results.cadimmo && (
+        {cadResult && (
           <div className="mb-8 p-6 bg-blue-900/30 border border-blue-500 rounded">
             <h2 className="text-2xl font-bold text-blue-400 mb-4 flex items-center gap-2">
-              {results.cadimmo.totalScraped > 0 ? '✅' : '⚠️'} CAD-IMMO Results
+              {cadResult.totalScraped > 0 ? '✅' : '⚠️'} CAD-IMMO Results
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-white mb-4">
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.cadimmo.totalScraped}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{cadResult.totalScraped}</div>
                 <div className="text-sm text-gray-400">Scraped</div>
               </div>
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.cadimmo.inserted}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{cadResult.inserted}</div>
                 <div className="text-sm text-gray-400">Inserted</div>
               </div>
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.cadimmo.imageStats?.withImages || 0}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{cadResult.imageStats?.withImages || 0}</div>
                 <div className="text-sm text-gray-400">With Images</div>
               </div>
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.cadimmo.imageStats?.avgImagesPerProperty || 0}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{cadResult.imageStats?.avgImagesPerProperty || 0}</div>
                 <div className="text-sm text-gray-400">Avg Images</div>
               </div>
             </div>
@@ -222,38 +239,38 @@ export default function TestScrapersPage() {
                 View Full Response
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
-                {JSON.stringify(results.cadimmo, null, 2)}
+                {JSON.stringify(cadResult, null, 2)}
               </pre>
             </details>
           </div>
         )}
 
         {/* Eleonor Results */}
-        {results.eleonor && (
+        {eleonorResult && (
           <div className="mb-8 p-6 bg-purple-900/30 border border-purple-500 rounded">
             <h2 className="text-2xl font-bold text-purple-400 mb-4 flex items-center gap-2">
-              {results.eleonor.totalScraped > 0 ? '✅' : '⚠️'} Agence Eleonor Results
+              {eleonorResult.totalScraped > 0 ? '✅' : '⚠️'} Agence Eleonor Results
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-white mb-4">
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.eleonor.totalScraped}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{eleonorResult.totalScraped}</div>
                 <div className="text-sm text-gray-400">Scraped</div>
               </div>
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.eleonor.inserted || 0}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{eleonorResult.inserted || 0}</div>
                 <div className="text-sm text-gray-400">Inserted</div>
               </div>
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.eleonor.imageStats?.withImages || 0}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{eleonorResult.imageStats?.withImages || 0}</div>
                 <div className="text-sm text-gray-400">With Images</div>
               </div>
               <div className="bg-black/30 p-4 rounded">
-                <div className="text-2xl font-bold text-[#00ff00]">{results.eleonor.imageStats?.avgImagesPerProperty || 0}</div>
+                <div className="text-2xl font-bold text-[#00ff00]">{eleonorResult.imageStats?.avgImagesPerProperty || 0}</div>
                 <div className="text-sm text-gray-400">Avg Images</div>
               </div>
             </div>
             
-            {results.eleonor.totalScraped === 0 && (
+            {eleonorResult.totalScraped === 0 && (
               <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-500 rounded text-yellow-200">
                 ⚠️ No properties found. The scraper may need debugging.
               </div>
@@ -264,14 +281,14 @@ export default function TestScrapersPage() {
                 View Full Response
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
-                {JSON.stringify(results.eleonor, null, 2)}
+                {JSON.stringify(eleonorResult, null, 2)}
               </pre>
             </details>
           </div>
         )}
 
         {/* Debug Results */}
-        {results.debug && (
+        {results.debug && !isScrapeResult(results.debug) && (
           <div className="mb-8 p-6 bg-yellow-900/30 border border-yellow-500 rounded">
             <h2 className="text-2xl font-bold text-yellow-400 mb-4">
               🔍 Debug Results
