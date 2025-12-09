@@ -922,6 +922,21 @@ app.post('/debug-eleonor', async (req, res) => {
     }
   });  
 
+
+  // Simple test endpoint - add before app.listen()
+app.get('/test-logs', (req, res) => {
+    console.log('========================================');
+    console.log('🧪 TEST ENDPOINT CALLED');
+    console.log('Time:', new Date().toISOString());
+    console.log('========================================');
+    
+    res.json({ 
+      message: 'Check Railway logs now!',
+      time: new Date().toISOString()
+    });
+  });
+
+  
 // ========================================
 // SERVER START (MUST BE AT BOTTOM!)
 // ========================================
