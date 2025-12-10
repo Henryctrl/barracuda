@@ -109,7 +109,7 @@ async function extractEleonorListingCards(page) {
 }
 
 // ========================================
-// DETAIL PAGE EXTRACTION (WITH ALL NEW FIELDS + FIXED IMAGES)
+// DETAIL PAGE EXTRACTION (COMPLETE & FIXED)
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
@@ -178,11 +178,11 @@ async function extractEleonorPropertyData(page, url) {
       data.year_built = null;
       data.energy_class = null;
       data.bathrooms = null;
-      data.shower_rooms = null;
+      data.wc_count = null;
 
       // ===== HELPER FUNCTION: Extract from table/structured fields =====
       const getTableValue = (label) => {
-        const stopWords = ['Localisation', 'Référence', 'Chambres', 'Pièces', 'Séjour', 'WC', 'Construction', 'État', 'Cuisine', 'Vue', 'Cave', 'Chauffage', 'Piscine', 'Ouvertures', 'Climatisation', 'Surface', 'Stationnement', 'Toiture', 'Niveaux', 'Détail des pièces', 'Informations complémentaires', 'Description'];
+        const stopWords = ['Localisation', 'Référence', 'Chambres', 'Pièces', 'Séjour', 'WC', 'Construction', 'État', 'Cuisine', 'Vue', 'Cave', 'Chauffage', 'Piscine', 'Ouvertures', 'Climatisation', 'Surface', 'Stationnement', 'Toiture', 'Niveaux', 'Détail des pièces', 'Informations complémentaires', 'Description', 'Assainissement'];
         
         const rows = Array.from(document.querySelectorAll('tr, .row, [class*="row"]'));
         for (const row of rows) {
@@ -300,10 +300,16 @@ async function extractEleonorPropertyData(page, url) {
             
             data.land_surface = val;
           }
+
+          // Salle de bains in Descriptif
+          const salleDeBainsDescMatch = descriptifText.match(/Salle de bains?\s*:?\s*(\d+)/i);
+          if (salleDeBainsDescMatch) {
+            data.bathrooms = parseInt(salleDeBainsDescMatch[1], 10);
+          }
         }
       }
 
-      // ===== STRATEGY 2: "Caractéristiques techniques" section (SECONDARY) =====
+      // ===== STRATEGY 2: "Caractéristiques techniques" section (MAIN SOURCE) =====
       const caracHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
         el.textContent.includes('Caractéristiques techniques')
       );
@@ -362,28 +368,43 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== NEW: BATHROOMS & SHOWER ROOMS =====
-          const bathroomMatch = caracText.match(/Salle de bain\s*:?\s*(\d+)/i);
-          if (bathroomMatch) {
-            data.bathrooms = parseInt(bathroomMatch[1], 10);
+          // ===== BATHROOMS (MERGED: Salle de bains + Salle d'eau) =====
+          if (!data.bathrooms) {
+            let totalBathrooms = 0;
+            
+            // Match "Salle de bains : 1" or "Salle de bain : 1"
+            const salleDeBainsMatch = caracText.match(/Salle de bains?\s*:?\s*(\d+)/i);
+            if (salleDeBainsMatch) {
+              totalBathrooms += parseInt(salleDeBainsMatch[1], 10);
+            }
+            
+            // Match "Salle d'eau : 1"
+            const salleDEauMatch = caracText.match(/Salle d'eau\s*:?\s*(\d+)/i);
+            if (salleDEauMatch) {
+              totalBathrooms += parseInt(salleDEauMatch[1], 10);
+            }
+            
+            if (totalBathrooms > 0) {
+              data.bathrooms = totalBathrooms;
+            }
           }
 
-          const showerMatch = caracText.match(/Salle d'eau\s*:?\s*(\d+)/i);
-          if (showerMatch) {
-            data.shower_rooms = parseInt(showerMatch[1], 10);
+          // ===== WC COUNT =====
+          const wcMatch = caracText.match(/WC\s*:?\s*(\d+)/i);
+          if (wcMatch) {
+            data.wc_count = parseInt(wcMatch[1], 10);
           }
 
-          // ===== NEW: PROPERTY CONDITION =====
+          // ===== PROPERTY CONDITION =====
           const conditionMatch = caracText.match(/État intérieur\s*:?\s*([A-Za-zÀ-ÿ\s]+?)(?:Cuisine|Vue|Ameublement|Cave|Chauffage|$)/i);
           if (conditionMatch) {
             const rawCondition = clean(conditionMatch[1]).toLowerCase();
             
-            // Standardize
             if (rawCondition.includes('excellent')) {
               data.property_condition = 'Excellent';
-            } else if (rawCondition.includes('bon état') || rawCondition.includes('bon etat')) {
+            } else if (rawCondition.includes('bon')) {
               data.property_condition = 'Good';
-            } else if (rawCondition.includes('rénov') || rawCondition.includes('renov') || rawCondition.includes('travaux')) {
+            } else if (rawCondition.includes('rénov') || rawCondition.includes('travaux')) {
               data.property_condition = 'To Renovate';
             } else if (rawCondition.includes('neuf') || rawCondition.includes('récent')) {
               data.property_condition = 'New/Recent';
@@ -392,13 +413,47 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== NEW: YEAR BUILT =====
+          // ===== YEAR BUILT =====
           const yearMatch = caracText.match(/Construction\s*:?\s*(\d{4})/i);
           if (yearMatch) {
             const year = parseInt(yearMatch[1], 10);
             if (year >= 1000 && year <= 2030) {
               data.year_built = year;
             }
+          }
+
+          // ===== HEATING SYSTEM =====
+          const heatingMatch = caracText.match(/Chauffage\s*:?\s*([A-Za-zÀ-ÿ0-9\s,\-àéèêëïôùûç\/]+?)(?:Piscine|Climatisation|Séjour|Chambres|Salle|WC|Cuisine|$)/i);
+          if (heatingMatch) {
+            data.heating_system = clean(heatingMatch[1]);
+          }
+
+          // ===== DRAINAGE/ASSAINISSEMENT =====
+          const drainageMatch = caracText.match(/Assainissement\s*:?\s*([A-Za-zÀ-ÿ0-9\s\-àéèêëïôùûç\']+?)(?:Localisation|Référence|Cuisine|Toiture|Niveaux|$)/i);
+          if (drainageMatch) {
+            const rawValue = clean(drainageMatch[1]).toLowerCase();
+            
+            if (rawValue.includes('tout') && rawValue.includes('égout')) {
+              // Check if conforme is mentioned
+              data.drainage_system = rawValue.includes('conforme') ? 'Mains (Compliant)' : 'Mains';
+            } else if (rawValue.includes('individuel') || rawValue.includes('fosse') || rawValue.includes('septique')) {
+              if (rawValue.includes('conforme') && !rawValue.includes('non')) {
+                data.drainage_system = 'Individual (Compliant)';
+              } else {
+                data.drainage_system = 'Individual (Non-Compliant)';
+              }
+            } else if (rawValue.includes('collectif')) {
+              data.drainage_system = 'Mains';
+            } else {
+              data.drainage_system = 'Individual (Non-Compliant)';
+            }
+          }
+
+          // ===== POOL - ONLY TRUE IF EXPLICITLY OUI/YES =====
+          const poolMatch = caracText.match(/Piscine\s*:?\s*([A-Za-z]+)/i);
+          if (poolMatch) {
+            const poolValue = clean(poolMatch[1]).toLowerCase();
+            data.pool = poolValue === 'oui' || poolValue === 'yes';
           }
 
           // Localisation
@@ -417,50 +472,46 @@ async function extractEleonorPropertyData(page, url) {
               data.reference = refMatch[1];
             }
           }
+        }
+      }
 
-          // ===== DRAINAGE SYSTEM - STANDARDIZED =====
-          const drainageMatch = caracText.match(/Assainissement\s*:?\s*([A-Za-zÀ-ÿ0-9\s\-àéèêëïôùûç\']+?)(?:Localisation|Référence|Toiture|Niveaux|Détail|$)/i);
-          if (drainageMatch) {
-            const rawValue = clean(drainageMatch[1]).toLowerCase();
-            
-            if (rawValue.includes('tout') && rawValue.includes('égout')) {
-              data.drainage_system = 'Mains';
-            } else if (rawValue.includes('individuel') || rawValue.includes('fosse') || rawValue.includes('septique')) {
-              if (rawValue.includes('conforme') && !rawValue.includes('non')) {
-                data.drainage_system = 'Individual (Compliant)';
-              } else {
-                data.drainage_system = 'Individual (Non-Compliant)';
-              }
-            } else if (rawValue.includes('collectif')) {
-              data.drainage_system = 'Mains';
-            } else {
-              data.drainage_system = 'Individual (Non-Compliant)';
-            }
-          }
+      // ===== ENERGY CLASS (DPE) - MULTIPLE STRATEGIES =====
+      
+      // Strategy 1: From description text "DPE D" or "Double vitrage, DPE D"
+      const dpeTextMatch = document.body.textContent.match(/\bDPE\s*:?\s*([A-G])\b/i);
+      if (dpeTextMatch) {
+        data.energy_class = dpeTextMatch[1].toUpperCase();
+        console.log(`✅ Found DPE from text: ${data.energy_class}`);
+      }
 
-          // ===== HEATING SYSTEM =====
-          const heatingMatch = caracText.match(/Chauffage\s*:?\s*([A-Za-zÀ-ÿ0-9\s,\-àéèêëïôùûç\/]+?)(?:Ouvertures|Piscine|Climatisation|Surface|Séjour|Chambres|$)/i);
-          if (heatingMatch) {
-            data.heating_system = clean(heatingMatch[1]);
-          }
+      // Strategy 2: From "Classe énergie X" 
+      if (!data.energy_class) {
+        const energyMatch = document.body.textContent.match(/Classe énergie\s*:?\s*([A-G])/i);
+        if (energyMatch) {
+          data.energy_class = energyMatch[1].toUpperCase();
+          console.log(`✅ Found DPE from "Classe énergie": ${data.energy_class}`);
+        }
+      }
 
-          // ===== POOL - ONLY TRUE IF EXPLICITLY OUI/YES =====
-          const poolMatch = caracText.match(/Piscine\s*:?\s*([A-Za-z]+?)(?:Autres|Climatisation|Surface|Séjour|Description|$)/i);
-          if (poolMatch) {
-            const poolValue = clean(poolMatch[1]).toLowerCase();
-            data.pool = poolValue === 'oui' || poolValue === 'yes';
+      // Strategy 3: From DPE image alt text
+      if (!data.energy_class) {
+        const dpeImages = Array.from(document.querySelectorAll('img[src*="dpe"]'));
+        for (const img of dpeImages) {
+          const altText = (img.alt || '').toUpperCase();
+          const titleText = (img.title || '').toUpperCase();
+          const combinedText = altText + ' ' + titleText;
+          
+          const classMatch = combinedText.match(/\b([A-G])\b/);
+          if (classMatch) {
+            data.energy_class = classMatch[1];
+            console.log(`✅ Found DPE from image alt/title: ${data.energy_class}`);
+            break;
           }
         }
       }
 
-      // ===== NEW: ENERGY CLASS (DPE) =====
-      // Look for "Classe énergie X"
-      const energyMatch = document.body.textContent.match(/Classe énergie\s*:?\s*([A-G])/i);
-      if (energyMatch) {
-        data.energy_class = energyMatch[1].toUpperCase();
-      }
-
       // ===== FALLBACK: Use getTableValue helper for missing fields =====
+      
       if (!data.land_surface) {
         const terrainValue = getTableValue('Terrain');
         if (terrainValue) {
@@ -483,13 +534,47 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
+      if (!data.bathrooms) {
+        let totalBathrooms = 0;
+        
+        const bathroomValue = getTableValue('Salle de bain');
+        if (bathroomValue) {
+          const match = bathroomValue.match(/(\d+)/);
+          if (match) {
+            totalBathrooms += parseInt(match[1], 10);
+          }
+        }
+        
+        const showerValue = getTableValue("Salle d'eau");
+        if (showerValue) {
+          const match = showerValue.match(/(\d+)/);
+          if (match) {
+            totalBathrooms += parseInt(match[1], 10);
+          }
+        }
+        
+        if (totalBathrooms > 0) {
+          data.bathrooms = totalBathrooms;
+        }
+      }
+
+      if (!data.wc_count) {
+        const wcValue = getTableValue('WC');
+        if (wcValue) {
+          const match = wcValue.match(/(\d+)/);
+          if (match) {
+            data.wc_count = parseInt(match[1], 10);
+          }
+        }
+      }
+
       if (!data.drainage_system) {
         const drainageValue = getTableValue('Assainissement');
         if (drainageValue) {
           const rawValue = drainageValue.toLowerCase();
           
           if (rawValue.includes('tout') && rawValue.includes('égout')) {
-            data.drainage_system = 'Mains';
+            data.drainage_system = rawValue.includes('conforme') ? 'Mains (Compliant)' : 'Mains';
           } else if (rawValue.includes('individuel') || rawValue.includes('fosse') || rawValue.includes('septique')) {
             if (rawValue.includes('conforme') && !rawValue.includes('non')) {
               data.drainage_system = 'Individual (Compliant)';
@@ -543,26 +628,6 @@ async function extractEleonorPropertyData(page, url) {
             if (year >= 1000 && year <= 2030) {
               data.year_built = year;
             }
-          }
-        }
-      }
-
-      if (!data.bathrooms) {
-        const bathroomValue = getTableValue('Salle de bain');
-        if (bathroomValue) {
-          const match = bathroomValue.match(/(\d+)/);
-          if (match) {
-            data.bathrooms = parseInt(match[1], 10);
-          }
-        }
-      }
-
-      if (!data.shower_rooms) {
-        const showerValue = getTableValue("Salle d'eau");
-        if (showerValue) {
-          const match = showerValue.match(/(\d+)/);
-          if (match) {
-            data.shower_rooms = parseInt(match[1], 10);
           }
         }
       }
@@ -703,8 +768,8 @@ async function extractEleonorPropertyData(page, url) {
     if (propertyData.energy_class) {
       console.log(`   ⚡ Energy: ${propertyData.energy_class}`);
     }
-    if (propertyData.bathrooms || propertyData.shower_rooms) {
-      console.log(`   🚿 Bath: ${propertyData.bathrooms || 0} | Shower: ${propertyData.shower_rooms || 0}`);
+    if (propertyData.bathrooms || propertyData.wc_count) {
+      console.log(`   🚿 Bathrooms: ${propertyData.bathrooms || 0} | WC: ${propertyData.wc_count || 0}`);
     }
     if (propertyData.heating_system) {
       console.log(`   🔥 Heating: ${propertyData.heating_system}`);
@@ -888,7 +953,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         condition: p.property_condition,
         energy: p.energy_class,
         bathrooms: p.bathrooms,
-        shower_rooms: p.shower_rooms,
+        wc_count: p.wc_count,
         heating: p.heating_system,
         drainage: p.drainage_system,
         imageCount: p.images?.length || 0,
