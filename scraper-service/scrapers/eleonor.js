@@ -214,7 +214,7 @@ async function extractEleonorPropertyData(page, url) {
             if (text.includes(label)) {
               const patterns = [
                 new RegExp('^' + label + '\\s*:?\\s*([^A-Z]+?)$', 'i'),
-                new RegExp(label + '\\s*:?\\s*([A-Za-zÀ-ÿ0-9\\s\\-àéèêëïôùûç\'/]+?)(?:' + stopWords.join('|') + ')', 'i'),
+                new RegExp(label + '\\s*:?\\s*([^:]+?)(?:' + stopWords.join('|') + ')', 'i'),
                 new RegExp(label + '\\s*:?\\s*(.+?)$', 'i')
               ];
               
@@ -315,15 +315,18 @@ async function extractEleonorPropertyData(page, url) {
         el.textContent.includes('Caractéristiques techniques')
       );
 
+      let caracContainer = null;
+      let caracText = '';
+
       if (caracHeading) {
-        let caracContainer = caracHeading.nextElementSibling;
+        caracContainer = caracHeading.nextElementSibling;
         
         if (!caracContainer || caracContainer.children.length === 0) {
           caracContainer = caracHeading.parentElement;
         }
 
         if (caracContainer) {
-          const caracText = clean(caracContainer.textContent);
+          caracText = clean(caracContainer.textContent);
 
           // ===== ROOMS - SMART PRICE-BASED VALIDATION =====
           if (!data.rooms) {
@@ -373,13 +376,11 @@ async function extractEleonorPropertyData(page, url) {
           if (!data.bathrooms) {
             let totalBathrooms = 0;
             
-            // Match "Salle de bains : 1" or "Salle de bain : 1"
             const salleDeBainsMatch = caracText.match(/Salle de bains?\s*:?\s*(\d+)/i);
             if (salleDeBainsMatch) {
               totalBathrooms += parseInt(salleDeBainsMatch[1], 10);
             }
             
-            // Match "Salle d'eau : 1"
             const salleDEauMatch = caracText.match(/Salle d'eau\s*:?\s*(\d+)/i);
             if (salleDEauMatch) {
               totalBathrooms += parseInt(salleDEauMatch[1], 10);
@@ -449,11 +450,15 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== POOL - ONLY TRUE IF EXPLICITLY OUI/YES =====
+          // ===== POOL - ENHANCED MULTI-STRATEGY DETECTION ===== 🏊‍♂️
+          // Strategy 1: Check in Caractéristiques techniques for "Piscine : Oui"
           const poolMatch = caracText.match(/Piscine\s*:?\s*([A-Za-z]+)/i);
           if (poolMatch) {
             const poolValue = clean(poolMatch[1]).toLowerCase();
             data.pool = poolValue === 'oui' || poolValue === 'yes';
+            if (data.pool) {
+              console.log(`✅ Pool found in Caractéristiques: Oui`);
+            }
           }
 
           // Localisation
@@ -472,6 +477,83 @@ async function extractEleonorPropertyData(page, url) {
               data.reference = refMatch[1];
             }
           }
+        }
+      }
+
+      // ===== POOL DETECTION - ADDITIONAL STRATEGIES ===== 🏊‍♂️
+      
+      // Strategy 2: Check title for "piscine" keyword
+      if (!data.pool && data.title) {
+        if (data.title.toLowerCase().includes('piscine')) {
+          data.pool = true;
+          console.log(`✅ Pool found in title: "${data.title.substring(0, 50)}..."`);
+        }
+      }
+
+      // Strategy 3: Check description for "piscine" keyword
+      if (!data.pool) {
+        const descriptionElements = document.querySelectorAll('[class*="description"], .comment, section [class*="text"], article [class*="text"], [class*="desc"]');
+        for (const descEl of descriptionElements) {
+          const descText = clean(descEl.textContent).toLowerCase();
+          if (descText.includes('piscine')) {
+            data.pool = true;
+            console.log(`✅ Pool found in description`);
+            break;
+          }
+        }
+      }
+
+      // Strategy 4: Check "Les points forts" or amenities sections
+      if (!data.pool) {
+        const amenitiesHeadings = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).filter(el => {
+          const text = el.textContent.toLowerCase();
+          return text.includes('points forts') || text.includes('atouts') || text.includes('équipements');
+        });
+        
+        for (const heading of amenitiesHeadings) {
+          let container = heading.nextElementSibling;
+          if (!container || container.children.length === 0) {
+            container = heading.parentElement;
+          }
+          
+          if (container) {
+            const text = container.textContent.toLowerCase();
+            // Look for positive pool mentions with context
+            if (text.includes('piscine') && 
+                (text.includes('avec piscine') || 
+                 text.includes('piscine chauffée') ||
+                 text.includes('piscine privée') ||
+                 text.includes('piscine sécurisée') ||
+                 text.includes('belle piscine') ||
+                 text.includes('grande piscine'))) {
+              data.pool = true;
+              console.log(`✅ Pool found in amenities section`);
+              break;
+            }
+          }
+        }
+      }
+
+      // Strategy 5: Check entire page for strong pool indicators (last resort)
+      if (!data.pool) {
+        const pageText = document.body.textContent.toLowerCase();
+        // Only mark as true if we find strong positive indicators
+        const hasStrongIndicator = 
+          pageText.includes('avec piscine') || 
+          pageText.includes('piscine chauffée') ||
+          pageText.includes('piscine privée') ||
+          pageText.includes('piscine sécurisée') ||
+          pageText.includes('et piscine') ||
+          pageText.includes('+ piscine');
+        
+        const hasNegativeIndicator = 
+          pageText.includes('pas de piscine') ||
+          pageText.includes('sans piscine') ||
+          pageText.includes('aucune piscine');
+        
+        if (hasStrongIndicator && !hasNegativeIndicator) {
+          data.pool = true;
+          console.log(`✅ Pool found via page scan (strong indicator)`);
         }
       }
 
@@ -663,11 +745,15 @@ async function extractEleonorPropertyData(page, url) {
         data.heating_system = getTableValue('Chauffage');
       }
 
+      // Pool fallback via getTableValue (if still not found)
       if (!data.pool) {
         const poolValue = getTableValue('Piscine');
         if (poolValue) {
           const poolLower = poolValue.toLowerCase();
           data.pool = poolLower === 'oui' || poolLower === 'yes';
+          if (data.pool) {
+            console.log(`✅ Pool found via getTableValue: ${poolValue}`);
+          }
         }
       }
 
@@ -1001,12 +1087,19 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
     const dpeCount = allProperties.filter(p => p.energy_consumption || p.co2_emissions).length;
     const dpeRate = allProperties.length > 0 ? ((dpeCount / allProperties.length) * 100).toFixed(1) : 0;
 
+    // Calculate pool stats
+    const poolCount = allProperties.filter(p => p.pool).length;
+
     res.json({
       success: true,
       source: 'agence-eleonor',
       totalScraped: allProperties.length,
       inserted,
       validation: validationStats,
+      poolStats: {
+        withPool: poolCount,
+        percentage: allProperties.length > 0 ? `${((poolCount / allProperties.length) * 100).toFixed(1)}%` : '0%'
+      },
       dpeStats: {
         withDPE: dpeCount,
         successRate: `${dpeRate}%`,
