@@ -109,7 +109,7 @@ async function extractEleonorListingCards(page) {
 }
 
 // ========================================
-// DETAIL PAGE EXTRACTION (COMPLETE & FIXED)
+// DETAIL PAGE EXTRACTION (COMPLETE WITH DPE NUMBERS)
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
@@ -176,7 +176,8 @@ async function extractEleonorPropertyData(page, url) {
       data.pool = false;
       data.property_condition = null;
       data.year_built = null;
-      data.energy_class = null;
+      data.energy_consumption = null;
+      data.co2_emissions = null;
       data.bathrooms = null;
       data.wc_count = null;
 
@@ -434,7 +435,6 @@ async function extractEleonorPropertyData(page, url) {
             const rawValue = clean(drainageMatch[1]).toLowerCase();
             
             if (rawValue.includes('tout') && rawValue.includes('égout')) {
-              // Check if conforme is mentioned
               data.drainage_system = rawValue.includes('conforme') ? 'Mains (Compliant)' : 'Mains';
             } else if (rawValue.includes('individuel') || rawValue.includes('fosse') || rawValue.includes('septique')) {
               if (rawValue.includes('conforme') && !rawValue.includes('non')) {
@@ -475,37 +475,107 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
-      // ===== ENERGY CLASS (DPE) - MULTIPLE STRATEGIES =====
-      
-      // Strategy 1: From description text "DPE D" or "Double vitrage, DPE D"
-      const dpeTextMatch = document.body.textContent.match(/\bDPE\s*:?\s*([A-G])\b/i);
-      if (dpeTextMatch) {
-        data.energy_class = dpeTextMatch[1].toUpperCase();
-        console.log(`✅ Found DPE from text: ${data.energy_class}`);
+      // ===== DPE: ENERGY CONSUMPTION & CO2 EMISSIONS (TEXT EXTRACTION) =====
+      const pageText = document.body.textContent;
+
+      // Strategy 1: Match "310 kWh/m².an" or "310 kWh/m2.an" or similar patterns
+      const consumptionMatch = pageText.match(/(\d{1,4})\s*kWh\/m[²2]\.?\s*an/i);
+      if (consumptionMatch) {
+        data.energy_consumption = parseInt(consumptionMatch[1], 10);
+        console.log(`✅ Found energy consumption: ${data.energy_consumption} kWh/m².an`);
       }
 
-      // Strategy 2: From "Classe énergie X" 
-      if (!data.energy_class) {
-        const energyMatch = document.body.textContent.match(/Classe énergie\s*:?\s*([A-G])/i);
-        if (energyMatch) {
-          data.energy_class = energyMatch[1].toUpperCase();
-          console.log(`✅ Found DPE from "Classe énergie": ${data.energy_class}`);
+      // Strategy 2: Match "68 kg CO2/m².an" or "68* kg CO2/m2.an"
+      const emissionsMatch = pageText.match(/(\d{1,4})\s*\*?\s*kg\s*CO2\/m[²2]\.?\s*an/i);
+      if (emissionsMatch) {
+        data.co2_emissions = parseInt(emissionsMatch[1], 10);
+        console.log(`✅ Found CO2 emissions: ${data.co2_emissions} kg CO2/m².an`);
+      }
+
+      // Strategy 3: Look for "consommation" label with numbers nearby
+      if (!data.energy_consumption) {
+        const consumptionLabels = Array.from(document.querySelectorAll('*')).filter(el => {
+          const text = el.textContent.toLowerCase();
+          return text.includes('consommation') && text.length < 200 && el.children.length < 3;
+        });
+        
+        for (const label of consumptionLabels) {
+          const text = label.textContent;
+          const match = text.match(/(\d{1,4})\s*kWh/i);
+          if (match) {
+            data.energy_consumption = parseInt(match[1], 10);
+            console.log(`✅ Found consumption from label: ${data.energy_consumption}`);
+            break;
+          }
         }
       }
 
-      // Strategy 3: From DPE image alt text
-      if (!data.energy_class) {
-        const dpeImages = Array.from(document.querySelectorAll('img[src*="dpe"]'));
-        for (const img of dpeImages) {
-          const altText = (img.alt || '').toUpperCase();
-          const titleText = (img.title || '').toUpperCase();
-          const combinedText = altText + ' ' + titleText;
-          
-          const classMatch = combinedText.match(/\b([A-G])\b/);
-          if (classMatch) {
-            data.energy_class = classMatch[1];
-            console.log(`✅ Found DPE from image alt/title: ${data.energy_class}`);
+      // Strategy 4: Look for "émissions" label with numbers nearby
+      if (!data.co2_emissions) {
+        const emissionLabels = Array.from(document.querySelectorAll('*')).filter(el => {
+          const text = el.textContent.toLowerCase();
+          return text.includes('émissions') && text.length < 200 && el.children.length < 3;
+        });
+        
+        for (const label of emissionLabels) {
+          const text = label.textContent;
+          const match = text.match(/(\d{1,4})\s*\*?\s*kg\s*CO2/i);
+          if (match) {
+            data.co2_emissions = parseInt(match[1], 10);
+            console.log(`✅ Found emissions from label: ${data.co2_emissions}`);
             break;
+          }
+        }
+      }
+
+      // Strategy 5: Check DPE image alt/title attributes
+      if (!data.energy_consumption || !data.co2_emissions) {
+        const dpeImages = Array.from(document.querySelectorAll('img[src*="dpe"]'));
+        
+        for (const img of dpeImages) {
+          const alt = img.alt || '';
+          const title = img.title || '';
+          const combined = alt + ' ' + title;
+          
+          if (!data.energy_consumption) {
+            const consMatch = combined.match(/(\d{1,4})\s*kWh/i);
+            if (consMatch) {
+              data.energy_consumption = parseInt(consMatch[1], 10);
+              console.log(`✅ Found consumption from image: ${data.energy_consumption}`);
+            }
+          }
+          
+          if (!data.co2_emissions) {
+            const emMatch = combined.match(/(\d{1,4})\s*kg\s*CO2/i);
+            if (emMatch) {
+              data.co2_emissions = parseInt(emMatch[1], 10);
+              console.log(`✅ Found emissions from image: ${data.co2_emissions}`);
+            }
+          }
+        }
+      }
+
+      // Strategy 6: Look in "Les points forts" section (sometimes mentions DPE)
+      if (!data.energy_consumption || !data.co2_emissions) {
+        const pointsForts = Array.from(document.querySelectorAll('h2, h3, h4')).find(el => 
+          el.textContent.includes('points forts')
+        );
+        
+        if (pointsForts) {
+          let container = pointsForts.nextElementSibling;
+          if (!container || container.children.length === 0) {
+            container = pointsForts.parentElement;
+          }
+          
+          if (container) {
+            const text = container.textContent;
+            
+            if (!data.energy_consumption) {
+              const match = text.match(/DPE[:\s]*([A-G])/i);
+              if (match) {
+                console.log(`ℹ️ Found DPE letter in points forts: ${match[1]}`);
+              }
+            }
           }
         }
       }
@@ -765,8 +835,8 @@ async function extractEleonorPropertyData(page, url) {
     if (propertyData.property_condition) {
       console.log(`   ⭐ Condition: ${propertyData.property_condition}`);
     }
-    if (propertyData.energy_class) {
-      console.log(`   ⚡ Energy: ${propertyData.energy_class}`);
+    if (propertyData.energy_consumption || propertyData.co2_emissions) {
+      console.log(`   ⚡ DPE: ${propertyData.energy_consumption || '?'} kWh/m².an | ${propertyData.co2_emissions || '?'} kg CO2/m².an`);
     }
     if (propertyData.bathrooms || propertyData.wc_count) {
       console.log(`   🚿 Bathrooms: ${propertyData.bathrooms || 0} | WC: ${propertyData.wc_count || 0}`);
@@ -927,12 +997,26 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
 
     const inserted = await savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
 
+    // Calculate DPE success rate
+    const dpeCount = allProperties.filter(p => p.energy_consumption || p.co2_emissions).length;
+    const dpeRate = allProperties.length > 0 ? ((dpeCount / allProperties.length) * 100).toFixed(1) : 0;
+
     res.json({
       success: true,
       source: 'agence-eleonor',
       totalScraped: allProperties.length,
       inserted,
       validation: validationStats,
+      dpeStats: {
+        withDPE: dpeCount,
+        successRate: `${dpeRate}%`,
+        avgConsumption: allProperties.filter(p => p.energy_consumption).length > 0
+          ? Math.round(allProperties.filter(p => p.energy_consumption).reduce((sum, p) => sum + p.energy_consumption, 0) / allProperties.filter(p => p.energy_consumption).length)
+          : null,
+        avgEmissions: allProperties.filter(p => p.co2_emissions).length > 0
+          ? Math.round(allProperties.filter(p => p.co2_emissions).reduce((sum, p) => sum + p.co2_emissions, 0) / allProperties.filter(p => p.co2_emissions).length)
+          : null
+      },
       imageStats: {
         withImages: allProperties.filter(p => p.images && p.images.length > 0).length,
         avgImagesPerProperty: allProperties.length > 0 
@@ -951,7 +1035,8 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         pool: p.pool,
         year_built: p.year_built,
         condition: p.property_condition,
-        energy: p.energy_class,
+        energy_consumption: p.energy_consumption,
+        co2_emissions: p.co2_emissions,
         bathrooms: p.bathrooms,
         wc_count: p.wc_count,
         heating: p.heating_system,
