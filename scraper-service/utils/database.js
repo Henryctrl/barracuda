@@ -1,73 +1,73 @@
 async function savePropertiesToDB(properties, source, supabase) {
-    let inserted = 0;
-  
-    for (const prop of properties) {
-      try {
-        let sourceId, city, department, postalCode;
-  
-        if (source === 'cadimmo') {
-          const urlParts = prop.url.split('+');
-          sourceId = urlParts[urlParts.length - 1] || `cadimmo-${Date.now()}`;
-          city = 'Bergerac';
-          if (urlParts.length >= 3) {
-            city = urlParts[2].split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('-');
-          }
-          department = '24';
-          postalCode = '24100';
-        } else if (source === 'eleonor') {
-          const refMatch = prop.url.match(/VM\d+/);
-          sourceId = refMatch ? refMatch[0] : `eleonor-${Date.now()}`;
-          city = prop.city || 'Unknown';
-          postalCode = prop.postal_code || '24000';
-          department = postalCode?.substring(0, 2) || '24';
-        }
-  
-        const dbData = {
-          source,
-          source_id: sourceId,
-          reference: prop.reference,
-          url: prop.url,
-          title: prop.title,
-          description: prop.description,
-          price: prop.price,
-          location_city: city,
-          location_postal_code: postalCode,
-          location_department: department,
-          property_type: prop.property_type,
-          surface: prop.building_surface,
-          building_surface: prop.building_surface,
-          land_surface: prop.land_surface,
-          rooms: prop.rooms,
-          bedrooms: prop.bedrooms,
-          floors: prop.floors || null,
-          images: prop.images || [],
-          data_quality_score: prop.data_quality_score,
-          validation_errors: prop.validation_errors,
-          last_seen_at: new Date().toISOString(),
-          raw_data: { 
-            scrapedAt: new Date().toISOString(),
-            scraper_version: '2.4',
-            source,
-            imageCount: prop.images?.length || 0
-          }
-        };
-  
-        const { error } = await supabase
-          .from('properties')
-          .upsert(dbData, { onConflict: 'source,source_id', returning: 'minimal' });
-  
-        if (error) {
-          console.error(`Save error:`, error.message);
-        } else {
-          inserted++;
-        }
-  
-      } catch (err) {
-        console.error('Save error:', err.message);
-      }
+    if (!properties || properties.length === 0) {
+      console.log('⚠️  No properties to save');
+      return 0;
     }
   
-    return inserted;
+    console.log(`💾 Saving ${properties.length} properties to database...`);
+  
+    const propertiesToInsert = properties.map(property => ({
+      source,
+      source_id: property.source_id || null,
+      url: property.url,
+      title: property.title || null,
+      description: property.description || null,
+      price: property.price || null,
+      location_city: property.city || null,
+      location_postal_code: property.postal_code || null,
+      property_type: property.property_type || null,
+      surface: property.building_surface || null,
+      rooms: property.rooms || null,
+      bedrooms: property.bedrooms || null,
+      images: property.images ? JSON.stringify(property.images) : null,
+      raw_data: JSON.stringify({
+        source,
+        scrapedAt: new Date().toISOString(),
+        imageCount: property.images?.length || 0,
+        scraper_version: '2.4'
+      }),
+      scraped_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+      is_active: true,
+      reference: property.reference || null,
+      land_surface: property.land_surface || null,
+      building_surface: property.building_surface || null,
+      data_quality_score: property.data_quality_score || null,
+      validation_errors: property.validation_errors ? JSON.stringify(property.validation_errors) : null,
+      
+      // ===== NEW FIELDS - ADD THESE! =====
+      drainage_system: property.drainage_system || null,
+      heating_system: property.heating_system || null,
+      pool: property.pool === true, // Ensure boolean
+      property_condition: property.property_condition || null,
+      year_built: property.year_built || null,
+      energy_consumption: property.energy_consumption || null,
+      co2_emissions: property.co2_emissions || null,
+      bathrooms: property.bathrooms || null,
+      wc_count: property.wc_count || null
+    }));
+  
+    try {
+      const { data, error } = await supabase
+        .from('properties')
+        .upsert(propertiesToInsert, {
+          onConflict: 'url',
+          ignoreDuplicates: false
+        })
+        .select();
+  
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        return 0;
+      }
+  
+      console.log(`✅ Successfully saved/updated ${data?.length || propertiesToInsert.length} properties`);
+      return data?.length || propertiesToInsert.length;
+  
+    } catch (error) {
+      console.error('❌ Database save failed:', error);
+      return 0;
+    }
   }
   
   module.exports = { savePropertiesToDB };
