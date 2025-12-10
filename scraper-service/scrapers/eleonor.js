@@ -1104,7 +1104,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
           year_built: propertyData.year_built,
           energy_consumption: propertyData.energy_consumption,
           co2_emissions: propertyData.co2_emissions,
-          images: JSON.stringify(propertyData.images),
+          images: propertyData.images, // Remove JSON.stringify - let Supabase handle it
           data_quality_score: validation.score,
           validation_errors: JSON.stringify(validation.errors),
           raw_data: JSON.stringify({

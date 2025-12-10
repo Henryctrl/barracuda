@@ -127,9 +127,49 @@ export default function ClientDetailPage() {
         .select('*')
         .in('id', propertyIds);
 
+      // ✅ Parse JSON fields safely
+      const parsedProperties = propertiesData?.map(p => {
+        let images: string[] = [];
+        let validation_errors: string[] = [];
+        
+        // Parse images
+        try {
+          if (p.images) {
+            if (typeof p.images === 'string') {
+              images = JSON.parse(p.images);
+            } else if (Array.isArray(p.images)) {
+              images = p.images;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse images for property:', p.id);
+        }
+        
+        // Parse validation_errors
+        try {
+          if (p.validation_errors) {
+            if (typeof p.validation_errors === 'string') {
+              const parsed = JSON.parse(p.validation_errors);
+              validation_errors = Array.isArray(parsed) ? parsed : [];
+            } else if (Array.isArray(p.validation_errors)) {
+              validation_errors = p.validation_errors;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse validation_errors for property:', p.id);
+        }
+        
+        return {
+          ...p,
+          images,
+          validation_errors,
+          data_quality_score: p.data_quality_score || '1.0'
+        };
+      });
+
       // Merge the data manually
       const mergedMatches = matchesData.map(match => {
-        const matchedProperty = propertiesData?.find(p => p.id === match.property_id);
+        const matchedProperty = parsedProperties?.find(p => p.id === match.property_id);
         return {
           ...match,
           properties: matchedProperty || null,
@@ -602,7 +642,7 @@ export default function ClientDetailPage() {
                                   {validationErrors.length > 0 && (
                                     <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
                                       <AlertTriangle size={12} />
-                                      {validationErrors.join(', ')}
+                                      {Array.isArray(validationErrors) ? validationErrors.join(', ') : 'Data quality issues'}
                                     </div>
                                   )}
                                   <div className="text-xl font-bold text-[#00ffff]">
