@@ -2,7 +2,7 @@ const { validatePropertyData } = require('../utils/validation');
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
-// LISTING EXTRACTION (FIX THIS)
+// LISTING EXTRACTION
 // ========================================
 
 async function extractEleonorListingCards(page) {
@@ -12,7 +12,7 @@ async function extractEleonorListingCards(page) {
     const results = [];
     const clean = s => s ? s.replace(/\s+/g, ' ').trim() : '';
 
-    // STRATEGY 1: Find all links to property pages first
+    // Find all links to property pages first
     const propertyLinks = Array.from(document.querySelectorAll('a[href*="/fr/vente/"]'));
     console.log(`Found ${propertyLinks.length} total links with /fr/vente/`);
 
@@ -121,7 +121,7 @@ async function extractEleonorListingCards(page) {
 }
 
 // ========================================
-// DETAIL PAGE EXTRACTION
+// DETAIL PAGE EXTRACTION (UPDATED)
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
@@ -133,6 +133,7 @@ async function extractEleonorPropertyData(page, url) {
       const data = {};
       const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
 
+      // ===== TITLE =====
       const h1 = document.querySelector('h1');
       data.title = clean(h1 ? h1.textContent : '');
 
@@ -140,9 +141,11 @@ async function extractEleonorPropertyData(page, url) {
         data.title = data.title.replace('À vendre - ', '').split('|')[0].trim();
       }
 
+      // ===== REFERENCE (from URL) =====
       const urlParts = window.location.pathname.split(',');
       data.reference = urlParts[urlParts.length - 1] || null;
 
+      // ===== PROPERTY TYPE FROM TITLE =====
       const tl = data.title.toLowerCase();
       if (tl.includes('maison') || tl.includes('villa') || tl.includes('manoir')) {
         data.property_type = 'House/Villa';
@@ -156,6 +159,7 @@ async function extractEleonorPropertyData(page, url) {
         data.property_type = null;
       }
 
+      // ===== PRICE =====
       let priceText = '';
       const priceP = document.querySelector('p._1hxffol');
 
@@ -172,65 +176,170 @@ async function extractEleonorPropertyData(page, url) {
       const priceMatch = priceText.match(/(\d[\d\s ]*)\s*€/);
       data.price = priceMatch ? parseInt(priceMatch[1].replace(/[^\d]/g, ''), 10) : null;
 
+      // ===== INITIALIZE =====
       data.rooms = null;
       data.bedrooms = null;
       data.building_surface = null;
       data.land_surface = null;
+      data.city = null;
+      data.postal_code = null;
 
-      const featureItems = Array.from(document.querySelectorAll('ul li'))
-        .map(li => clean(li.textContent))
-        .filter(t => t.length > 0 && t.length < 120);
+      // ===== STRATEGY 1: "Descriptif du bien" section (PRIMARY) =====
+      const allText = document.body.textContent;
+      
+      // Find "Descriptif du bien" heading
+      const descriptifHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
+        clean(el.textContent) === 'Descriptif du bien' || el.textContent.includes('Descriptif du bien')
+      );
 
-      featureItems.forEach(text => {
-        const lower = text.toLowerCase();
-
-        if (!data.rooms && lower.includes('pièce')) {
-          const m = text.match(/(\d+)\s*pièces?/i);
-          if (m) data.rooms = parseInt(m[1], 10);
+      if (descriptifHeading) {
+        // Get the next container or sibling elements
+        let container = descriptifHeading.nextElementSibling;
+        
+        // If nextSibling doesn't work, try parent's next section
+        if (!container || container.children.length === 0) {
+          container = descriptifHeading.parentElement;
         }
 
-        if (!data.bedrooms && lower.includes('chambre')) {
-          const m = text.match(/(\d+)\s*chambres?/i);
-          if (m) data.bedrooms = parseInt(m[1], 10);
-        }
+        if (container) {
+          const descriptifText = clean(container.textContent);
 
-        if (!data.building_surface && lower.includes('surface') && !lower.includes('terrain') && lower.includes('m')) {
-          const m = text.match(/(\d[\d\s ]*)\s*m[²2]/i);
-          if (m) {
-            const val = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-            if (val >= 10 && val <= 2000) data.building_surface = val;
+          // Surface : 102 m²
+          const surfaceMatch = descriptifText.match(/Surface\s*:?\s*(\d+)\s*m[²2]/i);
+          if (surfaceMatch) {
+            data.building_surface = parseInt(surfaceMatch[1], 10);
+          }
+
+          // Pièces : 4
+          const piecesMatch = descriptifText.match(/Pièces?\s*:?\s*(\d+)/i);
+          if (piecesMatch) {
+            data.rooms = parseInt(piecesMatch[1], 10);
+          }
+
+          // Terrain : 35 a OR 2100 m² OR 01 a 50 ca
+          const terrainMatch = descriptifText.match(/Terrain\s*:?\s*(\d+)(?:\s*a\s*(\d+)\s*ca)?\s*(a|m²|m2|ha|ca)?/i);
+          if (terrainMatch) {
+            let val = parseInt(terrainMatch[1], 10);
+            const additionalCa = terrainMatch[2] ? parseInt(terrainMatch[2], 10) : 0;
+            const unit = terrainMatch[3] ? terrainMatch[3].toLowerCase() : 'a';
+            
+            // Convert to m²
+            if (unit === 'a') {
+              val = val * 100 + additionalCa; // "01 a 50 ca" = 100m² + 50m² = 150m²
+            } else if (unit === 'ha') {
+              val = val * 10000;
+            } else if (unit === 'ca') {
+              val = val * 1;
+            }
+            
+            data.land_surface = val;
           }
         }
+      }
 
-        if ((lower.includes('terrain') || lower.includes('parcelle') || lower.includes('land')) && lower.includes('m')) {
-          const m = text.match(/(\d[\d\s ]*)\s*m[²2]/i);
-          if (m) {
-            const val = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-            if (!data.land_surface || val > data.land_surface) data.land_surface = val;
-          }
+      // ===== STRATEGY 2: "Caractéristiques techniques" section (SECONDARY) =====
+      const caracHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
+        el.textContent.includes('Caractéristiques techniques')
+      );
+
+      if (caracHeading) {
+        let caracContainer = caracHeading.nextElementSibling;
+        
+        if (!caracContainer || caracContainer.children.length === 0) {
+          caracContainer = caracHeading.parentElement;
         }
 
-        if (!data.city || !data.postal_code) {
-          const loc = text.match(/([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/);
-          if (loc) {
-            data.city = loc[1].trim();
-            data.postal_code = loc[2];
+        if (caracContainer) {
+          // Get all text content
+          const caracText = clean(caracContainer.textContent);
+
+          // Chambres: 2 or just "Chambres 2" or in a row
+          if (!data.bedrooms) {
+            const bedroomsMatch = caracText.match(/Chambres?\s*:?\s*(\d+)/i);
+            if (bedroomsMatch) {
+              data.bedrooms = parseInt(bedroomsMatch[1], 10);
+            }
+          }
+
+          // Localisation: Castillonnès 47330
+          if (!data.city || !data.postal_code) {
+            const locMatch = caracText.match(/Localisation\s*:?\s*([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/i);
+            if (locMatch) {
+              data.city = locMatch[1].trim();
+              data.postal_code = locMatch[2];
+            }
+          }
+
+          // Also try Référence in case we need to extract from here
+          if (!data.reference) {
+            const refMatch = caracText.match(/Référence\s*:?\s*(VM\d+)/i);
+            if (refMatch) {
+              data.reference = refMatch[1];
+            }
           }
         }
-      });
+      }
 
+      // ===== STRATEGY 3: LAST RESORT - Parse from title only if missing =====
+      if (!data.rooms) {
+        const titleRoomsMatch = data.title.match(/(\d+)\s*pièces?/i);
+        if (titleRoomsMatch) {
+          data.rooms = parseInt(titleRoomsMatch[1], 10);
+          console.log(`⚠️ Using rooms from title: ${data.rooms}`);
+        }
+      }
+
+      if (!data.bedrooms) {
+        const titleBedroomsMatch = data.title.match(/(\d+)\s*chambres?/i);
+        if (titleBedroomsMatch) {
+          data.bedrooms = parseInt(titleBedroomsMatch[1], 10);
+          console.log(`⚠️ Using bedrooms from title: ${data.bedrooms}`);
+        }
+      }
+
+      // ===== LOCATION FALLBACK - from breadcrumb or title tag if still missing =====
       if (!data.city || !data.postal_code) {
-        const docTitle = document.querySelector('title');
-        if (docTitle) {
-          const t = clean(docTitle.textContent);
-          const loc = t.match(/situé à\s+([A-Za-zÀ-ÿ'\- ]+)\s*\((\d{5})\)/i);
+        // Try breadcrumb first
+        const breadcrumb = document.querySelector('nav, [class*="breadcrumb"]');
+        if (breadcrumb) {
+          const bcText = clean(breadcrumb.textContent);
+          const loc = bcText.match(/([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/);
           if (loc) {
             if (!data.city) data.city = loc[1].trim();
             if (!data.postal_code) data.postal_code = loc[2];
           }
         }
+
+        // Then try title tag
+        if (!data.city || !data.postal_code) {
+          const docTitle = document.querySelector('title');
+          if (docTitle) {
+            const t = clean(docTitle.textContent);
+            
+            const patterns = [
+              /([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/,
+              /-\s+([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})$/,
+              /situé à\s+([A-Za-zÀ-ÿ'\- ]+)\s*\((\d{5})\)/i
+            ];
+            
+            for (const pattern of patterns) {
+              const loc = t.match(pattern);
+              if (loc) {
+                if (!data.city) data.city = loc[1].trim();
+                if (!data.postal_code) data.postal_code = loc[2];
+                break;
+              }
+            }
+          }
+        }
       }
 
+      // Clean up city name if it has "Localisation" prefix
+      if (data.city && data.city.toLowerCase().startsWith('localisation')) {
+        data.city = data.city.replace(/^localisation\s*/i, '').trim();
+      }
+
+      // ===== IMAGES =====
       const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
       const images = [];
       document.querySelectorAll('img').forEach(img => {
@@ -241,6 +350,7 @@ async function extractEleonorPropertyData(page, url) {
       });
       data.additionalImages = Array.from(new Set(images));
 
+      // ===== DESCRIPTION =====
       const descEl = document.querySelector('[class*="description"]') || document.querySelector('.comment') || document.querySelector('section [class*="text"], article [class*="text"]');
       data.description = descEl ? clean(descEl.textContent).substring(0, 500) : '';
 
@@ -249,6 +359,9 @@ async function extractEleonorPropertyData(page, url) {
 
     console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}`);
     console.log(`   💰 €${propertyData.price || 'N/A'} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${propertyData.bedrooms || 'N/A'} ch | 📐 ${propertyData.building_surface || 'N/A'}m²`);
+    if (propertyData.land_surface) {
+      console.log(`   🌳 ${propertyData.land_surface}m² terrain`);
+    }
     console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
 
     return propertyData;
@@ -334,6 +447,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         continue;
       }
 
+      // Merge listing and detail data - detail takes priority
       const propertyData = {
         ...listingData,
         ...detailData,
@@ -415,7 +529,9 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         price: p.price,
         city: p.city,
         rooms: p.rooms,
+        bedrooms: p.bedrooms,
         surface: p.building_surface,
+        land_surface: p.land_surface,
         imageCount: p.images?.length || 0,
         quality: p.data_quality_score
       }))
