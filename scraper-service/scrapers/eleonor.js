@@ -3,7 +3,7 @@ const database = require('../utils/database');
 
 // ========================================
 // HELPER: Fetch existing properties with prices
-// ========================================
+// ======================================== 
 
 async function getExistingProperties(supabase, source) {
   try {
