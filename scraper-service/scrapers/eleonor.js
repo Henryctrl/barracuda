@@ -1,5 +1,5 @@
 const { validatePropertyData } = require('../utils/validation');
-const { savePropertiesToDB } = require('../utils/database');
+const database = require('../utils/database');
 
 // ========================================
 // HELPER: Fetch existing properties with prices
@@ -9,7 +9,7 @@ async function getExistingProperties(supabase, source) {
   try {
     const { data, error } = await supabase
       .from('properties')
-      .select('reference, price, previous_price')
+      .select('reference, price, previous_price, url')
       .eq('source', source)
       .eq('is_active', true);
     
@@ -20,7 +20,8 @@ async function getExistingProperties(supabase, source) {
       if (p.reference) {
         propertiesMap.set(p.reference, {
           currentPrice: p.price,
-          previousPrice: p.previous_price
+          previousPrice: p.previous_price,
+          url: p.url
         });
       }
     });
@@ -842,13 +843,16 @@ async function extractEleonorPropertyData(page, url) {
 
 async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
   try {
-    const { searchUrl, maxPages = 3 } = req.body;
+    const { searchUrl, maxPages = 3, priceUpdateMode = false } = req.body;
 
     if (!searchUrl) {
       return res.status(400).json({ error: 'searchUrl is required' });
     }
 
-    console.log('🎯 Starting Agence Eleonor scrape:', searchUrl);
+    console.log(`🎯 Starting Agence Eleonor scrape: ${searchUrl}`);
+    if (priceUpdateMode) {
+      console.log('💰 PRICE UPDATE MODE: Checking all existing properties for price changes\n');
+    }
 
     const browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
@@ -862,10 +866,94 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
     const allProperties = [];
     const validationStats = { valid: 0, invalid: 0, total: 0 };
 
+    // ===== PRICE UPDATE MODE =====
+    if (priceUpdateMode) {
+      const existingPropertiesMap = await getExistingProperties(supabase, 'agence-eleonor');
+      const priceChanges = [];
+
+      console.log(`🔍 Checking ${existingPropertiesMap.size} properties for price changes...\n`);
+
+      let checked = 0;
+      for (const [reference, existingData] of existingPropertiesMap.entries()) {
+        checked++;
+        console.log(`   [${checked}/${existingPropertiesMap.size}] Checking ${reference}...`);
+
+        const detailData = await extractEleonorPropertyData(page, existingData.url);
+
+        if (!detailData || !detailData.price) {
+          console.log(`      ⚠️  Could not get price, skipping`);
+          continue;
+        }
+
+        const updateData = {
+          reference,
+          url: existingData.url,
+          price: detailData.price,
+          last_seen_at: new Date().toISOString()
+        };
+
+        // Check for price change
+        if (existingData.currentPrice && detailData.price !== existingData.currentPrice) {
+          const priceDiff = detailData.price - existingData.currentPrice;
+          const percentChange = ((priceDiff / existingData.currentPrice) * 100).toFixed(1);
+          
+          updateData.previous_price = existingData.currentPrice;
+          updateData.price_changed_at = new Date().toISOString();
+          updateData.price_drop_amount = priceDiff;
+          
+          if (priceDiff < 0) {
+            console.log(`      💰📉 €${existingData.currentPrice} → €${detailData.price} (${percentChange}% DROP!)`);
+          } else {
+            console.log(`      💰📈 €${existingData.currentPrice} → €${detailData.price} (+${percentChange}%)`);
+          }
+          
+          priceChanges.push({
+            reference,
+            oldPrice: existingData.currentPrice,
+            newPrice: detailData.price,
+            change: priceDiff,
+            percentChange
+          });
+        } else {
+          console.log(`      ✅ €${detailData.price} (no change)`);
+        }
+
+        allProperties.push(updateData);
+
+        // Delay between requests
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      await browser.close();
+
+      // Save to database
+      if (allProperties.length > 0) {
+        console.log(`\n💾 Saving ${allProperties.length} price updates to database...`);
+        await database.savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
+      }
+
+      const summary = {
+        success: true,
+        message: `Price check complete for ${allProperties.length} properties`,
+        stats: {
+          checked: allProperties.length,
+          price_changes: priceChanges.length
+        },
+        priceChanges: priceChanges
+      };
+
+      console.log('\n🎉 Price update complete!');
+      console.log(`   Checked: ${allProperties.length}`);
+      console.log(`   Price changes: ${priceChanges.length}`);
+
+      return res.json(summary);
+    }
+
+    // ===== NORMAL SCRAPING MODE =====
     let currentPageNum = 1;
     const propertyMap = new Map();
 
-    // ===== PART 1: COLLECT ALL LISTINGS =====
+    // PART 1: Collect all listings
     while (currentPageNum <= maxPages) {
       console.log(`📄 Scraping Agence Eleonor listing page ${currentPageNum}...`);
 
@@ -903,15 +991,14 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
 
     console.log(`\n✅ Found ${propertyMap.size} unique Agence Eleonor properties from listing pages\n`);
 
-    // ===== PART 2: SMART FILTERING - SEPARATE EXISTING VS NEW =====
+    // PART 2: Smart filtering - separate existing vs new
     const existingPropertiesMap = await getExistingProperties(supabase, 'agence-eleonor');
 
     const existingProperties = [];
     const newProperties = [];
-    const priceChanges = [];
 
     for (const [url, listingData] of propertyMap.entries()) {
-      const ref = url.split(',').pop(); // Extract VM17172
+      const ref = url.split(',').pop();
       
       if (existingPropertiesMap.has(ref)) {
         const existingData = existingPropertiesMap.get(ref);
@@ -921,63 +1008,28 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
       }
     }
 
-    console.log(`📊 Split: ${existingProperties.length} existing (price update only) + ${newProperties.length} new (full scrape)\n`);
+    console.log(`📊 Split: ${existingProperties.length} existing (last_seen update only) + ${newProperties.length} new (full scrape)\n`);
 
-    // ===== PART 3: QUICK PRICE UPDATES FOR EXISTING PROPERTIES =====
+    // PART 3: Quick updates for existing properties (ONLY last_seen_at - NO DETAIL PAGE VISITS!)
     if (existingProperties.length > 0) {
-      console.log('💰 Updating prices for existing properties...\n');
+      console.log('✅ Updating existing properties (marking as still active)...\n');
 
       for (const { url, listingData, reference, existingData } of existingProperties) {
-        if (listingData.price) {
-          const updateData = {
-            reference,
-            price: listingData.price,
-            last_seen_at: new Date().toISOString(),
-            source: 'agence-eleonor',
-            url
-          };
-
-          // ===== PRICE CHANGE DETECTION =====
-          if (existingData.currentPrice && listingData.price !== existingData.currentPrice) {
-            const priceDiff = listingData.price - existingData.currentPrice;
-            const percentChange = ((priceDiff / existingData.currentPrice) * 100).toFixed(1);
-            
-            updateData.previous_price = existingData.currentPrice;
-            updateData.price_changed_at = new Date().toISOString();
-            updateData.price_drop_amount = priceDiff;
-            
-            if (priceDiff < 0) {
-              console.log(`   💰📉 ${reference}: €${existingData.currentPrice} → €${listingData.price} (${percentChange}% DROP!)`);
-              priceChanges.push({
-                reference,
-                oldPrice: existingData.currentPrice,
-                newPrice: listingData.price,
-                change: priceDiff,
-                percentChange
-              });
-            } else {
-              console.log(`   💰📈 ${reference}: €${existingData.currentPrice} → €${listingData.price} (+${percentChange}%)`);
-            }
-          } else {
-            console.log(`   ✅ ${reference}: €${listingData.price} (no change)`);
-          }
-          
-          allProperties.push(updateData);
-        }
+        const updateData = {
+          reference,
+          url,
+          price: existingData.currentPrice, // Keep existing price
+          last_seen_at: new Date().toISOString()
+        };
+        
+        console.log(`   ✅ ${reference} (still active)`);
+        allProperties.push(updateData);
       }
 
-      console.log(`\n✅ ${existingProperties.length} existing properties updated`);
-      
-      if (priceChanges.length > 0) {
-        console.log(`\n🎉 ${priceChanges.length} PRICE CHANGES DETECTED!`);
-        priceChanges.forEach(change => {
-          console.log(`   ${change.reference}: ${change.percentChange}% change (€${change.change.toLocaleString()})`);
-        });
-      }
-      console.log('');
+      console.log(`\n✅ ${existingProperties.length} existing properties marked as active (NO detail scraping)\n`);
     }
 
-    // ===== PART 4: FULL DETAIL SCRAPING FOR NEW PROPERTIES =====
+    // PART 4: Full detail scraping for NEW properties
     if (newProperties.length > 0) {
       console.log(`🔍 Full scraping for ${newProperties.length} NEW properties...\n`);
 
@@ -1079,10 +1131,10 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
 
     await browser.close();
 
-    // ===== SAVE TO DATABASE =====
+    // Save to database
     if (allProperties.length > 0) {
       console.log(`💾 Saving ${allProperties.length} properties to database...`);
-      await savePropertiesToDB(supabase, allProperties);
+      await database.savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
     }
 
     const summary = {
@@ -1092,17 +1144,14 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         total: allProperties.length,
         existing_updated: existingProperties.length,
         new_scraped: newProperties.length,
-        price_changes: priceChanges.length,
         validation: validationStats
-      },
-      priceChanges: priceChanges.slice(0, 10) // First 10 price changes
+      }
     };
 
     console.log('\n🎉 Scraping complete!');
     console.log(`   Total: ${allProperties.length}`);
-    console.log(`   Existing (updated): ${existingProperties.length}`);
+    console.log(`   Existing (marked active): ${existingProperties.length}`);
     console.log(`   New (full scrape): ${newProperties.length}`);
-    console.log(`   Price changes: ${priceChanges.length}`);
     console.log(`   Valid: ${validationStats.valid}`);
 
     res.json(summary);
