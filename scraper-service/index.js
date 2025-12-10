@@ -191,179 +191,286 @@ async function extractPropertyData(page, url) {
 }
 
 // ========================================
-// AGENCE ELEONOR EXTRACTION (FIXED!)
+// AGENCE ELEONOR LISTING EXTRACTION
+// ========================================
+
+async function extractEleonorListingCards(page) {
+  return await page.evaluate(() => {
+    const cards = [];
+    const clean = s => s ? s.replace(/\s+/g, ' ').trim() : '';
+
+    // Find all cards using the iconText div as anchor
+    const iconTextDivs = Array.from(document.querySelectorAll('div._eic3rb.iconText'));
+
+    iconTextDivs.forEach(iconDiv => {
+      try {
+        // Walk up to find the card container
+        let card = iconDiv.closest('article') || 
+                   iconDiv.closest('a[href*="/fr/vente/"]') || 
+                   iconDiv.closest('div[class*="_nhv2ha"]')?.parentElement;
+
+        if (!card) {
+          // Try alternate strategy: find parent that contains both link and price
+          let current = iconDiv.parentElement;
+          for (let i = 0; i < 5 && current; i++) {
+            if (current.querySelector('a[href*="/fr/vente/"]') && 
+                current.querySelector('[class*="_1s1nzvi"], [class*="_11w5q3n"]')) {
+              card = current;
+              break;
+            }
+            current = current.parentElement;
+          }
+        }
+
+        if (!card) return;
+
+        // Extract link
+        const linkEl = card.querySelector('a[href*="/fr/vente/"][href*=",VM"]');
+        if (!linkEl) return;
+        
+        const url = linkEl.href;
+
+        // Extract price
+        const priceEl = card.querySelector('span._1s1nzvi, div._11w5q3n');
+        let price = null;
+        if (priceEl) {
+          const priceText = clean(priceEl.textContent);
+          const match = priceText.match(/(\d[\d\s ]*)\s*€/);
+          if (match) {
+            price = parseInt(match[1].replace(/[^\d]/g, ''), 10);
+          }
+        }
+
+        // Extract title
+        const titleEl = card.querySelector('h2._i5yy8z, h2[class*="_prm2ej"]');
+        const title = titleEl ? clean(titleEl.textContent) : null;
+
+        // Extract summary info from iconText
+        const summary = clean(iconDiv.textContent);
+        
+        // Parse rooms
+        const roomsMatch = summary.match(/(\d+)\s*pièces?/i);
+        const rooms = roomsMatch ? parseInt(roomsMatch[1], 10) : null;
+
+        // Parse surface
+        const surfaceMatch = summary.match(/(\d+)\s*m[²2]/i);
+        const building_surface = surfaceMatch ? parseInt(surfaceMatch[1], 10) : null;
+
+        // Parse location (city + postal code)
+        const locationMatch = summary.match(/([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})$/);
+        const city = locationMatch ? locationMatch[1].trim() : null;
+        const postal_code = locationMatch ? locationMatch[2] : null;
+
+        // Extract hero image
+        let heroImage = null;
+        const imgEl = card.querySelector('img[src*="netty."], img[srcset*="netty."]');
+        if (imgEl) {
+          const src = imgEl.currentSrc || 
+                      imgEl.src || 
+                      imgEl.getAttribute('data-src') || 
+                      (imgEl.getAttribute('srcset') || '').split(' ')[0];
+          
+          if (src && !src.includes('logo') && !src.includes('icon') && !src.includes('placeholder')) {
+            heroImage = src;
+          }
+        }
+
+        cards.push({
+          url,
+          price,
+          title,
+          rooms,
+          building_surface,
+          city,
+          postal_code,
+          heroImage,
+          summary
+        });
+
+      } catch (err) {
+        console.error('Card extraction error:', err);
+      }
+    });
+
+    // Remove duplicates by URL
+    const unique = new Map();
+    cards.forEach(card => {
+      if (card.url && !unique.has(card.url)) {
+        unique.set(card.url, card);
+      }
+    });
+
+    return Array.from(unique.values());
+  });
+}
+
+// ========================================
+// AGENCE ELEONOR DETAIL EXTRACTION
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
-    try {
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-      await new Promise(resolve => setTimeout(resolve, 3000)); // let React/Netty render
-  
-      const propertyData = await page.evaluate(() => {
-        const data = {};
-        const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
-  
-        // ===== TITLE =====
-        const h1 = document.querySelector('h1');
-        data.title = clean(h1 ? h1.textContent : '');
-  
-        if (data.title.includes('À vendre -')) {
-          data.title = data.title.replace('À vendre - ', '').split('|')[0].trim();
-        }
-  
-        // ===== REFERENCE (from URL) =====
-        const urlParts = window.location.pathname.split(',');
-        data.reference = urlParts[urlParts.length - 1] || null;
-  
-        // ===== PROPERTY TYPE FROM TITLE =====
-        const tl = data.title.toLowerCase();
-        if (tl.includes('maison') || tl.includes('villa') || tl.includes('manoir')) {
-          data.property_type = 'House/Villa';
-        } else if (tl.includes('appartement')) {
-          data.property_type = 'Apartment';
-        } else if (tl.includes('terrain')) {
-          data.property_type = 'Land (Terrain)';
-        } else if (tl.includes('immeuble')) {
-          data.property_type = 'Building';
-        } else {
-          data.property_type = null;
-        }
-  
-        // ===== PRICE – USE THE <p class="_1hxffol ..."> NODE =====
-        let priceText = '';
-        const priceP = document.querySelector('p._1hxffol'); // the one debug showed
-  
-        if (priceP) {
-          priceText = clean(priceP.textContent);
-        } else {
-          // fallback: any short element containing "€" and digits
-          const maybe = Array.from(document.querySelectorAll('p, div, span')).find(el => {
-            const t = el.textContent;
-            return t && t.includes('€') && /\d/.test(t) && t.length < 40;
-          });
-          priceText = maybe ? clean(maybe.textContent) : '';
-        }
-  
-        const priceMatch = priceText.match(/(\d[\d\s ]*)\s*€/); // includes thin spaces
-        data.price = priceMatch ? parseInt(priceMatch[1].replace(/[^\d]/g, ''), 10) : null;
-  
-        // ===== FEATURE LIST – WHAT USER SEES IN THE UL/LI =====
-        data.rooms = null;
-        data.bedrooms = null;
-        data.building_surface = null;
-        data.land_surface = null;
-  
-        const featureItems = Array.from(document.querySelectorAll('ul li'))
-          .map(li => clean(li.textContent))
-          .filter(t => t.length > 0 && t.length < 120);
-  
-        featureItems.forEach(text => {
-          const lower = text.toLowerCase();
-  
-          // ROOMS — "Pièces : 12"
-          if (!data.rooms && lower.includes('pièce')) {
-            const m = text.match(/(\d+)\s*pièces?/i);
-            if (m) data.rooms = parseInt(m[1], 10);
-          }
-  
-          // BEDROOMS — "Chambres : 7"
-          if (!data.bedrooms && lower.includes('chambre')) {
-            const m = text.match(/(\d+)\s*chambres?/i);
-            if (m) data.bedrooms = parseInt(m[1], 10);
-          }
-  
-          // BUILDING SURFACE — "Surface : 425 m²", but not terrain
-          if (
-            !data.building_surface &&
-            lower.includes('surface') &&
-            !lower.includes('terrain') &&
-            lower.includes('m')
-          ) {
-            const m = text.match(/(\d[\d\s ]*)\s*m[²2]/i);
-            if (m) {
-              const val = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-              if (val >= 10 && val <= 2000) data.building_surface = val;
-            }
-          }
-  
-          // LAND SURFACE — "Terrain : 3000 m²"
-          if ((lower.includes('terrain') || lower.includes('parcelle') || lower.includes('land')) && lower.includes('m')) {
-            const m = text.match(/(\d[\d\s ]*)\s*m[²2]/i);
-            if (m) {
-              const val = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-              if (!data.land_surface || val > data.land_surface) data.land_surface = val;
-            }
-          }
-  
-          // CITY + POSTCODE — e.g. "Angoulême 16000"
-          if (!data.city || !data.postal_code) {
-            const loc = text.match(/([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/);
-            if (loc) {
-              data.city = loc[1].trim();
-              data.postal_code = loc[2];
-            }
-          }
+  try {
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const propertyData = await page.evaluate(() => {
+      const data = {};
+      const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
+
+      // ===== TITLE =====
+      const h1 = document.querySelector('h1');
+      data.title = clean(h1 ? h1.textContent : '');
+
+      if (data.title.includes('À vendre -')) {
+        data.title = data.title.replace('À vendre - ', '').split('|')[0].trim();
+      }
+
+      // ===== REFERENCE (from URL) =====
+      const urlParts = window.location.pathname.split(',');
+      data.reference = urlParts[urlParts.length - 1] || null;
+
+      // ===== PROPERTY TYPE FROM TITLE =====
+      const tl = data.title.toLowerCase();
+      if (tl.includes('maison') || tl.includes('villa') || tl.includes('manoir')) {
+        data.property_type = 'House/Villa';
+      } else if (tl.includes('appartement')) {
+        data.property_type = 'Apartment';
+      } else if (tl.includes('terrain')) {
+        data.property_type = 'Land (Terrain)';
+      } else if (tl.includes('immeuble')) {
+        data.property_type = 'Building';
+      } else {
+        data.property_type = null;
+      }
+
+      // ===== PRICE =====
+      let priceText = '';
+      const priceP = document.querySelector('p._1hxffol');
+
+      if (priceP) {
+        priceText = clean(priceP.textContent);
+      } else {
+        const maybe = Array.from(document.querySelectorAll('p, div, span')).find(el => {
+          const t = el.textContent;
+          return t && t.includes('€') && /\d/.test(t) && t.length < 40;
         });
-  
-        // ===== LOCATION FALLBACK — FROM <title> TAG IF NEEDED =====
+        priceText = maybe ? clean(maybe.textContent) : '';
+      }
+
+      const priceMatch = priceText.match(/(\d[\d\s ]*)\s*€/);
+      data.price = priceMatch ? parseInt(priceMatch[1].replace(/[^\d]/g, ''), 10) : null;
+
+      // ===== FEATURES =====
+      data.rooms = null;
+      data.bedrooms = null;
+      data.building_surface = null;
+      data.land_surface = null;
+
+      const featureItems = Array.from(document.querySelectorAll('ul li'))
+        .map(li => clean(li.textContent))
+        .filter(t => t.length > 0 && t.length < 120);
+
+      featureItems.forEach(text => {
+        const lower = text.toLowerCase();
+
+        if (!data.rooms && lower.includes('pièce')) {
+          const m = text.match(/(\d+)\s*pièces?/i);
+          if (m) data.rooms = parseInt(m[1], 10);
+        }
+
+        if (!data.bedrooms && lower.includes('chambre')) {
+          const m = text.match(/(\d+)\s*chambres?/i);
+          if (m) data.bedrooms = parseInt(m[1], 10);
+        }
+
+        if (
+          !data.building_surface &&
+          lower.includes('surface') &&
+          !lower.includes('terrain') &&
+          lower.includes('m')
+        ) {
+          const m = text.match(/(\d[\d\s ]*)\s*m[²2]/i);
+          if (m) {
+            const val = parseInt(m[1].replace(/[^\d]/g, ''), 10);
+            if (val >= 10 && val <= 2000) data.building_surface = val;
+          }
+        }
+
+        if ((lower.includes('terrain') || lower.includes('parcelle') || lower.includes('land')) && lower.includes('m')) {
+          const m = text.match(/(\d[\d\s ]*)\s*m[²2]/i);
+          if (m) {
+            const val = parseInt(m[1].replace(/[^\d]/g, ''), 10);
+            if (!data.land_surface || val > data.land_surface) data.land_surface = val;
+          }
+        }
+
         if (!data.city || !data.postal_code) {
-          const docTitle = document.querySelector('title');
-          if (docTitle) {
-            const t = clean(docTitle.textContent);
-            const loc = t.match(/situé à\s+([A-Za-zÀ-ÿ'\- ]+)\s*\((\d{5})\)/i);
-            if (loc) {
-              if (!data.city) data.city = loc[1].trim();
-              if (!data.postal_code) data.postal_code = loc[2];
-            }
+          const loc = text.match(/([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/);
+          if (loc) {
+            data.city = loc[1].trim();
+            data.postal_code = loc[2];
           }
         }
-  
-        // ===== IMAGES =====
-        const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
-        const images = [];
-        document.querySelectorAll('img').forEach(img => {
-          const src =
-            img.currentSrc ||
-            img.src ||
-            img.getAttribute('data-src') ||
-            (img.getAttribute('srcset') || '').split(' ')[0];
-          if (
-            src &&
-            src.includes('netty.') &&
-            !LOGO_PATTERNS.some(p => src.toLowerCase().includes(p)) &&
-            img.naturalWidth > 100
-          ) {
-            images.push(src);
-          }
-        });
-        data.additionalImages = Array.from(new Set(images));
-  
-        // ===== DESCRIPTION =====
-        const descEl =
-          document.querySelector('[class*="description"]') ||
-          document.querySelector('.comment') ||
-          document.querySelector('section [class*="text"], article [class*="text"]');
-  
-        data.description = descEl ? clean(descEl.textContent).substring(0, 500) : '';
-  
-        return data;
       });
-  
-      console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}`);
-      console.log(
-        `   💰 €${propertyData.price || 'N/A'} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${
-          propertyData.bedrooms || 'N/A'
-        } ch | 📐 ${propertyData.building_surface || 'N/A'}m²`
-      );
-      console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
-  
-      return propertyData;
-    } catch (error) {
-      console.error(`❌ Error extracting ${url}:`, error.message);
-      return null;
-    }
+
+      // ===== LOCATION FALLBACK =====
+      if (!data.city || !data.postal_code) {
+        const docTitle = document.querySelector('title');
+        if (docTitle) {
+          const t = clean(docTitle.textContent);
+          const loc = t.match(/situé à\s+([A-Za-zÀ-ÿ'\- ]+)\s*\((\d{5})\)/i);
+          if (loc) {
+            if (!data.city) data.city = loc[1].trim();
+            if (!data.postal_code) data.postal_code = loc[2];
+          }
+        }
+      }
+
+      // ===== IMAGES =====
+      const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
+      const images = [];
+      document.querySelectorAll('img').forEach(img => {
+        const src =
+          img.currentSrc ||
+          img.src ||
+          img.getAttribute('data-src') ||
+          (img.getAttribute('srcset') || '').split(' ')[0];
+        if (
+          src &&
+          src.includes('netty.') &&
+          !LOGO_PATTERNS.some(p => src.toLowerCase().includes(p)) &&
+          img.naturalWidth > 100
+        ) {
+          images.push(src);
+        }
+      });
+      data.additionalImages = Array.from(new Set(images));
+
+      // ===== DESCRIPTION =====
+      const descEl =
+        document.querySelector('[class*="description"]') ||
+        document.querySelector('.comment') ||
+        document.querySelector('section [class*="text"], article [class*="text"]');
+
+      data.description = descEl ? clean(descEl.textContent).substring(0, 500) : '';
+
+      return data;
+    });
+
+    console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}`);
+    console.log(
+      `   💰 €${propertyData.price || 'N/A'} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${
+        propertyData.bedrooms || 'N/A'
+      } ch | 📐 ${propertyData.building_surface || 'N/A'}m²`
+    );
+    console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
+
+    return propertyData;
+  } catch (error) {
+    console.error(`❌ Error extracting ${url}:`, error.message);
+    return null;
   }
-  
+}
 
 // ========================================
 // HOME ROUTE
@@ -371,8 +478,8 @@ async function extractEleonorPropertyData(page, url) {
 
 app.get('/', (req, res) => {
   res.json({ 
-    status: 'Barracuda Scraper Service v2.3',
-    features: ['CAD-IMMO scraper', 'Agence Eleonor scraper'],
+    status: 'Barracuda Scraper Service v2.4',
+    features: ['CAD-IMMO scraper', 'Agence Eleonor scraper with listing extraction'],
     endpoints: ['/scrape', '/scrape-eleonor', '/debug-eleonor-property']
   });
 });
@@ -605,7 +712,7 @@ app.post('/scrape', async (req, res) => {
           last_seen_at: new Date().toISOString(),
           raw_data: { 
             scrapedAt: new Date().toISOString(),
-            scraper_version: '2.3',
+            scraper_version: '2.4',
             imageCount: prop.images?.length || 0,
             hasHeroImage: prop.images && prop.images.length > 0
           }
@@ -663,7 +770,7 @@ app.post('/scrape', async (req, res) => {
 });
 
 // ========================================
-// AGENCE ELEONOR SCRAPER ENDPOINT
+// AGENCE ELEONOR SCRAPER ENDPOINT (NEW)
 // ========================================
 
 app.post('/scrape-eleonor', async (req, res) => {
@@ -694,15 +801,16 @@ app.post('/scrape-eleonor', async (req, res) => {
     const allProperties = [];
     const validationStats = { valid: 0, invalid: 0, total: 0 };
 
-    let currentPage = 1;
-    const propertyUrls = new Map();
+    let currentPageNum = 1;
+    const propertyMap = new Map();
 
-    while (currentPage <= maxPages) {
-      console.log(`📄 Scraping Eleonor listing page ${currentPage}...`);
+    // STEP 1: Extract all cards from listing pages
+    while (currentPageNum <= maxPages) {
+      console.log(`📄 Scraping Eleonor listing page ${currentPageNum}...`);
 
-      const pageUrl = currentPage === 1 
+      const pageUrl = currentPageNum === 1 
         ? searchUrl 
-        : `${searchUrl}?page=${currentPage}`;
+        : `${searchUrl}${searchUrl.includes('?') ? '&' : '?'}page=${currentPageNum}`;
 
       try {
         await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
@@ -713,85 +821,66 @@ app.post('/scrape-eleonor', async (req, res) => {
         await page.evaluate(() => window.scrollTo(0, 0));
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const listings = await page.evaluate(() => {
-          const results = [];
-          
-          // Build a map of all images first
-          const allImages = document.querySelectorAll('img');
-          const imageMap = new Map();
-          
-          allImages.forEach(img => {
-            const src = img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('srcset')?.split(' ')[0];
-            if (src && src.includes('netty.') && !src.includes('logo') && !src.includes('icon')) {
-              const closestLink = img.closest('a') || img.parentElement?.closest('a');
-              if (closestLink && closestLink.href) {
-                imageMap.set(closestLink.href, src);
-              }
-            }
-          });
-          
-          // Now find all property links
-          const propertyLinks = document.querySelectorAll('a[href*="/fr/vente/"][href*=",VM"]');
-          
-          propertyLinks.forEach(link => {
-            const url = link.href;
-            const heroImage = imageMap.get(url) || null;
-            
-            results.push({ url, heroImage });
-          });
-          
-          // Remove duplicates
-          const unique = new Map();
-          results.forEach(r => {
-            if (!unique.has(r.url)) {
-              unique.set(r.url, r.heroImage);
-            }
-          });
-          
-          return Array.from(unique.entries()).map(([url, heroImage]) => ({
-            url,
-            heroImage
-          }));
-        });
+        const cards = await extractEleonorListingCards(page);
 
-        if (listings.length === 0) {
-          console.log(`   ✅ Reached end of Eleonor listings at page ${currentPage - 1}`);
+        if (cards.length === 0) {
+          console.log(`   ✅ Reached end of Eleonor listings at page ${currentPageNum - 1}`);
           break;
         }
 
-        listings.forEach(listing => {
-          if (listing.url && !propertyUrls.has(listing.url)) {
-            propertyUrls.set(listing.url, listing.heroImage);
+        cards.forEach(card => {
+          if (card.url && !propertyMap.has(card.url)) {
+            propertyMap.set(card.url, card);
           }
         });
 
-        console.log(`   Found ${listings.length} Eleonor properties on page ${currentPage}`);
-        console.log(`   With hero images: ${listings.filter(l => l.heroImage).length}`);
+        console.log(`   Found ${cards.length} Eleonor properties on page ${currentPageNum}`);
+        console.log(`   With prices: ${cards.filter(c => c.price).length}`);
+        console.log(`   With hero images: ${cards.filter(c => c.heroImage).length}`);
 
-        currentPage++;
+        currentPageNum++;
       } catch (pageError) {
-        console.error(`Error on listing page ${currentPage}:`, pageError.message);
+        console.error(`Error on listing page ${currentPageNum}:`, pageError.message);
         break;
       }
     }
 
-    console.log(`\n✅ Found ${propertyUrls.size} unique Eleonor properties\n`);
+    console.log(`\n✅ Found ${propertyMap.size} unique Eleonor properties from listing pages\n`);
 
+    // STEP 2: Enrich each property with detail page data
     let scrapedCount = 0;
-    for (const [propUrl, heroImage] of propertyUrls.entries()) {
-      const propertyData = await extractEleonorPropertyData(page, propUrl);
+    for (const [propUrl, listingData] of propertyMap.entries()) {
+      const detailData = await extractEleonorPropertyData(page, propUrl);
 
-      if (!propertyData || !propertyData.price) {
-        console.log(`⚠️  Skipping ${propUrl} - no valid data`);
+      if (!detailData) {
+        console.log(`⚠️  Skipping ${propUrl} - detail page failed`);
         continue;
       }
 
+      // Merge listing data with detail data (detail takes priority)
+      const propertyData = {
+        ...listingData,
+        ...detailData,
+        // Use listing price if detail doesn't have one
+        price: detailData.price || listingData.price,
+        rooms: detailData.rooms || listingData.rooms,
+        building_surface: detailData.building_surface || listingData.building_surface,
+        city: detailData.city || listingData.city,
+        postal_code: detailData.postal_code || listingData.postal_code
+      };
+
+      if (!propertyData.price) {
+        console.log(`⚠️  Skipping ${propUrl} - no valid price`);
+        continue;
+      }
+
+      // Combine images: hero first, then additional
       const finalImages = [];
-      if (heroImage) finalImages.push(heroImage);
+      if (listingData.heroImage) finalImages.push(listingData.heroImage);
       
       if (propertyData.additionalImages && propertyData.additionalImages.length > 0) {
         propertyData.additionalImages.forEach(img => {
-          if (img !== heroImage) finalImages.push(img);
+          if (img !== listingData.heroImage) finalImages.push(img);
         });
       }
 
@@ -822,17 +911,18 @@ app.post('/scrape-eleonor', async (req, res) => {
       scrapedCount++;
 
       if (scrapedCount % 5 === 0) {
-        console.log(`   Scraped ${scrapedCount}/${propertyUrls.size} Eleonor properties...`);
+        console.log(`   Scraped ${scrapedCount}/${propertyMap.size} Eleonor properties...`);
       }
 
       const imageCount = propertyData.images.length;
-      console.log(`   ✓ ${imageCount} images for ${propertyData.title} (hero: ${heroImage ? '✓' : '✗'})`);
+      console.log(`   ✓ ${imageCount} images for ${propertyData.title.substring(0, 50)} (hero: ${listingData.heroImage ? '✓' : '✗'})`);
     }
 
     await browser.close();
 
     console.log(`\n✅ Eleonor scraping complete: ${allProperties.length} properties\n`);
 
+    // STEP 3: Save to database
     let inserted = 0;
 
     for (const prop of allProperties) {
@@ -850,7 +940,7 @@ app.post('/scrape-eleonor', async (req, res) => {
           price: prop.price,
           location_city: prop.city || 'Unknown',
           location_postal_code: prop.postal_code || '24000',
-          location_department: '24',
+          location_department: prop.postal_code?.substring(0, 2) || '24',
           property_type: prop.property_type,
           surface: prop.building_surface,
           building_surface: prop.building_surface,
@@ -863,8 +953,9 @@ app.post('/scrape-eleonor', async (req, res) => {
           last_seen_at: new Date().toISOString(),
           raw_data: { 
             scrapedAt: new Date().toISOString(),
-            scraper_version: '2.3',
-            source: 'eleonor'
+            scraper_version: '2.4',
+            source: 'eleonor',
+            imageCount: prop.images?.length || 0
           }
         };
 
@@ -903,7 +994,10 @@ app.post('/scrape-eleonor', async (req, res) => {
         title: p.title,
         price: p.price,
         city: p.city,
-        imageCount: p.images?.length || 0
+        rooms: p.rooms,
+        surface: p.building_surface,
+        imageCount: p.images?.length || 0,
+        quality: p.data_quality_score
       }))
     });
 
@@ -1015,5 +1109,5 @@ app.get('/test-logs', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 Scraper service v2.3 running on port ${PORT}`);
+  console.log(`🚀 Scraper service v2.4 running on port ${PORT}`);
 });
