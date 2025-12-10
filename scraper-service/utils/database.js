@@ -35,16 +35,21 @@ async function savePropertiesToDB(properties, source, supabase) {
       data_quality_score: property.data_quality_score || null,
       validation_errors: property.validation_errors ? JSON.stringify(property.validation_errors) : null,
       
-      // ===== NEW FIELDS - ADD THESE! =====
+      // Enhanced fields
       drainage_system: property.drainage_system || null,
       heating_system: property.heating_system || null,
-      pool: property.pool === true, // Ensure boolean
+      pool: property.pool === true,
       property_condition: property.property_condition || null,
       year_built: property.year_built || null,
       energy_consumption: property.energy_consumption || null,
       co2_emissions: property.co2_emissions || null,
       bathrooms: property.bathrooms || null,
-      wc_count: property.wc_count || null
+      wc_count: property.wc_count || null,
+      
+      // ===== PRICE TRACKING FIELDS =====
+      previous_price: property.previous_price || null,
+      price_changed_at: property.price_changed_at || null,
+      price_drop_amount: property.price_drop_amount || null
     }));
   
     try {
@@ -71,3 +76,4 @@ async function savePropertiesToDB(properties, source, supabase) {
   }
   
   module.exports = { savePropertiesToDB };
+  

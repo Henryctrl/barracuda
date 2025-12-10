@@ -1,9 +1,9 @@
 const { validatePropertyData } = require('../utils/validation');
-const database = require('../utils/database');
+const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
 // HELPER: Fetch existing properties with prices
-// ======================================== 
+// ========================================
 
 async function getExistingProperties(supabase, source) {
   try {
@@ -929,7 +929,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
       // Save to database
       if (allProperties.length > 0) {
         console.log(`\n💾 Saving ${allProperties.length} price updates to database...`);
-        await database.savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
+        await savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
       }
 
       const summary = {
@@ -1010,7 +1010,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
 
     console.log(`📊 Split: ${existingProperties.length} existing (last_seen update only) + ${newProperties.length} new (full scrape)\n`);
 
-    // PART 3: Quick updates for existing properties (ONLY last_seen_at - NO DETAIL PAGE VISITS!)
+    // PART 3: Quick updates for existing properties (ONLY last_seen_at)
     if (existingProperties.length > 0) {
       console.log('✅ Updating existing properties (marking as still active)...\n');
 
@@ -1026,7 +1026,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         allProperties.push(updateData);
       }
 
-      console.log(`\n✅ ${existingProperties.length} existing properties marked as active (NO detail scraping)\n`);
+      console.log(`\n✅ ${existingProperties.length} existing properties marked as active\n`);
     }
 
     // PART 4: Full detail scraping for NEW properties
@@ -1105,7 +1105,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
           energy_consumption: propertyData.energy_consumption,
           co2_emissions: propertyData.co2_emissions,
           images: JSON.stringify(propertyData.images),
-          data_quality_score: validation.qualityScore,
+          data_quality_score: validation.score,
           validation_errors: JSON.stringify(validation.errors),
           raw_data: JSON.stringify({
             source: 'agence-eleonor',
@@ -1134,7 +1134,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
     // Save to database
     if (allProperties.length > 0) {
       console.log(`💾 Saving ${allProperties.length} properties to database...`);
-      await database.savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
+      await savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
     }
 
     const summary = {
@@ -1162,46 +1162,4 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
   }
 }
 
-// ========================================
-// DEBUG HELPER - SINGLE PROPERTY
-// ========================================
-
-async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
-  try {
-    const { url } = req.body;
-
-    if (!url) {
-      return res.status(400).json({ error: 'url is required' });
-    }
-
-    console.log(`🔍 DEBUG: Extracting data from ${url}`);
-
-    const browser = await puppeteer.launch({
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
-      headless: true,
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-    });
-
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-
-    const propertyData = await extractEleonorPropertyData(page, url);
-
-    await browser.close();
-
-    if (!propertyData) {
-      return res.status(500).json({ error: 'Failed to extract property data' });
-    }
-
-    res.json({
-      success: true,
-      data: propertyData
-    });
-
-  } catch (error) {
-    console.error('❌ Debug error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-}
-
-module.exports = { scrapeEleonor, debugEleonorProperty };
+module.exports = { scrapeEleonor };
