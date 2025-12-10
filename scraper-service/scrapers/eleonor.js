@@ -1,9 +1,11 @@
 const { validatePropertyData } = require('../utils/validation');
 const { savePropertiesToDB } = require('../utils/database');
 
+
 // ========================================
 // LISTING EXTRACTION
 // ========================================
+
 
 async function extractEleonorListingCards(page) {
   console.log('🔍 Extracting listing cards...');
@@ -12,13 +14,16 @@ async function extractEleonorListingCards(page) {
     const results = [];
     const clean = s => s ? s.replace(/\s+/g, ' ').trim() : '';
 
+
     // Find all links to property pages first
     const propertyLinks = Array.from(document.querySelectorAll('a[href*="/fr/vente/"]'));
     console.log(`Found ${propertyLinks.length} total links with /fr/vente/`);
 
+
     // Filter to only property detail pages (contain ,VM)
     const detailLinks = propertyLinks.filter(a => a.href.includes(',VM'));
     console.log(`Found ${detailLinks.length} property detail links`);
+
 
     detailLinks.forEach(link => {
       try {
@@ -43,10 +48,12 @@ async function extractEleonorListingCards(page) {
           }
         }
 
+
         if (!card) {
           console.log(`No card container found for: ${url}`);
           return;
         }
+
 
         // Extract price
         const priceEl = card.querySelector('span._1s1nzvi, div._11w5q3n, [class*="price"]');
@@ -59,9 +66,11 @@ async function extractEleonorListingCards(page) {
           }
         }
 
+
         // Extract title
         const titleEl = card.querySelector('h2, h3, [class*="title"]');
         const title = titleEl ? clean(titleEl.textContent) : null;
+
 
         // Extract info from iconText or any element with pieces/m²
         let rooms = null;
@@ -69,20 +78,25 @@ async function extractEleonorListingCards(page) {
         let city = null;
         let postal_code = null;
 
+
         const infoEl = card.querySelector('[class*="_eic3rb"], [class*="iconText"]') || card;
         const infoText = clean(infoEl.textContent);
+
 
         const roomsMatch = infoText.match(/(\d+)\s*pièces?/i);
         if (roomsMatch) rooms = parseInt(roomsMatch[1], 10);
 
+
         const surfaceMatch = infoText.match(/(\d+)\s*m[²2]/i);
         if (surfaceMatch) building_surface = parseInt(surfaceMatch[1], 10);
+
 
         const locationMatch = infoText.match(/([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/);
         if (locationMatch) {
           city = locationMatch[1].trim();
           postal_code = locationMatch[2];
         }
+
 
         // Extract hero image
         let heroImage = null;
@@ -93,6 +107,7 @@ async function extractEleonorListingCards(page) {
             heroImage = src;
           }
         }
+
 
         results.push({
           url,
@@ -105,13 +120,16 @@ async function extractEleonorListingCards(page) {
           heroImage
         });
 
+
       } catch (err) {
         console.error('Card extraction error:', err.message);
       }
     });
 
+
     return results;
   });
+
 
   console.log(`✅ Extracted ${cards.length} cards from listing page`);
   console.log(`   With prices: ${cards.filter(c => c.price).length}`);
@@ -120,30 +138,37 @@ async function extractEleonorListingCards(page) {
   return cards;
 }
 
+
 // ========================================
-// DETAIL PAGE EXTRACTION (UPDATED)
+// DETAIL PAGE EXTRACTION (UPDATED WITH NEW FIELDS)
 // ========================================
+
 
 async function extractEleonorPropertyData(page, url) {
   try {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
     await new Promise(resolve => setTimeout(resolve, 3000));
 
+
     const propertyData = await page.evaluate(() => {
       const data = {};
       const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
+
 
       // ===== TITLE =====
       const h1 = document.querySelector('h1');
       data.title = clean(h1 ? h1.textContent : '');
 
+
       if (data.title.includes('À vendre -')) {
         data.title = data.title.replace('À vendre - ', '').split('|')[0].trim();
       }
 
+
       // ===== REFERENCE (from URL) =====
       const urlParts = window.location.pathname.split(',');
       data.reference = urlParts[urlParts.length - 1] || null;
+
 
       // ===== PROPERTY TYPE FROM TITLE =====
       const tl = data.title.toLowerCase();
@@ -159,9 +184,11 @@ async function extractEleonorPropertyData(page, url) {
         data.property_type = null;
       }
 
+
       // ===== PRICE =====
       let priceText = '';
       const priceP = document.querySelector('p._1hxffol');
+
 
       if (priceP) {
         priceText = clean(priceP.textContent);
@@ -173,36 +200,57 @@ async function extractEleonorPropertyData(page, url) {
         priceText = maybe ? clean(maybe.textContent) : '';
       }
 
+
       const priceMatch = priceText.match(/(\d[\d\s ]*)\s*€/);
       data.price = priceMatch ? parseInt(priceMatch[1].replace(/[^\d]/g, ''), 10) : null;
 
-      // ===== INITIALIZE =====
+
+      // ===== INITIALIZE ALL FIELDS =====
       data.rooms = null;
       data.bedrooms = null;
       data.building_surface = null;
       data.land_surface = null;
       data.city = null;
       data.postal_code = null;
+      data.drainage_system = null;
+      data.heating_system = null;
+      data.pool = null;
+
+
+      // ===== HELPER FUNCTION: Extract from table/structured fields =====
+      const getTableValue = (label) => {
+        const allElements = Array.from(document.querySelectorAll('*'));
+        for (const el of allElements) {
+          const text = el.textContent;
+          if (text && text.includes(label) && el.children.length < 5) {
+            // Extract the value part after the label
+            const match = text.match(new RegExp(label + '[\\s.:]*([^\\n]+)', 'i'));
+            if (match) {
+              return clean(match[1]);
+            }
+          }
+        }
+        return null;
+      };
+
 
       // ===== STRATEGY 1: "Descriptif du bien" section (PRIMARY) =====
-      const allText = document.body.textContent;
-      
-      // Find "Descriptif du bien" heading
       const descriptifHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
         clean(el.textContent) === 'Descriptif du bien' || el.textContent.includes('Descriptif du bien')
       );
 
+
       if (descriptifHeading) {
-        // Get the next container or sibling elements
         let container = descriptifHeading.nextElementSibling;
         
-        // If nextSibling doesn't work, try parent's next section
         if (!container || container.children.length === 0) {
           container = descriptifHeading.parentElement;
         }
 
+
         if (container) {
           const descriptifText = clean(container.textContent);
+
 
           // Surface : 102 m²
           const surfaceMatch = descriptifText.match(/Surface\s*:?\s*(\d+)\s*m[²2]/i);
@@ -210,11 +258,13 @@ async function extractEleonorPropertyData(page, url) {
             data.building_surface = parseInt(surfaceMatch[1], 10);
           }
 
+
           // Pièces : 4
           const piecesMatch = descriptifText.match(/Pièces?\s*:?\s*(\d+)/i);
           if (piecesMatch) {
             data.rooms = parseInt(piecesMatch[1], 10);
           }
+
 
           // Terrain : 35 a OR 2100 m² OR 01 a 50 ca
           const terrainMatch = descriptifText.match(/Terrain\s*:?\s*(\d+)(?:\s*a\s*(\d+)\s*ca)?\s*(a|m²|m2|ha|ca)?/i);
@@ -225,7 +275,7 @@ async function extractEleonorPropertyData(page, url) {
             
             // Convert to m²
             if (unit === 'a') {
-              val = val * 100 + additionalCa; // "01 a 50 ca" = 100m² + 50m² = 150m²
+              val = val * 100 + additionalCa;
             } else if (unit === 'ha') {
               val = val * 10000;
             } else if (unit === 'ca') {
@@ -237,10 +287,12 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
+
       // ===== STRATEGY 2: "Caractéristiques techniques" section (SECONDARY) =====
       const caracHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
         el.textContent.includes('Caractéristiques techniques')
       );
+
 
       if (caracHeading) {
         let caracContainer = caracHeading.nextElementSibling;
@@ -249,17 +301,37 @@ async function extractEleonorPropertyData(page, url) {
           caracContainer = caracHeading.parentElement;
         }
 
+
         if (caracContainer) {
-          // Get all text content
           const caracText = clean(caracContainer.textContent);
 
-          // Chambres: 2 or just "Chambres 2" or in a row
+
+          // ===== BEDROOMS - SMART PRICE-BASED VALIDATION =====
           if (!data.bedrooms) {
             const bedroomsMatch = caracText.match(/Chambres?\s*:?\s*(\d+)/i);
             if (bedroomsMatch) {
-              data.bedrooms = parseInt(bedroomsMatch[1], 10);
+              const value = parseInt(bedroomsMatch[1], 10);
+              
+              // Apply smart price-based validation
+              let maxBedrooms = 20; // default
+              if (data.price) {
+                if (data.price < 150000) maxBedrooms = 6;        // Budget properties
+                else if (data.price < 300000) maxBedrooms = 10;  // Standard properties
+                else if (data.price < 500000) maxBedrooms = 15;  // Large properties
+                else if (data.price < 1000000) maxBedrooms = 25; // Luxury properties
+                else if (data.price < 2000000) maxBedrooms = 40; // Estates
+                else maxBedrooms = 100; // Châteaux, hotels, etc.
+              }
+              
+              // Only accept if within reasonable range
+              if (value >= 1 && value <= maxBedrooms) {
+                data.bedrooms = value;
+              } else {
+                console.log(`⚠️ Rejected bedrooms value ${value} (max for price: ${maxBedrooms})`);
+              }
             }
           }
+
 
           // Localisation: Castillonnès 47330
           if (!data.city || !data.postal_code) {
@@ -270,17 +342,89 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // Also try Référence in case we need to extract from here
+
+          // Reference fallback
           if (!data.reference) {
             const refMatch = caracText.match(/Référence\s*:?\s*(VM\d+)/i);
             if (refMatch) {
               data.reference = refMatch[1];
             }
           }
+
+
+          // ===== NEW FIELDS FROM CARACTÉRISTIQUES TECHNIQUES =====
+          
+          // DRAINAGE SYSTEM (Assainissement)
+          const drainageMatch = caracText.match(/Assainissement\s*:?\s*([^\n]+)/i);
+          if (drainageMatch) {
+            data.drainage_system = clean(drainageMatch[1]);
+          }
+
+
+          // HEATING SYSTEM (Chauffage)
+          const heatingMatch = caracText.match(/Chauffage\s*:?\s*([^\n]+)/i);
+          if (heatingMatch) {
+            data.heating_system = clean(heatingMatch[1]);
+          }
+
+
+          // POOL (Piscine)
+          const poolMatch = caracText.match(/Piscine\s*:?\s*([^\n]+)/i);
+          if (poolMatch) {
+            const poolValue = clean(poolMatch[1]).toLowerCase();
+            data.pool = poolValue.includes('oui') || poolValue.includes('yes');
+          }
         }
       }
 
-      // ===== STRATEGY 3: LAST RESORT - Parse from title only if missing =====
+
+      // ===== FALLBACK: Use getTableValue helper for missing fields =====
+      if (!data.land_surface) {
+        const terrainValue = getTableValue('Terrain');
+        if (terrainValue) {
+          const match = terrainValue.match(/(\d+)(?:\s*a\s*(\d+)\s*ca)?\s*(a|m²|m2|ha|ca)?/i);
+          if (match) {
+            let val = parseInt(match[1], 10);
+            const additionalCa = match[2] ? parseInt(match[2], 10) : 0;
+            const unit = match[3] ? match[3].toLowerCase() : 'a';
+            
+            if (unit === 'a') {
+              val = val * 100 + additionalCa;
+            } else if (unit === 'ha') {
+              val = val * 10000;
+            } else if (unit === 'ca') {
+              val = val * 1;
+            }
+            
+            data.land_surface = val;
+          }
+        }
+      }
+
+
+      if (!data.drainage_system) {
+        data.drainage_system = getTableValue('Assainissement');
+      }
+
+
+      if (!data.heating_system) {
+        data.heating_system = getTableValue('Chauffage');
+      }
+
+
+      if (data.pool === null) {
+        const poolValue = getTableValue('Piscine');
+        if (poolValue) {
+          data.pool = poolValue.toLowerCase().includes('oui') || poolValue.toLowerCase().includes('yes');
+        } else {
+          // Check in full page text as last resort
+          const bodyText = document.body.textContent.toLowerCase();
+          data.pool = bodyText.includes('piscine') && !bodyText.includes('sans piscine');
+        }
+      }
+
+
+      // ===== STRATEGY 3: Parse from title only if missing =====
       if (!data.rooms) {
         const titleRoomsMatch = data.title.match(/(\d+)\s*pièces?/i);
         if (titleRoomsMatch) {
@@ -289,15 +433,32 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
+
       if (!data.bedrooms) {
         const titleBedroomsMatch = data.title.match(/(\d+)\s*chambres?/i);
         if (titleBedroomsMatch) {
-          data.bedrooms = parseInt(titleBedroomsMatch[1], 10);
-          console.log(`⚠️ Using bedrooms from title: ${data.bedrooms}`);
+          const value = parseInt(titleBedroomsMatch[1], 10);
+          
+          // Apply same smart validation
+          let maxBedrooms = 20;
+          if (data.price) {
+            if (data.price < 150000) maxBedrooms = 6;
+            else if (data.price < 300000) maxBedrooms = 10;
+            else if (data.price < 500000) maxBedrooms = 15;
+            else if (data.price < 1000000) maxBedrooms = 25;
+            else if (data.price < 2000000) maxBedrooms = 40;
+            else maxBedrooms = 100;
+          }
+          
+          if (value >= 1 && value <= maxBedrooms) {
+            data.bedrooms = value;
+            console.log(`⚠️ Using bedrooms from title: ${data.bedrooms}`);
+          }
         }
       }
 
-      // ===== LOCATION FALLBACK - from breadcrumb or title tag if still missing =====
+
+      // ===== LOCATION FALLBACK =====
       if (!data.city || !data.postal_code) {
         // Try breadcrumb first
         const breadcrumb = document.querySelector('nav, [class*="breadcrumb"]');
@@ -309,6 +470,7 @@ async function extractEleonorPropertyData(page, url) {
             if (!data.postal_code) data.postal_code = loc[2];
           }
         }
+
 
         // Then try title tag
         if (!data.city || !data.postal_code) {
@@ -334,10 +496,12 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
-      // Clean up city name if it has "Localisation" prefix
+
+      // Clean up city name
       if (data.city && data.city.toLowerCase().startsWith('localisation')) {
         data.city = data.city.replace(/^localisation\s*/i, '').trim();
       }
+
 
       // ===== IMAGES =====
       const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
@@ -350,19 +514,32 @@ async function extractEleonorPropertyData(page, url) {
       });
       data.additionalImages = Array.from(new Set(images));
 
+
       // ===== DESCRIPTION =====
       const descEl = document.querySelector('[class*="description"]') || document.querySelector('.comment') || document.querySelector('section [class*="text"], article [class*="text"]');
       data.description = descEl ? clean(descEl.textContent).substring(0, 500) : '';
 
+
       return data;
     });
+
 
     console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}`);
     console.log(`   💰 €${propertyData.price || 'N/A'} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${propertyData.bedrooms || 'N/A'} ch | 📐 ${propertyData.building_surface || 'N/A'}m²`);
     if (propertyData.land_surface) {
       console.log(`   🌳 ${propertyData.land_surface}m² terrain`);
     }
+    if (propertyData.pool) {
+      console.log(`   🏊 Pool: Yes`);
+    }
+    if (propertyData.heating_system) {
+      console.log(`   🔥 Heating: ${propertyData.heating_system}`);
+    }
+    if (propertyData.drainage_system) {
+      console.log(`   🚰 Drainage: ${propertyData.drainage_system}`);
+    }
     console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
+
 
     return propertyData;
   } catch (error) {
@@ -371,19 +548,24 @@ async function extractEleonorPropertyData(page, url) {
   }
 }
 
+
 // ========================================
 // MAIN SCRAPER
 // ========================================
+
 
 async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
   try {
     const { searchUrl, maxPages = 3 } = req.body;
 
+
     if (!searchUrl) {
       return res.status(400).json({ error: 'searchUrl is required' });
     }
 
+
     console.log('🎯 Starting Agence Eleonor scrape:', searchUrl);
+
 
     const browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
@@ -391,35 +573,45 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
       args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     });
 
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
+
 
     const allProperties = [];
     const validationStats = { valid: 0, invalid: 0, total: 0 };
 
+
     let currentPageNum = 1;
     const propertyMap = new Map();
 
+
     while (currentPageNum <= maxPages) {
-      console.log(`📄 Scraping Eleonor listing page ${currentPageNum}...`);
+      console.log(`📄 Scraping Agence Eleonor listing page ${currentPageNum}...`);
+
 
       const pageUrl = currentPageNum === 1 ? searchUrl : `${searchUrl}${searchUrl.includes('?') ? '&' : '?'}page=${currentPageNum}`;
+
 
       try {
         await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
         await new Promise(resolve => setTimeout(resolve, 3000));
+
 
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await new Promise(resolve => setTimeout(resolve, 2000));
         await page.evaluate(() => window.scrollTo(0, 0));
         await new Promise(resolve => setTimeout(resolve, 1000));
 
+
         const cards = await extractEleonorListingCards(page);
 
+
         if (cards.length === 0) {
-          console.log(`   ✅ Reached end of Eleonor listings at page ${currentPageNum - 1}`);
+          console.log(`   ✅ Reached end of Agence Eleonor listings at page ${currentPageNum - 1}`);
           break;
         }
+
 
         cards.forEach(card => {
           if (card.url && !propertyMap.has(card.url)) {
@@ -427,7 +619,9 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
           }
         });
 
-        console.log(`   Found ${cards.length} Eleonor properties on page ${currentPageNum}`);
+
+        console.log(`   Found ${cards.length} Agence Eleonor properties on page ${currentPageNum}`);
+
 
         currentPageNum++;
       } catch (pageError) {
@@ -436,16 +630,20 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
       }
     }
 
-    console.log(`\n✅ Found ${propertyMap.size} unique Eleonor properties from listing pages\n`);
+
+    console.log(`\n✅ Found ${propertyMap.size} unique Agence Eleonor properties from listing pages\n`);
+
 
     let scrapedCount = 0;
     for (const [propUrl, listingData] of propertyMap.entries()) {
       const detailData = await extractEleonorPropertyData(page, propUrl);
 
+
       if (!detailData) {
         console.log(`⚠️  Skipping ${propUrl} - detail page failed`);
         continue;
       }
+
 
       // Merge listing and detail data - detail takes priority
       const propertyData = {
@@ -458,10 +656,12 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         postal_code: detailData.postal_code || listingData.postal_code
       };
 
+
       if (!propertyData.price) {
         console.log(`⚠️  Skipping ${propUrl} - no valid price`);
         continue;
       }
+
 
       const finalImages = [];
       if (listingData.heroImage) finalImages.push(listingData.heroImage);
@@ -471,7 +671,9 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         });
       }
 
+
       propertyData.images = finalImages.slice(0, 10);
+
 
       const validation = validatePropertyData({
         price: propertyData.price,
@@ -481,12 +683,14 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         land_surface: propertyData.land_surface
       });
 
+
       validationStats.total++;
       if (validation.isValid) {
         validationStats.valid++;
       } else {
         validationStats.invalid++;
       }
+
 
       allProperties.push({
         url: propUrl,
@@ -495,25 +699,33 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         validation_errors: validation.errors
       });
 
+
       scrapedCount++;
 
+
       if (scrapedCount % 5 === 0) {
-        console.log(`   Scraped ${scrapedCount}/${propertyMap.size} Eleonor properties...`);
+        console.log(`   Scraped ${scrapedCount}/${propertyMap.size} Agence Eleonor properties...`);
       }
+
 
       const imageCount = propertyData.images.length;
       console.log(`   ✓ ${imageCount} images`);
     }
 
+
     await browser.close();
 
-    console.log(`\n✅ Eleonor scraping complete: ${allProperties.length} properties\n`);
 
-    const inserted = await savePropertiesToDB(allProperties, 'eleonor', supabase);
+    console.log(`\n✅ Agence Eleonor scraping complete: ${allProperties.length} properties\n`);
+
+
+    // CHANGED: source from 'eleonor' to 'agence-eleonor'
+    const inserted = await savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
+
 
     res.json({
       success: true,
-      source: 'eleonor',
+      source: 'agence-eleonor', // CHANGED
       totalScraped: allProperties.length,
       inserted,
       validation: validationStats,
@@ -532,20 +744,26 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         bedrooms: p.bedrooms,
         surface: p.building_surface,
         land_surface: p.land_surface,
+        pool: p.pool, // NEW
+        heating: p.heating_system, // NEW
+        drainage: p.drainage_system, // NEW
         imageCount: p.images?.length || 0,
         quality: p.data_quality_score
       }))
     });
 
+
   } catch (error) {
-    console.error('❌ Eleonor scraping failed:', error);
+    console.error('❌ Agence Eleonor scraping failed:', error);
     res.status(500).json({ error: 'Scraping failed', details: error.message });
   }
 }
 
+
 // ========================================
 // DEBUG ENDPOINT
 // ========================================
+
 
 async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
   try {
@@ -555,7 +773,9 @@ async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
       return res.status(400).json({ error: 'url parameter required' });
     }
 
-    console.log('🔍 Debugging Eleonor property:', url);
+
+    console.log('🔍 Debugging Agence Eleonor property:', url);
+
 
     const browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
@@ -563,11 +783,13 @@ async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
       args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
 
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
     
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(resolve => setTimeout(resolve, 3000));
+
 
     const debug = await page.evaluate(() => {
       const trySelectors = (selectors) => {
@@ -583,6 +805,7 @@ async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
         }
         return null;
       };
+
 
       return {
         title: trySelectors(['h1', '[class*="title"]', '[class*="Title"]', '.property-title', 'h2']),
@@ -607,14 +830,18 @@ async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
       };
     });
 
+
     await browser.close();
 
+
     res.json({ url, debug });
+
 
   } catch (error) {
     console.error('Debug error:', error);
     res.status(500).json({ error: error.message });
   }
 }
+
 
 module.exports = { scrapeEleonor, debugEleonorProperty };
