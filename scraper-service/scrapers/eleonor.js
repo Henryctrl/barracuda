@@ -2,7 +2,7 @@ const { validatePropertyData } = require('../utils/validation');
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
-// LISTING EXTRACTION (FIXED IMAGE MAPPING!)
+// LISTING EXTRACTION (SIMPLIFIED - NO IMAGES!)
 // ========================================
 
 async function extractEleonorListingCards(page) {
@@ -84,53 +84,6 @@ async function extractEleonorListingCards(page) {
           postal_code = locationMatch[2];
         }
 
-        // ===== FIXED: Extract hero image MORE CAREFULLY =====
-        let heroImage = null;
-        
-        // Strategy 1: Look for img INSIDE this specific card only
-        const imgEl = card.querySelector('img[src*="netty"], img[srcset*="netty"]');
-        if (imgEl) {
-          // Get the actual displayed source
-          const src = imgEl.currentSrc || imgEl.src;
-          
-          // Verify this image is actually loaded and belongs to this property
-          if (src && 
-              src.includes('netty.') && 
-              !src.includes('logo') && 
-              !src.includes('icon') && 
-              !src.includes('placeholder') &&
-              imgEl.naturalWidth > 0) {
-            heroImage = src;
-          }
-          
-          // Fallback to data attributes if currentSrc failed
-          if (!heroImage) {
-            const dataSrc = imgEl.getAttribute('data-src') || 
-                           imgEl.getAttribute('data-lazy') ||
-                           (imgEl.getAttribute('srcset') || '').split(' ')[0];
-            if (dataSrc && 
-                dataSrc.includes('netty.') && 
-                !dataSrc.includes('logo') && 
-                !dataSrc.includes('icon') && 
-                !dataSrc.includes('placeholder')) {
-              heroImage = dataSrc;
-            }
-          }
-        }
-
-        // Strategy 2: If no image found in card, look at the link itself
-        if (!heroImage) {
-          const linkImg = link.querySelector('img');
-          if (linkImg) {
-            const src = linkImg.currentSrc || linkImg.src || linkImg.getAttribute('data-src');
-            if (src && src.includes('netty.') && !src.includes('logo')) {
-              heroImage = src;
-            }
-          }
-        }
-
-        console.log(`Property ${url.split(',').pop()}: heroImage = ${heroImage ? '✓' : '✗'}`);
-
         results.push({
           url,
           price,
@@ -138,8 +91,7 @@ async function extractEleonorListingCards(page) {
           rooms,
           building_surface,
           city,
-          postal_code,
-          heroImage
+          postal_code
         });
 
       } catch (err) {
@@ -152,13 +104,12 @@ async function extractEleonorListingCards(page) {
 
   console.log(`✅ Extracted ${cards.length} cards from listing page`);
   console.log(`   With prices: ${cards.filter(c => c.price).length}`);
-  console.log(`   With images: ${cards.filter(c => c.heroImage).length}`);
   
   return cards;
 }
 
 // ========================================
-// DETAIL PAGE EXTRACTION (ALL FIXES APPLIED)
+// DETAIL PAGE EXTRACTION (WITH ALL NEW FIELDS + FIXED IMAGES)
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
@@ -222,7 +173,12 @@ async function extractEleonorPropertyData(page, url) {
       data.postal_code = null;
       data.drainage_system = null;
       data.heating_system = null;
-      data.pool = false; // DEFAULT TO FALSE
+      data.pool = false;
+      data.property_condition = null;
+      data.year_built = null;
+      data.energy_class = null;
+      data.bathrooms = null;
+      data.shower_rooms = null;
 
       // ===== HELPER FUNCTION: Extract from table/structured fields =====
       const getTableValue = (label) => {
@@ -310,15 +266,14 @@ async function extractEleonorPropertyData(page, url) {
           if (piecesMatch) {
             const value = parseInt(piecesMatch[1], 10);
             
-            // SMART VALIDATION: Max rooms scales with price
-            let maxRooms = 25; // default
+            let maxRooms = 25;
             if (data.price) {
-              if (data.price < 100000) maxRooms = 6;        // Budget properties
-              else if (data.price < 200000) maxRooms = 10;  // Small properties
-              else if (data.price < 400000) maxRooms = 15;  // Standard properties
-              else if (data.price < 800000) maxRooms = 20;  // Large properties
-              else if (data.price < 1500000) maxRooms = 30; // Luxury properties
-              else maxRooms = 50; // Châteaux, hotels, etc.
+              if (data.price < 100000) maxRooms = 6;
+              else if (data.price < 200000) maxRooms = 10;
+              else if (data.price < 400000) maxRooms = 15;
+              else if (data.price < 800000) maxRooms = 20;
+              else if (data.price < 1500000) maxRooms = 30;
+              else maxRooms = 50;
             }
             
             if (value >= 1 && value <= maxRooms) {
@@ -381,8 +336,6 @@ async function extractEleonorPropertyData(page, url) {
               
               if (value >= 1 && value <= maxRooms) {
                 data.rooms = value;
-              } else {
-                console.log(`⚠️ Rejected rooms value ${value} (max for price: ${maxRooms})`);
               }
             }
           }
@@ -405,13 +358,50 @@ async function extractEleonorPropertyData(page, url) {
               
               if (value >= 1 && value <= maxBedrooms) {
                 data.bedrooms = value;
-              } else {
-                console.log(`⚠️ Rejected bedrooms value ${value} (max for price: ${maxBedrooms})`);
               }
             }
           }
 
-          // Localisation: Castillonnès 47330
+          // ===== NEW: BATHROOMS & SHOWER ROOMS =====
+          const bathroomMatch = caracText.match(/Salle de bain\s*:?\s*(\d+)/i);
+          if (bathroomMatch) {
+            data.bathrooms = parseInt(bathroomMatch[1], 10);
+          }
+
+          const showerMatch = caracText.match(/Salle d'eau\s*:?\s*(\d+)/i);
+          if (showerMatch) {
+            data.shower_rooms = parseInt(showerMatch[1], 10);
+          }
+
+          // ===== NEW: PROPERTY CONDITION =====
+          const conditionMatch = caracText.match(/État intérieur\s*:?\s*([A-Za-zÀ-ÿ\s]+?)(?:Cuisine|Vue|Ameublement|Cave|Chauffage|$)/i);
+          if (conditionMatch) {
+            const rawCondition = clean(conditionMatch[1]).toLowerCase();
+            
+            // Standardize
+            if (rawCondition.includes('excellent')) {
+              data.property_condition = 'Excellent';
+            } else if (rawCondition.includes('bon état') || rawCondition.includes('bon etat')) {
+              data.property_condition = 'Good';
+            } else if (rawCondition.includes('rénov') || rawCondition.includes('renov') || rawCondition.includes('travaux')) {
+              data.property_condition = 'To Renovate';
+            } else if (rawCondition.includes('neuf') || rawCondition.includes('récent')) {
+              data.property_condition = 'New/Recent';
+            } else {
+              data.property_condition = clean(conditionMatch[1]);
+            }
+          }
+
+          // ===== NEW: YEAR BUILT =====
+          const yearMatch = caracText.match(/Construction\s*:?\s*(\d{4})/i);
+          if (yearMatch) {
+            const year = parseInt(yearMatch[1], 10);
+            if (year >= 1000 && year <= 2030) {
+              data.year_built = year;
+            }
+          }
+
+          // Localisation
           if (!data.city || !data.postal_code) {
             const locMatch = caracText.match(/Localisation\s*:?\s*([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/i);
             if (locMatch) {
@@ -433,11 +423,9 @@ async function extractEleonorPropertyData(page, url) {
           if (drainageMatch) {
             const rawValue = clean(drainageMatch[1]).toLowerCase();
             
-            // Standardize to "Individual" or "Mains"
             if (rawValue.includes('tout') && rawValue.includes('égout')) {
               data.drainage_system = 'Mains';
             } else if (rawValue.includes('individuel') || rawValue.includes('fosse') || rawValue.includes('septique')) {
-              // Check if conforme is mentioned
               if (rawValue.includes('conforme') && !rawValue.includes('non')) {
                 data.drainage_system = 'Individual (Compliant)';
               } else {
@@ -446,7 +434,6 @@ async function extractEleonorPropertyData(page, url) {
             } else if (rawValue.includes('collectif')) {
               data.drainage_system = 'Mains';
             } else {
-              // Unknown - default to Individual Non-Compliant
               data.drainage_system = 'Individual (Non-Compliant)';
             }
           }
@@ -464,6 +451,13 @@ async function extractEleonorPropertyData(page, url) {
             data.pool = poolValue === 'oui' || poolValue === 'yes';
           }
         }
+      }
+
+      // ===== NEW: ENERGY CLASS (DPE) =====
+      // Look for "Classe énergie X"
+      const energyMatch = document.body.textContent.match(/Classe énergie\s*:?\s*([A-G])/i);
+      if (energyMatch) {
+        data.energy_class = energyMatch[1].toUpperCase();
       }
 
       // ===== FALLBACK: Use getTableValue helper for missing fields =====
@@ -519,6 +513,57 @@ async function extractEleonorPropertyData(page, url) {
         if (poolValue) {
           const poolLower = poolValue.toLowerCase();
           data.pool = poolLower === 'oui' || poolLower === 'yes';
+        }
+      }
+
+      if (!data.property_condition) {
+        const conditionValue = getTableValue('État intérieur');
+        if (conditionValue) {
+          const rawCondition = conditionValue.toLowerCase();
+          if (rawCondition.includes('excellent')) {
+            data.property_condition = 'Excellent';
+          } else if (rawCondition.includes('bon')) {
+            data.property_condition = 'Good';
+          } else if (rawCondition.includes('rénov') || rawCondition.includes('travaux')) {
+            data.property_condition = 'To Renovate';
+          } else if (rawCondition.includes('neuf') || rawCondition.includes('récent')) {
+            data.property_condition = 'New/Recent';
+          } else {
+            data.property_condition = conditionValue;
+          }
+        }
+      }
+
+      if (!data.year_built) {
+        const yearValue = getTableValue('Construction');
+        if (yearValue) {
+          const match = yearValue.match(/(\d{4})/);
+          if (match) {
+            const year = parseInt(match[1], 10);
+            if (year >= 1000 && year <= 2030) {
+              data.year_built = year;
+            }
+          }
+        }
+      }
+
+      if (!data.bathrooms) {
+        const bathroomValue = getTableValue('Salle de bain');
+        if (bathroomValue) {
+          const match = bathroomValue.match(/(\d+)/);
+          if (match) {
+            data.bathrooms = parseInt(match[1], 10);
+          }
+        }
+      }
+
+      if (!data.shower_rooms) {
+        const showerValue = getTableValue("Salle d'eau");
+        if (showerValue) {
+          const match = showerValue.match(/(\d+)/);
+          if (match) {
+            data.shower_rooms = parseInt(match[1], 10);
+          }
         }
       }
 
@@ -606,16 +651,33 @@ async function extractEleonorPropertyData(page, url) {
         data.city = data.city.replace(/^localisation\s*/i, '').trim();
       }
 
-      // ===== IMAGES =====
+      // ===== IMAGES - COLLECT FROM DETAIL PAGE, 1ST IMAGE = HERO =====
       const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
       const images = [];
-      document.querySelectorAll('img').forEach(img => {
+      
+      // Find all images on the detail page
+      const allImages = document.querySelectorAll('img');
+      
+      allImages.forEach(img => {
+        // Get the best quality source
         const src = img.currentSrc || img.src || img.getAttribute('data-src') || (img.getAttribute('srcset') || '').split(' ')[0];
-        if (src && src.includes('netty.') && !LOGO_PATTERNS.some(p => src.toLowerCase().includes(p)) && img.naturalWidth > 100) {
-          images.push(src);
+        
+        // Filter: must be netty image, not logo, and reasonable size
+        if (src && 
+            src.includes('netty.') && 
+            !LOGO_PATTERNS.some(p => src.toLowerCase().includes(p)) && 
+            img.naturalWidth > 100) {
+          
+          // Avoid duplicates
+          if (!images.includes(src)) {
+            images.push(src);
+          }
         }
       });
-      data.additionalImages = Array.from(new Set(images));
+
+      data.allImages = images;
+      
+      console.log(`Found ${images.length} images on detail page`);
 
       // ===== DESCRIPTION =====
       const descEl = document.querySelector('[class*="description"]') || document.querySelector('.comment') || document.querySelector('section [class*="text"], article [class*="text"]');
@@ -632,6 +694,18 @@ async function extractEleonorPropertyData(page, url) {
     if (propertyData.pool) {
       console.log(`   🏊 Pool: Yes`);
     }
+    if (propertyData.year_built) {
+      console.log(`   🏗️ Built: ${propertyData.year_built}`);
+    }
+    if (propertyData.property_condition) {
+      console.log(`   ⭐ Condition: ${propertyData.property_condition}`);
+    }
+    if (propertyData.energy_class) {
+      console.log(`   ⚡ Energy: ${propertyData.energy_class}`);
+    }
+    if (propertyData.bathrooms || propertyData.shower_rooms) {
+      console.log(`   🚿 Bath: ${propertyData.bathrooms || 0} | Shower: ${propertyData.shower_rooms || 0}`);
+    }
     if (propertyData.heating_system) {
       console.log(`   🔥 Heating: ${propertyData.heating_system}`);
     }
@@ -639,6 +713,7 @@ async function extractEleonorPropertyData(page, url) {
       console.log(`   🚰 Drainage: ${propertyData.drainage_system}`);
     }
     console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
+    console.log(`   📸 Found ${propertyData.allImages?.length || 0} images`);
 
     return propertyData;
   } catch (error) {
@@ -739,24 +814,15 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         continue;
       }
 
-      // ===== IMAGE ASSEMBLY - PRIORITIZE UNIQUE HERO IMAGE =====
+      // ===== IMAGES: Use allImages from detail page, 1st image = hero =====
       const finalImages = [];
       
-      // Add hero image from listing page FIRST (most important!)
-      if (listingData.heroImage) {
-        finalImages.push(listingData.heroImage);
-      }
-      
-      // Add additional images from detail page (avoid duplicates)
-      if (propertyData.additionalImages && propertyData.additionalImages.length > 0) {
-        propertyData.additionalImages.forEach(img => {
-          if (img && !finalImages.includes(img)) {
-            finalImages.push(img);
-          }
-        });
+      if (detailData.allImages && detailData.allImages.length > 0) {
+        // First image becomes the hero image
+        finalImages.push(...detailData.allImages);
       }
 
-      propertyData.images = finalImages.slice(0, 10);
+      propertyData.images = finalImages.slice(0, 10); // Limit to 10 images
 
       const validation = validatePropertyData({
         price: propertyData.price,
@@ -787,7 +853,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
       }
 
       const imageCount = propertyData.images.length;
-      console.log(`   ✓ ${imageCount} images (hero: ${listingData.heroImage ? '✓' : '✗'})`);
+      console.log(`   ✓ ${imageCount} images (1st = hero)`);
     }
 
     await browser.close();
@@ -818,6 +884,11 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         surface: p.building_surface,
         land_surface: p.land_surface,
         pool: p.pool,
+        year_built: p.year_built,
+        condition: p.property_condition,
+        energy: p.energy_class,
+        bathrooms: p.bathrooms,
+        shower_rooms: p.shower_rooms,
         heating: p.heating_system,
         drainage: p.drainage_system,
         imageCount: p.images?.length || 0,
