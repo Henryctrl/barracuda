@@ -51,7 +51,7 @@ async function savePropertiesToDB(properties, source, supabase) {
       const { data, error } = await supabase
         .from('properties')
         .upsert(propertiesToInsert, {
-          onConflict: 'url',
+          onConflict: 'reference',
           ignoreDuplicates: false
         })
         .select();

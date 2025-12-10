@@ -2,6 +2,38 @@ const { validatePropertyData } = require('../utils/validation');
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
+// HELPER: Fetch existing properties with prices
+// ========================================
+
+async function getExistingProperties(supabase, source) {
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('reference, price, previous_price')
+      .eq('source', source)
+      .eq('is_active', true);
+    
+    if (error) throw error;
+    
+    const propertiesMap = new Map();
+    data.forEach(p => {
+      if (p.reference) {
+        propertiesMap.set(p.reference, {
+          currentPrice: p.price,
+          previousPrice: p.previous_price
+        });
+      }
+    });
+    
+    console.log(`📊 Found ${propertiesMap.size} existing properties in database`);
+    return propertiesMap;
+  } catch (error) {
+    console.error('⚠️  Error fetching existing properties:', error);
+    return new Map();
+  }
+}
+
+// ========================================
 // LISTING EXTRACTION (SIMPLIFIED - NO IMAGES!)
 // ========================================
 
@@ -12,11 +44,9 @@ async function extractEleonorListingCards(page) {
     const results = [];
     const clean = s => s ? s.replace(/\s+/g, ' ').trim() : '';
 
-    // Find all links to property pages first
     const propertyLinks = Array.from(document.querySelectorAll('a[href*="/fr/vente/"]'));
     console.log(`Found ${propertyLinks.length} total links with /fr/vente/`);
 
-    // Filter to only property detail pages (contain ,VM)
     const detailLinks = propertyLinks.filter(a => a.href.includes(',VM'));
     console.log(`Found ${detailLinks.length} property detail links`);
 
@@ -24,13 +54,11 @@ async function extractEleonorListingCards(page) {
       try {
         const url = link.href;
         
-        // Find the card container - walk up from the link
         let card = link.closest('article') || 
                    link.closest('[class*="_nhv2ha"]') ||
                    link.closest('div[class*="_1kqnpiud"]');
         
         if (!card) {
-          // Try finding parent that has multiple property-related elements
           let current = link.parentElement;
           for (let i = 0; i < 8 && current; i++) {
             const hasPrice = current.querySelector('[class*="_1s1nzvi"], [class*="_11w5q3n"]');
@@ -48,7 +76,6 @@ async function extractEleonorListingCards(page) {
           return;
         }
 
-        // Extract price
         const priceEl = card.querySelector('span._1s1nzvi, div._11w5q3n, [class*="price"]');
         let price = null;
         if (priceEl) {
@@ -59,11 +86,9 @@ async function extractEleonorListingCards(page) {
           }
         }
 
-        // Extract title
         const titleEl = card.querySelector('h2, h3, [class*="title"]');
         const title = titleEl ? clean(titleEl.textContent) : null;
 
-        // Extract info from iconText or any element with pieces/m²
         let rooms = null;
         let building_surface = null;
         let city = null;
@@ -109,7 +134,7 @@ async function extractEleonorListingCards(page) {
 }
 
 // ========================================
-// DETAIL PAGE EXTRACTION (COMPLETE WITH DPE NUMBERS)
+// DETAIL PAGE EXTRACTION (COMPLETE)
 // ========================================
 
 async function extractEleonorPropertyData(page, url) {
@@ -181,7 +206,7 @@ async function extractEleonorPropertyData(page, url) {
       data.bathrooms = null;
       data.wc_count = null;
 
-      // ===== HELPER FUNCTION: Extract from table/structured fields =====
+      // ===== HELPER FUNCTION =====
       const getTableValue = (label) => {
         const stopWords = ['Localisation', 'Référence', 'Chambres', 'Pièces', 'Séjour', 'WC', 'Construction', 'État', 'Cuisine', 'Vue', 'Cave', 'Chauffage', 'Piscine', 'Ouvertures', 'Climatisation', 'Surface', 'Stationnement', 'Toiture', 'Niveaux', 'Détail des pièces', 'Informations complémentaires', 'Description', 'Assainissement'];
         
@@ -241,7 +266,7 @@ async function extractEleonorPropertyData(page, url) {
         return null;
       };
 
-      // ===== STRATEGY 1: "Descriptif du bien" section (PRIMARY) =====
+      // ===== DESCRIPTIF DU BIEN =====
       const descriptifHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
         clean(el.textContent) === 'Descriptif du bien' || el.textContent.includes('Descriptif du bien')
       );
@@ -256,13 +281,11 @@ async function extractEleonorPropertyData(page, url) {
         if (container) {
           const descriptifText = clean(container.textContent);
 
-          // Surface : 102 m²
           const surfaceMatch = descriptifText.match(/Surface\s*:?\s*(\d+)\s*m[²2]/i);
           if (surfaceMatch) {
             data.building_surface = parseInt(surfaceMatch[1], 10);
           }
 
-          // Pièces : 4 (WITH PRICE-BASED VALIDATION!)
           const piecesMatch = descriptifText.match(/Pièces?\s*:?\s*(\d+)/i);
           if (piecesMatch) {
             const value = parseInt(piecesMatch[1], 10);
@@ -279,12 +302,9 @@ async function extractEleonorPropertyData(page, url) {
             
             if (value >= 1 && value <= maxRooms) {
               data.rooms = value;
-            } else {
-              console.log(`⚠️ Rejected rooms value ${value} (max for price: ${maxRooms})`);
             }
           }
 
-          // Terrain : 35 a OR 2100 m² OR 01 a 50 ca
           const terrainMatch = descriptifText.match(/Terrain\s*:?\s*(\d+)(?:\s*a\s*(\d+)\s*ca)?\s*(a|m²|m2|ha|ca)?/i);
           if (terrainMatch) {
             let val = parseInt(terrainMatch[1], 10);
@@ -302,7 +322,6 @@ async function extractEleonorPropertyData(page, url) {
             data.land_surface = val;
           }
 
-          // Salle de bains in Descriptif
           const salleDeBainsDescMatch = descriptifText.match(/Salle de bains?\s*:?\s*(\d+)/i);
           if (salleDeBainsDescMatch) {
             data.bathrooms = parseInt(salleDeBainsDescMatch[1], 10);
@@ -310,16 +329,15 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
-      // ===== STRATEGY 2: "Caractéristiques techniques" section (MAIN SOURCE) =====
+      // ===== CARACTÉRISTIQUES TECHNIQUES =====
       const caracHeading = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).find(el => 
         el.textContent.includes('Caractéristiques techniques')
       );
 
-      let caracContainer = null;
       let caracText = '';
 
       if (caracHeading) {
-        caracContainer = caracHeading.nextElementSibling;
+        let caracContainer = caracHeading.nextElementSibling;
         
         if (!caracContainer || caracContainer.children.length === 0) {
           caracContainer = caracHeading.parentElement;
@@ -328,7 +346,6 @@ async function extractEleonorPropertyData(page, url) {
         if (caracContainer) {
           caracText = clean(caracContainer.textContent);
 
-          // ===== ROOMS - SMART PRICE-BASED VALIDATION =====
           if (!data.rooms) {
             const roomsMatch = caracText.match(/Pièces?\s*:?\s*(\d+)/i);
             if (roomsMatch) {
@@ -350,7 +367,6 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== BEDROOMS - SMART PRICE-BASED VALIDATION =====
           if (!data.bedrooms) {
             const bedroomsMatch = caracText.match(/Chambres?\s*:?\s*(\d+)/i);
             if (bedroomsMatch) {
@@ -372,7 +388,6 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== BATHROOMS (MERGED: Salle de bains + Salle d'eau) =====
           if (!data.bathrooms) {
             let totalBathrooms = 0;
             
@@ -391,13 +406,11 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== WC COUNT =====
           const wcMatch = caracText.match(/WC\s*:?\s*(\d+)/i);
           if (wcMatch) {
             data.wc_count = parseInt(wcMatch[1], 10);
           }
 
-          // ===== PROPERTY CONDITION =====
           const conditionMatch = caracText.match(/État intérieur\s*:?\s*([A-Za-zÀ-ÿ\s]+?)(?:Cuisine|Vue|Ameublement|Cave|Chauffage|$)/i);
           if (conditionMatch) {
             const rawCondition = clean(conditionMatch[1]).toLowerCase();
@@ -415,7 +428,6 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== YEAR BUILT =====
           const yearMatch = caracText.match(/Construction\s*:?\s*(\d{4})/i);
           if (yearMatch) {
             const year = parseInt(yearMatch[1], 10);
@@ -424,14 +436,12 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== HEATING SYSTEM =====
-          const heatingMatch = caracText.match(/Chauffage\s*:?\s*([A-Za-zÀ-ÿ0-9\s,\-àéèêëïôùûç\/]+?)(?:Piscine|Climatisation|Séjour|Chambres|Salle|WC|Cuisine|$)/i);
+          const heatingMatch = caracText.match(/Chauffage\s*:?\s*([^:]+?)(?:Piscine|Climatisation|Séjour|Chambres|Salle|WC|Cuisine|$)/i);
           if (heatingMatch) {
             data.heating_system = clean(heatingMatch[1]);
           }
 
-          // ===== DRAINAGE/ASSAINISSEMENT =====
-          const drainageMatch = caracText.match(/Assainissement\s*:?\s*([A-Za-zÀ-ÿ0-9\s\-àéèêëïôùûç\']+?)(?:Localisation|Référence|Cuisine|Toiture|Niveaux|$)/i);
+          const drainageMatch = caracText.match(/Assainissement\s*:?\s*([^:]+?)(?:Localisation|Référence|Cuisine|Toiture|Niveaux|$)/i);
           if (drainageMatch) {
             const rawValue = clean(drainageMatch[1]).toLowerCase();
             
@@ -450,18 +460,13 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // ===== POOL - ENHANCED MULTI-STRATEGY DETECTION ===== 🏊‍♂️
-          // Strategy 1: Check in Caractéristiques techniques for "Piscine : Oui"
+          // ===== POOL DETECTION =====
           const poolMatch = caracText.match(/Piscine\s*:?\s*([A-Za-z]+)/i);
           if (poolMatch) {
             const poolValue = clean(poolMatch[1]).toLowerCase();
             data.pool = poolValue === 'oui' || poolValue === 'yes';
-            if (data.pool) {
-              console.log(`✅ Pool found in Caractéristiques: Oui`);
-            }
           }
 
-          // Localisation
           if (!data.city || !data.postal_code) {
             const locMatch = caracText.match(/Localisation\s*:?\s*([A-Za-zÀ-ÿ'\- ]+)\s+(\d{5})/i);
             if (locMatch) {
@@ -470,7 +475,6 @@ async function extractEleonorPropertyData(page, url) {
             }
           }
 
-          // Reference fallback
           if (!data.reference) {
             const refMatch = caracText.match(/Référence\s*:?\s*(VM\d+)/i);
             if (refMatch) {
@@ -480,30 +484,24 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
-      // ===== POOL DETECTION - ADDITIONAL STRATEGIES ===== 🏊‍♂️
-      
-      // Strategy 2: Check title for "piscine" keyword
+      // ===== POOL - ADDITIONAL STRATEGIES =====
       if (!data.pool && data.title) {
         if (data.title.toLowerCase().includes('piscine')) {
           data.pool = true;
-          console.log(`✅ Pool found in title: "${data.title.substring(0, 50)}..."`);
         }
       }
 
-      // Strategy 3: Check description for "piscine" keyword
       if (!data.pool) {
         const descriptionElements = document.querySelectorAll('[class*="description"], .comment, section [class*="text"], article [class*="text"], [class*="desc"]');
         for (const descEl of descriptionElements) {
           const descText = clean(descEl.textContent).toLowerCase();
           if (descText.includes('piscine')) {
             data.pool = true;
-            console.log(`✅ Pool found in description`);
             break;
           }
         }
       }
 
-      // Strategy 4: Check "Les points forts" or amenities sections
       if (!data.pool) {
         const amenitiesHeadings = Array.from(document.querySelectorAll('h2, h3, h4, div, p')).filter(el => {
           const text = el.textContent.toLowerCase();
@@ -518,7 +516,6 @@ async function extractEleonorPropertyData(page, url) {
           
           if (container) {
             const text = container.textContent.toLowerCase();
-            // Look for positive pool mentions with context
             if (text.includes('piscine') && 
                 (text.includes('avec piscine') || 
                  text.includes('piscine chauffée') ||
@@ -527,17 +524,14 @@ async function extractEleonorPropertyData(page, url) {
                  text.includes('belle piscine') ||
                  text.includes('grande piscine'))) {
               data.pool = true;
-              console.log(`✅ Pool found in amenities section`);
               break;
             }
           }
         }
       }
 
-      // Strategy 5: Check entire page for strong pool indicators (last resort)
       if (!data.pool) {
         const pageText = document.body.textContent.toLowerCase();
-        // Only mark as true if we find strong positive indicators
         const hasStrongIndicator = 
           pageText.includes('avec piscine') || 
           pageText.includes('piscine chauffée') ||
@@ -553,28 +547,22 @@ async function extractEleonorPropertyData(page, url) {
         
         if (hasStrongIndicator && !hasNegativeIndicator) {
           data.pool = true;
-          console.log(`✅ Pool found via page scan (strong indicator)`);
         }
       }
 
-      // ===== DPE: ENERGY CONSUMPTION & CO2 EMISSIONS (TEXT EXTRACTION) =====
+      // ===== DPE =====
       const pageText = document.body.textContent;
 
-      // Strategy 1: Match "310 kWh/m².an" or "310 kWh/m2.an" or similar patterns
       const consumptionMatch = pageText.match(/(\d{1,4})\s*kWh\/m[²2]\.?\s*an/i);
       if (consumptionMatch) {
         data.energy_consumption = parseInt(consumptionMatch[1], 10);
-        console.log(`✅ Found energy consumption: ${data.energy_consumption} kWh/m².an`);
       }
 
-      // Strategy 2: Match "68 kg CO2/m².an" or "68* kg CO2/m2.an"
       const emissionsMatch = pageText.match(/(\d{1,4})\s*\*?\s*kg\s*CO2\/m[²2]\.?\s*an/i);
       if (emissionsMatch) {
         data.co2_emissions = parseInt(emissionsMatch[1], 10);
-        console.log(`✅ Found CO2 emissions: ${data.co2_emissions} kg CO2/m².an`);
       }
 
-      // Strategy 3: Look for "consommation" label with numbers nearby
       if (!data.energy_consumption) {
         const consumptionLabels = Array.from(document.querySelectorAll('*')).filter(el => {
           const text = el.textContent.toLowerCase();
@@ -586,13 +574,11 @@ async function extractEleonorPropertyData(page, url) {
           const match = text.match(/(\d{1,4})\s*kWh/i);
           if (match) {
             data.energy_consumption = parseInt(match[1], 10);
-            console.log(`✅ Found consumption from label: ${data.energy_consumption}`);
             break;
           }
         }
       }
 
-      // Strategy 4: Look for "émissions" label with numbers nearby
       if (!data.co2_emissions) {
         const emissionLabels = Array.from(document.querySelectorAll('*')).filter(el => {
           const text = el.textContent.toLowerCase();
@@ -604,66 +590,12 @@ async function extractEleonorPropertyData(page, url) {
           const match = text.match(/(\d{1,4})\s*\*?\s*kg\s*CO2/i);
           if (match) {
             data.co2_emissions = parseInt(match[1], 10);
-            console.log(`✅ Found emissions from label: ${data.co2_emissions}`);
             break;
           }
         }
       }
 
-      // Strategy 5: Check DPE image alt/title attributes
-      if (!data.energy_consumption || !data.co2_emissions) {
-        const dpeImages = Array.from(document.querySelectorAll('img[src*="dpe"]'));
-        
-        for (const img of dpeImages) {
-          const alt = img.alt || '';
-          const title = img.title || '';
-          const combined = alt + ' ' + title;
-          
-          if (!data.energy_consumption) {
-            const consMatch = combined.match(/(\d{1,4})\s*kWh/i);
-            if (consMatch) {
-              data.energy_consumption = parseInt(consMatch[1], 10);
-              console.log(`✅ Found consumption from image: ${data.energy_consumption}`);
-            }
-          }
-          
-          if (!data.co2_emissions) {
-            const emMatch = combined.match(/(\d{1,4})\s*kg\s*CO2/i);
-            if (emMatch) {
-              data.co2_emissions = parseInt(emMatch[1], 10);
-              console.log(`✅ Found emissions from image: ${data.co2_emissions}`);
-            }
-          }
-        }
-      }
-
-      // Strategy 6: Look in "Les points forts" section (sometimes mentions DPE)
-      if (!data.energy_consumption || !data.co2_emissions) {
-        const pointsForts = Array.from(document.querySelectorAll('h2, h3, h4')).find(el => 
-          el.textContent.includes('points forts')
-        );
-        
-        if (pointsForts) {
-          let container = pointsForts.nextElementSibling;
-          if (!container || container.children.length === 0) {
-            container = pointsForts.parentElement;
-          }
-          
-          if (container) {
-            const text = container.textContent;
-            
-            if (!data.energy_consumption) {
-              const match = text.match(/DPE[:\s]*([A-G])/i);
-              if (match) {
-                console.log(`ℹ️ Found DPE letter in points forts: ${match[1]}`);
-              }
-            }
-          }
-        }
-      }
-
-      // ===== FALLBACK: Use getTableValue helper for missing fields =====
-      
+      // ===== FALLBACKS =====
       if (!data.land_surface) {
         const terrainValue = getTableValue('Terrain');
         if (terrainValue) {
@@ -745,15 +677,11 @@ async function extractEleonorPropertyData(page, url) {
         data.heating_system = getTableValue('Chauffage');
       }
 
-      // Pool fallback via getTableValue (if still not found)
       if (!data.pool) {
         const poolValue = getTableValue('Piscine');
         if (poolValue) {
           const poolLower = poolValue.toLowerCase();
           data.pool = poolLower === 'oui' || poolLower === 'yes';
-          if (data.pool) {
-            console.log(`✅ Pool found via getTableValue: ${poolValue}`);
-          }
         }
       }
 
@@ -788,7 +716,7 @@ async function extractEleonorPropertyData(page, url) {
         }
       }
 
-      // ===== STRATEGY 3: Parse from title only if missing =====
+      // ===== TITLE FALLBACKS =====
       if (!data.rooms) {
         const titleRoomsMatch = data.title.match(/(\d+)\s*pièces?/i);
         if (titleRoomsMatch) {
@@ -806,7 +734,6 @@ async function extractEleonorPropertyData(page, url) {
           
           if (value >= 1 && value <= maxRooms) {
             data.rooms = value;
-            console.log(`⚠️ Using rooms from title: ${data.rooms}`);
           }
         }
       }
@@ -828,7 +755,6 @@ async function extractEleonorPropertyData(page, url) {
           
           if (value >= 1 && value <= maxBedrooms) {
             data.bedrooms = value;
-            console.log(`⚠️ Using bedrooms from title: ${data.bedrooms}`);
           }
         }
       }
@@ -872,24 +798,20 @@ async function extractEleonorPropertyData(page, url) {
         data.city = data.city.replace(/^localisation\s*/i, '').trim();
       }
 
-      // ===== IMAGES - COLLECT FROM DETAIL PAGE, 1ST IMAGE = HERO =====
+      // ===== IMAGES =====
       const LOGO_PATTERNS = ['logo', 'icon', 'placeholder'];
       const images = [];
       
-      // Find all images on the detail page
       const allImages = document.querySelectorAll('img');
       
       allImages.forEach(img => {
-        // Get the best quality source
         const src = img.currentSrc || img.src || img.getAttribute('data-src') || (img.getAttribute('srcset') || '').split(' ')[0];
         
-        // Filter: must be netty image, not logo, and reasonable size
         if (src && 
             src.includes('netty.') && 
             !LOGO_PATTERNS.some(p => src.toLowerCase().includes(p)) && 
             img.naturalWidth > 100) {
           
-          // Avoid duplicates
           if (!images.includes(src)) {
             images.push(src);
           }
@@ -897,8 +819,6 @@ async function extractEleonorPropertyData(page, url) {
       });
 
       data.allImages = images;
-      
-      console.log(`Found ${images.length} images on detail page`);
 
       // ===== DESCRIPTION =====
       const descEl = document.querySelector('[class*="description"]') || document.querySelector('.comment') || document.querySelector('section [class*="text"], article [class*="text"]');
@@ -908,34 +828,7 @@ async function extractEleonorPropertyData(page, url) {
     });
 
     console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}`);
-    console.log(`   💰 €${propertyData.price || 'N/A'} | 🛏️ ${propertyData.rooms || 'N/A'} pcs | 🚪 ${propertyData.bedrooms || 'N/A'} ch | 📐 ${propertyData.building_surface || 'N/A'}m²`);
-    if (propertyData.land_surface) {
-      console.log(`   🌳 ${propertyData.land_surface}m² terrain`);
-    }
-    if (propertyData.pool) {
-      console.log(`   🏊 Pool: Yes`);
-    }
-    if (propertyData.year_built) {
-      console.log(`   🏗️ Built: ${propertyData.year_built}`);
-    }
-    if (propertyData.property_condition) {
-      console.log(`   ⭐ Condition: ${propertyData.property_condition}`);
-    }
-    if (propertyData.energy_consumption || propertyData.co2_emissions) {
-      console.log(`   ⚡ DPE: ${propertyData.energy_consumption || '?'} kWh/m².an | ${propertyData.co2_emissions || '?'} kg CO2/m².an`);
-    }
-    if (propertyData.bathrooms || propertyData.wc_count) {
-      console.log(`   🚿 Bathrooms: ${propertyData.bathrooms || 0} | WC: ${propertyData.wc_count || 0}`);
-    }
-    if (propertyData.heating_system) {
-      console.log(`   🔥 Heating: ${propertyData.heating_system}`);
-    }
-    if (propertyData.drainage_system) {
-      console.log(`   🚰 Drainage: ${propertyData.drainage_system}`);
-    }
-    console.log(`   📍 ${propertyData.city || 'N/A'} ${propertyData.postal_code || ''}`);
-    console.log(`   📸 Found ${propertyData.allImages?.length || 0} images`);
-
+    
     return propertyData;
   } catch (error) {
     console.error(`❌ Error extracting ${url}:`, error.message);
@@ -944,7 +837,7 @@ async function extractEleonorPropertyData(page, url) {
 }
 
 // ========================================
-// MAIN SCRAPER
+// MAIN SCRAPER WITH SMART HYBRID APPROACH
 // ========================================
 
 async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
@@ -972,6 +865,7 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
     let currentPageNum = 1;
     const propertyMap = new Map();
 
+    // ===== PART 1: COLLECT ALL LISTINGS =====
     while (currentPageNum <= maxPages) {
       console.log(`📄 Scraping Agence Eleonor listing page ${currentPageNum}...`);
 
@@ -1000,7 +894,6 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
         });
 
         console.log(`   Found ${cards.length} Agence Eleonor properties on page ${currentPageNum}`);
-
         currentPageNum++;
       } catch (pageError) {
         console.error(`Error on listing page ${currentPageNum}:`, pageError.message);
@@ -1010,213 +903,214 @@ async function scrapeEleonor(req, res, { puppeteer, chromium, supabase }) {
 
     console.log(`\n✅ Found ${propertyMap.size} unique Agence Eleonor properties from listing pages\n`);
 
-    let scrapedCount = 0;
-    for (const [propUrl, listingData] of propertyMap.entries()) {
-      const detailData = await extractEleonorPropertyData(page, propUrl);
+    // ===== PART 2: SMART FILTERING - SEPARATE EXISTING VS NEW =====
+    const existingPropertiesMap = await getExistingProperties(supabase, 'agence-eleonor');
 
-      if (!detailData) {
-        console.log(`⚠️  Skipping ${propUrl} - detail page failed`);
-        continue;
-      }
+    const existingProperties = [];
+    const newProperties = [];
+    const priceChanges = [];
 
-      // Merge listing and detail data - detail takes priority
-      const propertyData = {
-        ...listingData,
-        ...detailData,
-        price: detailData.price || listingData.price,
-        rooms: detailData.rooms || listingData.rooms,
-        building_surface: detailData.building_surface || listingData.building_surface,
-        city: detailData.city || listingData.city,
-        postal_code: detailData.postal_code || listingData.postal_code
-      };
-
-      if (!propertyData.price) {
-        console.log(`⚠️  Skipping ${propUrl} - no valid price`);
-        continue;
-      }
-
-      // ===== IMAGES: Use allImages from detail page, 1st image = hero =====
-      const finalImages = [];
+    for (const [url, listingData] of propertyMap.entries()) {
+      const ref = url.split(',').pop(); // Extract VM17172
       
-      if (detailData.allImages && detailData.allImages.length > 0) {
-        // First image becomes the hero image
-        finalImages.push(...detailData.allImages);
-      }
-
-      propertyData.images = finalImages.slice(0, 10); // Limit to 10 images
-
-      const validation = validatePropertyData({
-        price: propertyData.price,
-        surface: propertyData.building_surface,
-        rooms: propertyData.rooms,
-        bedrooms: propertyData.bedrooms,
-        land_surface: propertyData.land_surface
-      });
-
-      validationStats.total++;
-      if (validation.isValid) {
-        validationStats.valid++;
+      if (existingPropertiesMap.has(ref)) {
+        const existingData = existingPropertiesMap.get(ref);
+        existingProperties.push({ url, listingData, reference: ref, existingData });
       } else {
-        validationStats.invalid++;
+        newProperties.push({ url, listingData, reference: ref });
       }
-
-      allProperties.push({
-        url: propUrl,
-        ...propertyData,
-        data_quality_score: validation.qualityScore,
-        validation_errors: validation.errors
-      });
-
-      scrapedCount++;
-
-      if (scrapedCount % 5 === 0) {
-        console.log(`   Scraped ${scrapedCount}/${propertyMap.size} Agence Eleonor properties...`);
-      }
-
-      const imageCount = propertyData.images.length;
-      console.log(`   ✓ ${imageCount} images (1st = hero)`);
     }
 
-    await browser.close();
+    console.log(`📊 Split: ${existingProperties.length} existing (price update only) + ${newProperties.length} new (full scrape)\n`);
 
-    console.log(`\n✅ Agence Eleonor scraping complete: ${allProperties.length} properties\n`);
+    // ===== PART 3: QUICK PRICE UPDATES FOR EXISTING PROPERTIES =====
+    if (existingProperties.length > 0) {
+      console.log('💰 Updating prices for existing properties...\n');
 
-    const inserted = await savePropertiesToDB(allProperties, 'agence-eleonor', supabase);
+      for (const { url, listingData, reference, existingData } of existingProperties) {
+        if (listingData.price) {
+          const updateData = {
+            reference,
+            price: listingData.price,
+            last_seen_at: new Date().toISOString(),
+            source: 'agence-eleonor',
+            url
+          };
 
-    // Calculate DPE success rate
-    const dpeCount = allProperties.filter(p => p.energy_consumption || p.co2_emissions).length;
-    const dpeRate = allProperties.length > 0 ? ((dpeCount / allProperties.length) * 100).toFixed(1) : 0;
-
-    // Calculate pool stats
-    const poolCount = allProperties.filter(p => p.pool).length;
-
-    res.json({
-      success: true,
-      source: 'agence-eleonor',
-      totalScraped: allProperties.length,
-      inserted,
-      validation: validationStats,
-      poolStats: {
-        withPool: poolCount,
-        percentage: allProperties.length > 0 ? `${((poolCount / allProperties.length) * 100).toFixed(1)}%` : '0%'
-      },
-      dpeStats: {
-        withDPE: dpeCount,
-        successRate: `${dpeRate}%`,
-        avgConsumption: allProperties.filter(p => p.energy_consumption).length > 0
-          ? Math.round(allProperties.filter(p => p.energy_consumption).reduce((sum, p) => sum + p.energy_consumption, 0) / allProperties.filter(p => p.energy_consumption).length)
-          : null,
-        avgEmissions: allProperties.filter(p => p.co2_emissions).length > 0
-          ? Math.round(allProperties.filter(p => p.co2_emissions).reduce((sum, p) => sum + p.co2_emissions, 0) / allProperties.filter(p => p.co2_emissions).length)
-          : null
-      },
-      imageStats: {
-        withImages: allProperties.filter(p => p.images && p.images.length > 0).length,
-        avgImagesPerProperty: allProperties.length > 0 
-          ? (allProperties.reduce((sum, p) => sum + (p.images?.length || 0), 0) / allProperties.length).toFixed(1)
-          : 0
-      },
-      properties: allProperties.slice(0, 5).map(p => ({
-        url: p.url,
-        title: p.title,
-        price: p.price,
-        city: p.city,
-        rooms: p.rooms,
-        bedrooms: p.bedrooms,
-        surface: p.building_surface,
-        land_surface: p.land_surface,
-        pool: p.pool,
-        year_built: p.year_built,
-        condition: p.property_condition,
-        energy_consumption: p.energy_consumption,
-        co2_emissions: p.co2_emissions,
-        bathrooms: p.bathrooms,
-        wc_count: p.wc_count,
-        heating: p.heating_system,
-        drainage: p.drainage_system,
-        imageCount: p.images?.length || 0,
-        quality: p.data_quality_score
-      }))
-    });
-
-  } catch (error) {
-    console.error('❌ Agence Eleonor scraping failed:', error);
-    res.status(500).json({ error: 'Scraping failed', details: error.message });
-  }
-}
-
-// ========================================
-// DEBUG ENDPOINT
-// ========================================
-
-async function debugEleonorProperty(req, res, { puppeteer, chromium }) {
-  try {
-    const { url } = req.body;
-    
-    if (!url) {
-      return res.status(400).json({ error: 'url parameter required' });
-    }
-
-    console.log('🔍 Debugging Agence Eleonor property:', url);
-
-    const browser = await puppeteer.launch({
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromium.executablePath,
-      headless: true,
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
-
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    const debug = await page.evaluate(() => {
-      const trySelectors = (selectors) => {
-        for (const sel of selectors) {
-          const el = document.querySelector(sel);
-          if (el && el.textContent.trim()) {
-            return {
-              selector: sel,
-              text: el.textContent.trim(),
-              html: el.innerHTML.substring(0, 200)
-            };
+          // ===== PRICE CHANGE DETECTION =====
+          if (existingData.currentPrice && listingData.price !== existingData.currentPrice) {
+            const priceDiff = listingData.price - existingData.currentPrice;
+            const percentChange = ((priceDiff / existingData.currentPrice) * 100).toFixed(1);
+            
+            updateData.previous_price = existingData.currentPrice;
+            updateData.price_changed_at = new Date().toISOString();
+            updateData.price_drop_amount = priceDiff;
+            
+            if (priceDiff < 0) {
+              console.log(`   💰📉 ${reference}: €${existingData.currentPrice} → €${listingData.price} (${percentChange}% DROP!)`);
+              priceChanges.push({
+                reference,
+                oldPrice: existingData.currentPrice,
+                newPrice: listingData.price,
+                change: priceDiff,
+                percentChange
+              });
+            } else {
+              console.log(`   💰📈 ${reference}: €${existingData.currentPrice} → €${listingData.price} (+${percentChange}%)`);
+            }
+          } else {
+            console.log(`   ✅ ${reference}: €${listingData.price} (no change)`);
           }
+          
+          allProperties.push(updateData);
         }
-        return null;
-      };
+      }
 
-      return {
-        title: trySelectors(['h1', '[class*="title"]', '[class*="Title"]', '.property-title', 'h2']),
-        price: trySelectors(['[class*="price"]', '[class*="Price"]', '.price', '[class*="montant"]', '[class*="amount"]']),
-        reference: trySelectors(['[class*="ref"]', '[class*="Ref"]', '[class*="reference"]', '.reference']),
-        features: trySelectors(['[class*="feature"]', '[class*="characteristic"]', '[class*="detail"]', 'ul li', '[class*="info"]']),
-        classNames: Array.from(document.querySelectorAll('[class]'))
-          .slice(0, 50)
-          .map(el => el.className)
-          .filter(c => c && typeof c === 'string'),
-        numberedElements: Array.from(document.querySelectorAll('*'))
-          .filter(el => {
-            const text = el.textContent;
-            return text && text.length < 100 && /\d+/.test(text) && (text.includes('€') || text.includes('m²') || text.includes('pièce') || text.includes('chambre'));
-          })
-          .slice(0, 20)
-          .map(el => ({
-            tag: el.tagName.toLowerCase(),
-            class: el.className,
-            text: el.textContent.trim()
-          }))
-      };
-    });
+      console.log(`\n✅ ${existingProperties.length} existing properties updated`);
+      
+      if (priceChanges.length > 0) {
+        console.log(`\n🎉 ${priceChanges.length} PRICE CHANGES DETECTED!`);
+        priceChanges.forEach(change => {
+          console.log(`   ${change.reference}: ${change.percentChange}% change (€${change.change.toLocaleString()})`);
+        });
+      }
+      console.log('');
+    }
+
+    // ===== PART 4: FULL DETAIL SCRAPING FOR NEW PROPERTIES =====
+    if (newProperties.length > 0) {
+      console.log(`🔍 Full scraping for ${newProperties.length} NEW properties...\n`);
+
+      let scrapedCount = 0;
+      for (const { url, listingData, reference } of newProperties) {
+        const detailData = await extractEleonorPropertyData(page, url);
+
+        if (!detailData) {
+          console.log(`⚠️  Skipping ${url} - detail page failed`);
+          continue;
+        }
+
+        const propertyData = {
+          ...listingData,
+          ...detailData,
+          price: detailData.price || listingData.price,
+          rooms: detailData.rooms || listingData.rooms,
+          building_surface: detailData.building_surface || listingData.building_surface,
+          city: detailData.city || listingData.city,
+          postal_code: detailData.postal_code || listingData.postal_code
+        };
+
+        if (!propertyData.price) {
+          console.log(`⚠️  Skipping ${url} - no valid price`);
+          continue;
+        }
+
+        const finalImages = [];
+        
+        if (detailData.allImages && detailData.allImages.length > 0) {
+          finalImages.push(...detailData.allImages);
+        }
+
+        propertyData.images = finalImages.slice(0, 10);
+
+        const validation = validatePropertyData({
+          price: propertyData.price,
+          surface: propertyData.building_surface,
+          rooms: propertyData.rooms,
+          bedrooms: propertyData.bedrooms,
+          city: propertyData.city,
+          postal_code: propertyData.postal_code
+        });
+
+        validationStats.total++;
+        if (validation.isValid) {
+          validationStats.valid++;
+        } else {
+          validationStats.invalid++;
+        }
+
+        const finalProperty = {
+          source: 'agence-eleonor',
+          url: propertyData.url || url,
+          reference: propertyData.reference,
+          title: propertyData.title,
+          description: propertyData.description || '',
+          price: propertyData.price,
+          property_type: propertyData.property_type,
+          rooms: propertyData.rooms,
+          bedrooms: propertyData.bedrooms,
+          building_surface: propertyData.building_surface,
+          land_surface: propertyData.land_surface,
+          city: propertyData.city,
+          postal_code: propertyData.postal_code,
+          bathrooms: propertyData.bathrooms,
+          wc_count: propertyData.wc_count,
+          heating_system: propertyData.heating_system,
+          drainage_system: propertyData.drainage_system,
+          pool: propertyData.pool,
+          property_condition: propertyData.property_condition,
+          year_built: propertyData.year_built,
+          energy_consumption: propertyData.energy_consumption,
+          co2_emissions: propertyData.co2_emissions,
+          images: JSON.stringify(propertyData.images),
+          data_quality_score: validation.score,
+          validation_errors: JSON.stringify(validation.errors),
+          raw_data: JSON.stringify({
+            source: 'agence-eleonor',
+            scrapedAt: new Date().toISOString(),
+            imageCount: propertyData.images.length,
+            scraper_version: '3.0'
+          }),
+          last_seen_at: new Date().toISOString()
+        };
+
+        allProperties.push(finalProperty);
+        scrapedCount++;
+
+        console.log(`   💰 €${finalProperty.price} | 🛏️ ${finalProperty.rooms || 'N/A'} pcs | 🚪 ${finalProperty.bedrooms || 'N/A'} ch | 📐 ${finalProperty.building_surface || 'N/A'}m²`);
+        if (finalProperty.pool) console.log(`   🏊 Pool: Yes`);
+        if (finalProperty.energy_consumption || finalProperty.co2_emissions) {
+          console.log(`   ⚡ DPE: ${finalProperty.energy_consumption || '?'} kWh/m².an | ${finalProperty.co2_emissions || '?'} kg CO2/m².an`);
+        }
+      }
+
+      console.log(`\n✅ ${scrapedCount} new properties fully scraped\n`);
+    }
 
     await browser.close();
 
-    res.json({ url, debug });
+    // ===== SAVE TO DATABASE =====
+    if (allProperties.length > 0) {
+      console.log(`💾 Saving ${allProperties.length} properties to database...`);
+      await savePropertiesToDB(supabase, allProperties);
+    }
+
+    const summary = {
+      success: true,
+      message: `Scraped ${allProperties.length} Agence Eleonor properties`,
+      stats: {
+        total: allProperties.length,
+        existing_updated: existingProperties.length,
+        new_scraped: newProperties.length,
+        price_changes: priceChanges.length,
+        validation: validationStats
+      },
+      priceChanges: priceChanges.slice(0, 10) // First 10 price changes
+    };
+
+    console.log('\n🎉 Scraping complete!');
+    console.log(`   Total: ${allProperties.length}`);
+    console.log(`   Existing (updated): ${existingProperties.length}`);
+    console.log(`   New (full scrape): ${newProperties.length}`);
+    console.log(`   Price changes: ${priceChanges.length}`);
+    console.log(`   Valid: ${validationStats.valid}`);
+
+    res.json(summary);
 
   } catch (error) {
-    console.error('Debug error:', error);
+    console.error('❌ Scraper error:', error.message);
     res.status(500).json({ error: error.message });
   }
 }
 
-module.exports = { scrapeEleonor, debugEleonorProperty };
+module.exports = { scrapeEleonor };
