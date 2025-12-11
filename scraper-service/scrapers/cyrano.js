@@ -188,7 +188,7 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
             }
             
             // Pool
-            if (text.includes('Terrain piscinable')) {
+            if (text.includes('avec piscine')) {
               prop.pool = text.includes('OUI');
             }
           });
