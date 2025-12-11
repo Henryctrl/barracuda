@@ -461,53 +461,83 @@ async function scrapeLeggett(req, res, { puppeteer, chromium, supabase }) {
     }
 
     // ===== NORMAL SCRAPING MODE =====
-    let currentPageNum = 1;
-    const propertyMap = new Map();
+let currentPageNum = 1;
+const propertyMap = new Map();
 
-    // PART 1: Collect all listings
-    // Leggett pagination: /page:1, /page:2, /page:3, etc.
-    while (currentPageNum <= maxPages) {
-      console.log(`📄 Scraping Leggett listing page ${currentPageNum}...`);
+// PART 1: Collect all listings (UPDATED WITH DEBUG)
+// Leggett pagination: /page:1, /page:2, /page:3, etc.
+while (currentPageNum <= maxPages) {
+  console.log(`📄 Scraping Leggett listing page ${currentPageNum}...`);
 
-      // Build page URL
-      let pageUrl = searchUrl;
-      if (currentPageNum > 1) {
-        // Remove existing page parameter if present
-        pageUrl = pageUrl.replace(/\/page:\d+/, '');
-        // Add page parameter
-        pageUrl = `${pageUrl}/page:${currentPageNum}`;
-      }
+  // Build page URL
+  let pageUrl = searchUrl;
+  if (currentPageNum > 1) {
+    pageUrl = pageUrl.replace(/\/page:\d+/, '');
+    pageUrl = `${pageUrl}/page:${currentPageNum}`;
+  }
 
-      try {
-        await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-        await new Promise(resolve => setTimeout(resolve, 3000));
+  try {
+    // ENHANCED: More human-like behavior
+    await page.goto(pageUrl, { 
+      waitUntil: 'networkidle0',  // Changed from networkidle2
+      timeout: 30000 
+    });
+    
+    // Wait for main content to load
+    await page.waitForSelector('.page-wrapper, .container-large, body', { timeout: 10000 });
+    await new Promise(resolve => setTimeout(resolve, 5000)); // Increased wait
+    
+    // Scroll like a human
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight / 2);
+    });
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Scroll to load lazy images
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await page.evaluate(() => window.scrollTo(0, 0));
-        await new Promise(resolve => setTimeout(resolve, 1000));
+    // DEBUG: Check what we actually got
+    const pageContent = await page.evaluate(() => {
+      return {
+        title: document.title,
+        hasPropertyLinks: document.querySelectorAll('a[href*="/acheter-vendre-une-maison/view/"]').length,
+        hasSelectionItems: document.querySelectorAll('.selection-item').length,
+        hasResultItems: document.querySelectorAll('.result-item').length,
+        bodyText: document.body.textContent.substring(0, 500)
+      };
+    });
+    
+    console.log('🔍 Page debug:', JSON.stringify(pageContent, null, 2));
 
-        const cards = await extractLeggettListingCards(page);
+    const cards = await extractLeggettListingCards(page);
 
-        if (cards.length === 0) {
-          console.log(`   ✅ Reached end of Leggett listings at page ${currentPageNum - 1}`);
-          break;
-        }
-
-        cards.forEach(card => {
-          if (card.url && card.reference && !propertyMap.has(card.reference)) {
-            propertyMap.set(card.reference, card);
-          }
-        });
-
-        console.log(`   Found ${cards.length} Leggett properties on page ${currentPageNum}`);
-        currentPageNum++;
-      } catch (pageError) {
-        console.error(`Error on listing page ${currentPageNum}:`, pageError.message);
-        break;
-      }
+    if (cards.length === 0) {
+      console.log(`   ⚠️  No cards found. Possible bot detection or wrong selectors.`);
+      console.log(`   💡 Check page title: ${pageContent.title}`);
+      break;
     }
+
+    cards.forEach(card => {
+      if (card.url && card.reference && !propertyMap.has(card.reference)) {
+        propertyMap.set(card.reference, card);
+      }
+    });
+
+    console.log(`   Found ${cards.length} Leggett properties on page ${currentPageNum}`);
+    currentPageNum++;
+  } catch (pageError) {
+    console.error(`Error on listing page ${currentPageNum}:`, pageError.message);
+    break;
+  }
+}
+
 
     console.log(`\n✅ Found ${propertyMap.size} unique Leggett properties from listing pages\n`);
 
