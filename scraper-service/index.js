@@ -8,7 +8,8 @@ const cors = require('cors');
 const { scrapeCadImmo } = require('./scrapers/cadimmo');
 const { scrapeEleonor, debugEleonorProperty } = require('./scrapers/eleonor');
 const { scrapeBeauxVillages } = require('./scrapers/beauxvillages');
-const { scrapeLeggett } = require('./scrapers/leggett'); // NEW
+const { scrapeLeggett } = require('./scrapers/leggett');
+const { scrapeCyrano } = require('./scrapers/cyrano'); // NEW
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -33,19 +34,21 @@ console.log('✅ Supabase client created successfully');
 
 app.get('/', (req, res) => {
   res.json({ 
-    status: 'Barracuda Scraper Service v2.7', // Updated version
+    status: 'Barracuda Scraper Service v2.8', // Updated version
     features: [
       'CAD-IMMO scraper', 
       'Agence Eleonor scraper with listing extraction',
       'Beaux Villages Immobilier scraper',
-      'Leggett Immobilier scraper' // NEW
+      'Leggett Immobilier scraper',
+      'Cyrano Immobilier scraper' // NEW
     ],
     endpoints: [
       '/scrape', 
       '/scrape-eleonor', 
       '/debug-eleonor-property',
       '/scrape-beauxvillages',
-      '/scrape-leggett' // NEW
+      '/scrape-leggett',
+      '/scrape-cyrano' // NEW
     ]
   });
 });
@@ -66,9 +69,13 @@ app.post('/scrape-beauxvillages', async (req, res) => {
   await scrapeBeauxVillages(req, res, { puppeteer, chromium, supabase });
 });
 
-// NEW ROUTE
 app.post('/scrape-leggett', async (req, res) => {
   await scrapeLeggett(req, res, { puppeteer, chromium, supabase });
+});
+
+// NEW ROUTE
+app.post('/scrape-cyrano', async (req, res) => {
+  await scrapeCyrano(req, res, { puppeteer, chromium, supabase });
 });
 
 app.get('/test-logs', (req, res) => {
@@ -89,5 +96,5 @@ app.get('/test-logs', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 Scraper service v2.7 running on port ${PORT}`);
+  console.log(`🚀 Scraper service v2.8 running on port ${PORT}`);
 });

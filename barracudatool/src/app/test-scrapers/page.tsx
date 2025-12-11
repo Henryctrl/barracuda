@@ -143,7 +143,6 @@ export default function TestScrapersPage() {
     setLoading(null);
   };
 
-  // NEW: Leggett Scraper
   const scrapeLeggett = async () => {
     setLoading('leggett');
     setError('');
@@ -168,6 +167,35 @@ export default function TestScrapersPage() {
       }
     } catch (err) {
       setError('Leggett Error: ' + (err instanceof Error ? err.message : 'Unknown'));
+    }
+    setLoading(null);
+  };
+
+  // NEW: Cyrano Scraper
+  const scrapeCyrano = async () => {
+    setLoading('cyrano');
+    setError('');
+  
+    try {
+      const response = await fetch('https://barracuda-production.up.railway.app/scrape-cyrano', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://www.cyranoimmobilier.com/vente/1',
+          maxPages: 1,
+          maxProperties: 5
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setResults(prev => ({ ...prev, cyrano: data }));
+      } else {
+        setError('Cyrano: ' + (data.error || 'Failed to scrape'));
+      }
+    } catch (err) {
+      setError('Cyrano Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
     setLoading(null);
   };
@@ -263,7 +291,7 @@ export default function TestScrapersPage() {
       const beauxData = await beauxResponse.json();
       setResults(prev => ({ ...prev, beauxvillages: beauxData }));
 
-      // NEW: Leggett
+      // Leggett
       const leggettResponse = await fetch('https://barracuda-production.up.railway.app/scrape-leggett', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -275,6 +303,18 @@ export default function TestScrapersPage() {
       const leggettData = await leggettResponse.json();
       setResults(prev => ({ ...prev, leggett: leggettData }));
 
+      // NEW: Cyrano
+      const cyranoResponse = await fetch('https://barracuda-production.up.railway.app/scrape-cyrano', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://www.cyranoimmobilier.com/vente/1',
+          maxPages: 2
+        })
+      });
+      const cyranoData = await cyranoResponse.json();
+      setResults(prev => ({ ...prev, cyrano: cyranoData }));
+
     } catch (err) {
       setError('Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
@@ -284,7 +324,8 @@ export default function TestScrapersPage() {
   const cadResult = results.cadimmo && isScrapeResult(results.cadimmo) ? results.cadimmo : null;
   const eleonorResult = results.eleonor && isScrapeResult(results.eleonor) ? results.eleonor : null;
   const beauxVillagesResult = results.beauxvillages && isScrapeResult(results.beauxvillages) ? results.beauxvillages : null;
-  const leggettResult = results.leggett && isScrapeResult(results.leggett) ? results.leggett : null; // NEW
+  const leggettResult = results.leggett && isScrapeResult(results.leggett) ? results.leggett : null;
+  const cyranoResult = results.cyrano && isScrapeResult(results.cyrano) ? results.cyrano : null; // NEW
   const priceUpdateResult = results.priceupdate && isPriceUpdateResult(results.priceupdate) ? results.priceupdate : null;
 
   return (
@@ -325,7 +366,6 @@ export default function TestScrapersPage() {
             {loading === 'beauxvillages' ? 'Scraping Beaux Villages...' : '🏘️ Scrape Beaux Villages'}
           </button>
 
-          {/* NEW: Leggett Button */}
           <button
             onClick={scrapeLeggett}
             disabled={loading !== null}
@@ -333,6 +373,16 @@ export default function TestScrapersPage() {
           >
             {loading === 'leggett' && <Loader2 className="animate-spin" size={20} />}
             {loading === 'leggett' ? 'Scraping Leggett...' : '🏰 Scrape Leggett'}
+          </button>
+
+          {/* NEW: Cyrano Button */}
+          <button
+            onClick={scrapeCyrano}
+            disabled={loading !== null}
+            className="px-6 py-3 bg-teal-600 text-white font-bold rounded text-lg hover:bg-teal-700 disabled:opacity-50 flex items-center gap-3"
+          >
+            {loading === 'cyrano' && <Loader2 className="animate-spin" size={20} />}
+            {loading === 'cyrano' ? 'Scraping Cyrano...' : '🏛️ Scrape Cyrano'}
           </button>
 
           <button
@@ -478,7 +528,7 @@ export default function TestScrapersPage() {
           </div>
         )}
 
-        {/* NEW: Leggett Results */}
+        {/* Leggett Results */}
         {leggettResult && (
           <div className="mb-8 p-6 bg-pink-900/30 border border-pink-500 rounded">
             <h2 className="text-2xl font-bold text-pink-400 mb-4 flex items-center gap-2">
@@ -509,6 +559,42 @@ export default function TestScrapersPage() {
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
                 {JSON.stringify(leggettResult, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+
+        {/* NEW: Cyrano Results */}
+        {cyranoResult && (
+          <div className="mb-8 p-6 bg-teal-900/30 border border-teal-500 rounded">
+            <h2 className="text-2xl font-bold text-teal-400 mb-4 flex items-center gap-2">
+              {cyranoResult.totalScraped > 0 ? '✅' : '⚠️'} Cyrano Immobilier Results
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-white mb-4">
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{cyranoResult.totalScraped}</div>
+                <div className="text-sm text-gray-400">Scraped</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{cyranoResult.inserted || 0}</div>
+                <div className="text-sm text-gray-400">Inserted</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{cyranoResult.imageStats?.withImages || 0}</div>
+                <div className="text-sm text-gray-400">With Images</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{cyranoResult.imageStats?.avgImagesPerProperty || 0}</div>
+                <div className="text-sm text-gray-400">Avg Images</div>
+              </div>
+            </div>
+            
+            <details className="mt-4">
+              <summary className="cursor-pointer text-[#00ffff] hover:underline">
+                View Full Response
+              </summary>
+              <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
+                {JSON.stringify(cyranoResult, null, 2)}
               </pre>
             </details>
           </div>

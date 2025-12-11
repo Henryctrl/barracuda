@@ -1,3 +1,5 @@
+//need to make this run locally as the ip is getting found out by page
+
 const { validatePropertyData } = require('../utils/validation');
 const { savePropertiesToDB } = require('../utils/database');
 
