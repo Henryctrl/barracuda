@@ -115,7 +115,6 @@ export default function TestScrapersPage() {
     setLoading(null);
   };
 
-  // NEW: Beaux Villages Scraper
   const scrapeBeauxVillages = async () => {
     setLoading('beauxvillages');
     setError('');
@@ -126,11 +125,10 @@ export default function TestScrapersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           searchUrl: 'https://beauxvillages.com/fr/nos-biens_fr',
-          maxPages: 1,           // Just 1 page of listings
-          maxProperties: 5       // Only scrape detail for 5 properties ✅
+          maxPages: 1,
+          maxProperties: 5
         })
       });
-  
       
       const data = await response.json();
       
@@ -141,6 +139,35 @@ export default function TestScrapersPage() {
       }
     } catch (err) {
       setError('Beaux Villages Error: ' + (err instanceof Error ? err.message : 'Unknown'));
+    }
+    setLoading(null);
+  };
+
+  // NEW: Leggett Scraper
+  const scrapeLeggett = async () => {
+    setLoading('leggett');
+    setError('');
+  
+    try {
+      const response = await fetch('https://barracuda-production.up.railway.app/scrape-leggett', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://www.leggett-immo.com/acheter-vendre-une-maison/mainSearch/page:1',
+          maxPages: 1,
+          maxProperties: 5
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setResults(prev => ({ ...prev, leggett: data }));
+      } else {
+        setError('Leggett: ' + (data.error || 'Failed to scrape'));
+      }
+    } catch (err) {
+      setError('Leggett Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
     setLoading(null);
   };
@@ -201,6 +228,7 @@ export default function TestScrapersPage() {
     setResults({});
 
     try {
+      // CAD-IMMO
       const cadResponse = await fetch('https://barracuda-production.up.railway.app/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -212,6 +240,7 @@ export default function TestScrapersPage() {
       const cadData = await cadResponse.json();
       setResults(prev => ({ ...prev, cadimmo: cadData }));
 
+      // Eleonor
       const eleoResponse = await fetch('https://barracuda-production.up.railway.app/scrape-eleonor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -222,7 +251,7 @@ export default function TestScrapersPage() {
       const eleoData = await eleoResponse.json();
       setResults(prev => ({ ...prev, eleonor: eleoData }));
 
-      // NEW: Add Beaux Villages to "Scrape All"
+      // Beaux Villages
       const beauxResponse = await fetch('https://barracuda-production.up.railway.app/scrape-beauxvillages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -234,6 +263,18 @@ export default function TestScrapersPage() {
       const beauxData = await beauxResponse.json();
       setResults(prev => ({ ...prev, beauxvillages: beauxData }));
 
+      // NEW: Leggett
+      const leggettResponse = await fetch('https://barracuda-production.up.railway.app/scrape-leggett', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://www.leggett-immo.com/acheter-vendre-une-maison/mainSearch/page:1',
+          maxPages: 2
+        })
+      });
+      const leggettData = await leggettResponse.json();
+      setResults(prev => ({ ...prev, leggett: leggettData }));
+
     } catch (err) {
       setError('Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
@@ -242,7 +283,8 @@ export default function TestScrapersPage() {
 
   const cadResult = results.cadimmo && isScrapeResult(results.cadimmo) ? results.cadimmo : null;
   const eleonorResult = results.eleonor && isScrapeResult(results.eleonor) ? results.eleonor : null;
-  const beauxVillagesResult = results.beauxvillages && isScrapeResult(results.beauxvillages) ? results.beauxvillages : null; // NEW
+  const beauxVillagesResult = results.beauxvillages && isScrapeResult(results.beauxvillages) ? results.beauxvillages : null;
+  const leggettResult = results.leggett && isScrapeResult(results.leggett) ? results.leggett : null; // NEW
   const priceUpdateResult = results.priceupdate && isPriceUpdateResult(results.priceupdate) ? results.priceupdate : null;
 
   return (
@@ -274,7 +316,6 @@ export default function TestScrapersPage() {
             {loading === 'eleonor' ? 'Scraping Eleonor...' : '🏡 Scrape Agence Eleonor'}
           </button>
 
-          {/* NEW: Beaux Villages Button */}
           <button
             onClick={scrapeBeauxVillages}
             disabled={loading !== null}
@@ -282,6 +323,16 @@ export default function TestScrapersPage() {
           >
             {loading === 'beauxvillages' && <Loader2 className="animate-spin" size={20} />}
             {loading === 'beauxvillages' ? 'Scraping Beaux Villages...' : '🏘️ Scrape Beaux Villages'}
+          </button>
+
+          {/* NEW: Leggett Button */}
+          <button
+            onClick={scrapeLeggett}
+            disabled={loading !== null}
+            className="px-6 py-3 bg-pink-600 text-white font-bold rounded text-lg hover:bg-pink-700 disabled:opacity-50 flex items-center gap-3"
+          >
+            {loading === 'leggett' && <Loader2 className="animate-spin" size={20} />}
+            {loading === 'leggett' ? 'Scraping Leggett...' : '🏰 Scrape Leggett'}
           </button>
 
           <button
@@ -380,12 +431,6 @@ export default function TestScrapersPage() {
               </div>
             </div>
             
-            {eleonorResult.totalScraped === 0 && (
-              <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-500 rounded text-yellow-200">
-                ⚠️ No properties found. The scraper may need debugging.
-              </div>
-            )}
-            
             <details className="mt-4">
               <summary className="cursor-pointer text-[#00ffff] hover:underline">
                 View Full Response
@@ -397,7 +442,7 @@ export default function TestScrapersPage() {
           </div>
         )}
 
-        {/* NEW: Beaux Villages Results */}
+        {/* Beaux Villages Results */}
         {beauxVillagesResult && (
           <div className="mb-8 p-6 bg-emerald-900/30 border border-emerald-500 rounded">
             <h2 className="text-2xl font-bold text-emerald-400 mb-4 flex items-center gap-2">
@@ -422,18 +467,48 @@ export default function TestScrapersPage() {
               </div>
             </div>
             
-            {beauxVillagesResult.totalScraped === 0 && (
-              <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-500 rounded text-yellow-200">
-                ⚠️ No properties found. The scraper may need debugging.
-              </div>
-            )}
-            
             <details className="mt-4">
               <summary className="cursor-pointer text-[#00ffff] hover:underline">
                 View Full Response
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
                 {JSON.stringify(beauxVillagesResult, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+
+        {/* NEW: Leggett Results */}
+        {leggettResult && (
+          <div className="mb-8 p-6 bg-pink-900/30 border border-pink-500 rounded">
+            <h2 className="text-2xl font-bold text-pink-400 mb-4 flex items-center gap-2">
+              {leggettResult.totalScraped > 0 ? '✅' : '⚠️'} Leggett Immobilier Results
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-white mb-4">
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{leggettResult.totalScraped}</div>
+                <div className="text-sm text-gray-400">Scraped</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{leggettResult.inserted || 0}</div>
+                <div className="text-sm text-gray-400">Inserted</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{leggettResult.imageStats?.withImages || 0}</div>
+                <div className="text-sm text-gray-400">With Images</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{leggettResult.imageStats?.avgImagesPerProperty || 0}</div>
+                <div className="text-sm text-gray-400">Avg Images</div>
+              </div>
+            </div>
+            
+            <details className="mt-4">
+              <summary className="cursor-pointer text-[#00ffff] hover:underline">
+                View Full Response
+              </summary>
+              <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
+                {JSON.stringify(leggettResult, null, 2)}
               </pre>
             </details>
           </div>
