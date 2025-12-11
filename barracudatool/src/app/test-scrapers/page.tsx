@@ -115,6 +115,34 @@ export default function TestScrapersPage() {
     setLoading(null);
   };
 
+  // NEW: Beaux Villages Scraper
+  const scrapeBeauxVillages = async () => {
+    setLoading('beauxvillages');
+    setError('');
+
+    try {
+      const response = await fetch('https://barracuda-production.up.railway.app/scrape-beauxvillages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://beauxvillages.com/fr/nos-biens_fr',
+          maxPages: 2
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setResults(prev => ({ ...prev, beauxvillages: data }));
+      } else {
+        setError('Beaux Villages: ' + (data.error || 'Failed to scrape'));
+      }
+    } catch (err) {
+      setError('Beaux Villages Error: ' + (err instanceof Error ? err.message : 'Unknown'));
+    }
+    setLoading(null);
+  };
+
   const weeklyPriceUpdate = async () => {
     setLoading('priceupdate');
     setError('');
@@ -192,6 +220,18 @@ export default function TestScrapersPage() {
       const eleoData = await eleoResponse.json();
       setResults(prev => ({ ...prev, eleonor: eleoData }));
 
+      // NEW: Add Beaux Villages to "Scrape All"
+      const beauxResponse = await fetch('https://barracuda-production.up.railway.app/scrape-beauxvillages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://beauxvillages.com/fr/nos-biens_fr',
+          maxPages: 2
+        })
+      });
+      const beauxData = await beauxResponse.json();
+      setResults(prev => ({ ...prev, beauxvillages: beauxData }));
+
     } catch (err) {
       setError('Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
@@ -200,6 +240,7 @@ export default function TestScrapersPage() {
 
   const cadResult = results.cadimmo && isScrapeResult(results.cadimmo) ? results.cadimmo : null;
   const eleonorResult = results.eleonor && isScrapeResult(results.eleonor) ? results.eleonor : null;
+  const beauxVillagesResult = results.beauxvillages && isScrapeResult(results.beauxvillages) ? results.beauxvillages : null; // NEW
   const priceUpdateResult = results.priceupdate && isPriceUpdateResult(results.priceupdate) ? results.priceupdate : null;
 
   return (
@@ -229,6 +270,16 @@ export default function TestScrapersPage() {
           >
             {loading === 'eleonor' && <Loader2 className="animate-spin" size={20} />}
             {loading === 'eleonor' ? 'Scraping Eleonor...' : '🏡 Scrape Agence Eleonor'}
+          </button>
+
+          {/* NEW: Beaux Villages Button */}
+          <button
+            onClick={scrapeBeauxVillages}
+            disabled={loading !== null}
+            className="px-6 py-3 bg-emerald-600 text-white font-bold rounded text-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-3"
+          >
+            {loading === 'beauxvillages' && <Loader2 className="animate-spin" size={20} />}
+            {loading === 'beauxvillages' ? 'Scraping Beaux Villages...' : '🏘️ Scrape Beaux Villages'}
           </button>
 
           <button
@@ -339,6 +390,48 @@ export default function TestScrapersPage() {
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
                 {JSON.stringify(eleonorResult, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+
+        {/* NEW: Beaux Villages Results */}
+        {beauxVillagesResult && (
+          <div className="mb-8 p-6 bg-emerald-900/30 border border-emerald-500 rounded">
+            <h2 className="text-2xl font-bold text-emerald-400 mb-4 flex items-center gap-2">
+              {beauxVillagesResult.totalScraped > 0 ? '✅' : '⚠️'} Beaux Villages Results
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-white mb-4">
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{beauxVillagesResult.totalScraped}</div>
+                <div className="text-sm text-gray-400">Scraped</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{beauxVillagesResult.inserted || 0}</div>
+                <div className="text-sm text-gray-400">Inserted</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{beauxVillagesResult.imageStats?.withImages || 0}</div>
+                <div className="text-sm text-gray-400">With Images</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{beauxVillagesResult.imageStats?.avgImagesPerProperty || 0}</div>
+                <div className="text-sm text-gray-400">Avg Images</div>
+              </div>
+            </div>
+            
+            {beauxVillagesResult.totalScraped === 0 && (
+              <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-500 rounded text-yellow-200">
+                ⚠️ No properties found. The scraper may need debugging.
+              </div>
+            )}
+            
+            <details className="mt-4">
+              <summary className="cursor-pointer text-[#00ffff] hover:underline">
+                View Full Response
+              </summary>
+              <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
+                {JSON.stringify(beauxVillagesResult, null, 2)}
               </pre>
             </details>
           </div>
