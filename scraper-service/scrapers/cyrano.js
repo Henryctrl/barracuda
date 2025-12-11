@@ -1,9 +1,5 @@
 const { savePropertiesToDB } = require('../utils/database');
 
-// ========================================
-// CYRANO IMMOBILIER SCRAPER
-// ========================================
-
 async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
   const { searchUrl = 'https://www.cyranoimmobilier.com/vente/1', maxPages = 3, maxProperties = null } = req.body;
 
@@ -20,7 +16,7 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
 
-    // ===== PART 1: Collect all property URLs from listing pages =====
+    // ===== PART 1: Collect all property URLs =====
     const propertyUrls = new Set();
     let currentPageNum = 1;
 
@@ -32,21 +28,20 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
         await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Extract property links
+        // FIXED: Updated regex to include all property types
         const links = await page.evaluate(() => {
           const results = [];
-          // Find all property card links
-          const propertyLinks = document.querySelectorAll('a[href*="/vente/"][href*="-maison"], a[href*="/vente/"][href*="-villa"], a[href*="/vente/"][href*="-appartement"]');
+          const propertyLinks = document.querySelectorAll('a[href*="/vente/"]');
           
           propertyLinks.forEach(link => {
             const href = link.href;
-            // Only include detail pages (not listing pages)
-            if (href && href.includes('/vente/') && /\/\d+-(?:maison|villa|appartement)$/.test(href)) {
+            // Match detail pages with ID and property type
+            if (href && /\/\d+-(maison|villa|appartement|propriete|immeuble|terrain)$/.test(href)) {
               results.push(href);
             }
           });
           
-          return [...new Set(results)]; // Remove duplicates
+          return [...new Set(results)];
         });
 
         console.log(`   Found ${links.length} property links on page ${currentPageNum}`);
@@ -67,7 +62,7 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
 
     console.log(`\n✅ Found ${propertyUrls.size} total property URLs\n`);
 
-    // ===== PART 2: Scrape detailed data from each property page =====
+    // ===== PART 2: Scrape detailed data =====
     const properties = [];
     const propertyArray = Array.from(propertyUrls);
     const limit = maxProperties || propertyArray.length;
@@ -110,14 +105,11 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
           // Location from breadcrumbs
           const breadcrumbs = document.querySelectorAll('.linkArian li');
           if (breadcrumbs.length >= 3) {
-            // Department is usually 3rd item
             const deptEl = breadcrumbs[2].querySelector('a');
             if (deptEl) {
-              const deptText = deptEl.textContent.trim();
-              prop.location_department = deptText;
+              prop.location_department = deptEl.textContent.trim();
             }
             
-            // City is usually 4th item
             if (breadcrumbs.length >= 4) {
               const cityEl = breadcrumbs[3].querySelector('a');
               if (cityEl) {
@@ -126,30 +118,34 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
             }
           }
 
-          // Property type from URL or title
+          // FIXED: Property type - added more types
           if (url.includes('-maison')) prop.property_type = 'Maison';
           else if (url.includes('-villa')) prop.property_type = 'Villa';
           else if (url.includes('-appartement')) prop.property_type = 'Appartement';
+          else if (url.includes('-propriete')) prop.property_type = 'Propriete';
+          else if (url.includes('-immeuble')) prop.property_type = 'Immeuble';
+          else if (url.includes('-terrain')) prop.property_type = 'Terrain';
 
-          // Extract all data fields
+          // Extract all data fields with case-insensitive matching
           const dataItems = document.querySelectorAll('.content-info li.data');
           dataItems.forEach(item => {
             const text = item.textContent.trim();
+            const textLower = text.toLowerCase();
             
             // Postal code
-            if (text.includes('Code postal')) {
+            if (textLower.includes('code postal')) {
               const match = text.match(/:\s*([0-9]+)/);
               if (match) prop.postal_code = match[1].trim();
             }
             
             // Surface habitable
-            if (text.includes('Surface habitable')) {
+            if (textLower.includes('surface habitable')) {
               const match = text.match(/:\s*([0-9]+)/);
               if (match) prop.building_surface = parseInt(match[1]);
             }
             
             // Terrain
-            if (text.includes('surface terrain')) {
+            if (textLower.includes('surface terrain')) {
               const match = text.match(/:\s*([0-9\s]+)/);
               if (match) {
                 const landText = match[1].replace(/\s/g, '');
@@ -158,52 +154,56 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
             }
             
             // Rooms
-            if (text.includes('Nombre de pièces')) {
+            if (textLower.includes('nombre de pièces') || textLower.includes('nombre de pieces')) {
               const match = text.match(/:\s*([0-9]+)/);
               if (match) prop.rooms = parseInt(match[1]);
             }
             
             // Bedrooms
-            if (text.includes('Nombre de chambre')) {
+            if (textLower.includes('nombre de chambre')) {
               const match = text.match(/:\s*([0-9]+)/);
               if (match) prop.bedrooms = parseInt(match[1]);
             }
             
             // Bathrooms
-            if (text.includes('Nb de salle d\'eau')) {
+            if (textLower.includes('nb de salle d\'eau') || textLower.includes('salle d\'eau')) {
               const match = text.match(/:\s*([0-9]+)/);
               if (match) prop.bathrooms = parseInt(match[1]);
             }
             
             // Year built
-            if (text.includes('Année de construction')) {
+            if (textLower.includes('année de construction')) {
               const match = text.match(/:\s*([0-9]+)/);
               if (match) prop.year_built = parseInt(match[1]);
             }
             
             // Heating
-            if (text.includes('Mode de chauffage')) {
+            if (textLower.includes('mode de chauffage')) {
               const match = text.match(/:\s*(.+)/);
               if (match) prop.heating_system = match[1].trim();
             }
-            
-            // Pool
-            if (text.includes('avec piscine')) {
-              prop.pool = text.includes('OUI');
-            }
           });
 
-          // Images - get ALL images from slider
+          // FIXED: Pool detection - check title and description
+          prop.pool = false;
+          const poolKeywords = ['piscine', 'pool'];
+          const titleLower = (prop.title || '').toLowerCase();
+          const descLower = (prop.description || '').toLowerCase();
+          
+          if (poolKeywords.some(keyword => 
+              titleLower.includes(keyword) || descLower.includes(keyword))) {
+            prop.pool = true;
+          }
+
+          // Images
           prop.images = [];
           const sliderImages = document.querySelectorAll('.module_Slider_Content .container_ImgSlider_Mdl picture img');
-          sliderImages.forEach((img, index) => {
+          sliderImages.forEach((img) => {
             let imgUrl = img.getAttribute('src') || img.getAttribute('data-src');
             if (imgUrl) {
-              // Ensure full URL
               if (imgUrl.startsWith('//')) {
                 imgUrl = 'https:' + imgUrl;
               }
-              // Get highest quality version (1600xauto)
               if (!imgUrl.includes('1600xauto')) {
                 imgUrl = imgUrl.replace(/\d+xauto/, '1600xauto');
               }
@@ -217,7 +217,7 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
         // Validation
         if (property.reference && property.price) {
           properties.push(property);
-          console.log(`   ✅ ${property.reference}: ${property.title?.substring(0, 60)}...`);
+          console.log(`   ✅ ${property.reference}: ${property.title?.substring(0, 60)}... [Pool: ${property.pool}]`);
         } else {
           console.log(`   ⚠️  Skipped: Missing reference or price`);
         }
@@ -226,7 +226,6 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
         console.error(`   ❌ Error scraping property: ${propError.message}`);
       }
 
-      // Delay between requests
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
@@ -241,15 +240,16 @@ async function scrapeCyrano(req, res, { puppeteer, chromium, supabase }) {
     console.log(`\n🎉 Scraping complete!`);
     console.log(`   Total: ${properties.length}`);
     console.log(`   Inserted/Updated: ${inserted}`);
+    console.log(`   With Pool: ${properties.filter(p => p.pool).length}`);
 
     await browser.close();
 
-    // Send response
     res.json({
       success: true,
       source: 'cyrano-immobilier',
       totalScraped: properties.length,
       inserted,
+      poolCount: properties.filter(p => p.pool).length,
       imageStats: {
         withImages: properties.filter(p => p.images && p.images.length > 0).length,
         avgImagesPerProperty: properties.length > 0 
