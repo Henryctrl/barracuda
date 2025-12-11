@@ -1,4 +1,3 @@
-// At the top of the file
 const ALLOWED_SOURCES = [
   'cad-immo',
   'cadimmo', 
@@ -6,12 +5,11 @@ const ALLOWED_SOURCES = [
   'agence-eleonor',
   'beaux-villages',
   'leggett',
-  'cyrano', // NEW
+  'cyrano',
   'charbit',
 ];
 
 async function savePropertiesToDB(properties, source, supabase) {
-  // Validate source
   if (!ALLOWED_SOURCES.includes(source)) {
     const error = `❌ Invalid source: '${source}'. Allowed sources: ${ALLOWED_SOURCES.join(', ')}`;
     console.error(error);
@@ -24,8 +22,6 @@ async function savePropertiesToDB(properties, source, supabase) {
     console.log('⚠️  No properties to save');
     return 0;
   }
-
-  console.log(`💾 Saving ${properties.length} properties to database...`);
 
   const propertiesToInsert = properties.map(property => ({
     source,
@@ -56,7 +52,6 @@ async function savePropertiesToDB(properties, source, supabase) {
     data_quality_score: property.data_quality_score || null,
     validation_errors: property.validation_errors ? JSON.stringify(property.validation_errors) : null,
     
-    // Enhanced fields
     location_department: property.location_department || null,
     drainage_system: property.drainage_system || null,
     heating_system: property.heating_system || null,
@@ -68,7 +63,6 @@ async function savePropertiesToDB(properties, source, supabase) {
     bathrooms: property.bathrooms || null,
     wc_count: property.wc_count || null,
     
-    // ===== PRICE TRACKING FIELDS =====
     previous_price: property.previous_price || null,
     price_changed_at: property.price_changed_at || null,
     price_drop_amount: property.price_drop_amount || null

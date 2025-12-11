@@ -1,8 +1,9 @@
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
-// CHARBIT IMMOBILIER SCRAPER v2.2
-// Uses French Government Geo API for postal codes
+// CHARBIT IMMOBILIER SCRAPER v2.3
+// + Land Surface Extraction
+// + French Government Geo API for postal codes
 // ========================================
 
 async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
@@ -12,7 +13,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
     maxProperties = null 
   } = req.body;
 
-  console.log('🎯 Starting Charbit Immobilier scrape v2.2:', searchUrl);
+  console.log('🎯 Starting Charbit Immobilier scrape v2.3:', searchUrl);
 
   const browser = await puppeteer.launch({
     args: chromium.args,
@@ -30,9 +31,8 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
       if (!cityName) return null;
       
       try {
-        // Clean city name
         const cleanCity = cityName
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
           .trim();
         
         console.log(`      🔍 Looking up postal code for: ${cityName}`);
@@ -269,7 +269,6 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           prop.bedrooms = 0;
           prop.bathrooms = 0;
           
-          // Method 1: Parse Surfaces section
           const surfacesEl = document.querySelector('.module-property-info-template-5');
           if (surfacesEl) {
             const surfaceItems = surfacesEl.querySelectorAll('li');
@@ -293,7 +292,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             });
           }
 
-          // Method 2: Fallback from description
+          // Fallback from description
           if (prop.bedrooms === 0 && prop.description) {
             const descLower = prop.description.toLowerCase();
             
@@ -330,7 +329,6 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             }
           }
 
-          // Bathrooms from description
           if (prop.bathrooms === 0 && prop.description) {
             const descLower = prop.description.toLowerCase();
             const bathroomMatches = descLower.match(/salle\s+de\s+(bains?|douche|d['']eau)/gi);
@@ -341,6 +339,98 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
 
           if (prop.bedrooms === 0) prop.bedrooms = null;
           if (prop.bathrooms === 0) prop.bathrooms = null;
+
+          // ===== LAND SURFACE EXTRACTION =====
+          prop.land_surface = null;
+
+          // Method 1: From Surfaces section (most reliable)
+          if (surfacesEl) {
+            const surfaceItems = surfacesEl.querySelectorAll('li');
+            
+            surfaceItems.forEach(li => {
+              const text = clean(li.textContent);
+              const textLower = text.toLowerCase();
+              
+              if (textLower.includes('terrain') || textLower.includes('parcelle')) {
+                const spans = li.querySelectorAll('span');
+                if (spans.length > 0) {
+                  const surfaceText = clean(spans[0].textContent);
+                  
+                  // Extract m²
+                  const m2Match = surfaceText.match(/(\d+(?:\s*\d+)*)\s*m/i);
+                  if (m2Match) {
+                    prop.land_surface = parseInt(m2Match[1].replace(/\s+/g, ''));
+                  }
+                  
+                  // Extract hectares and convert to m²
+                  const haMatch = surfaceText.match(/([\d.,]+)\s*(?:ha|hectares?)/i);
+                  if (haMatch && !prop.land_surface) {
+                    const ha = parseFloat(haMatch[1].replace(',', '.'));
+                    prop.land_surface = Math.round(ha * 10000);
+                  }
+                }
+              }
+            });
+          }
+
+          // Method 2: From description (fallback)
+          if (!prop.land_surface && prop.description) {
+            const descText = prop.description;
+            
+            // Pattern: "X m²" or "X m2"
+            const m2Patterns = [
+              /(?:terrain|parcelle|parc).*?(\d+(?:\s*\d+)*)\s*m[²2]/i,
+              /(\d+(?:\s*\d+)*)\s*m[²2].*?(?:terrain|parcelle)/i,
+              /sur\s+(?:un\s+)?(?:terrain|parcelle).*?(\d+(?:\s*\d+)*)\s*m/i
+            ];
+            
+            for (const pattern of m2Patterns) {
+              const match = descText.match(pattern);
+              if (match) {
+                const value = match[1].replace(/\s+/g, '');
+                prop.land_surface = parseInt(value);
+                break;
+              }
+            }
+            
+            // Pattern: "X Ha" (hectares)
+            if (!prop.land_surface) {
+              const haPatterns = [
+                /(?:terrain|parcelle).*?([\d.,]+)\s*(?:ha|hectares?)\b/i,
+                /([\d.,]+)\s*(?:ha|hectares?)\b/i
+              ];
+              
+              for (const pattern of haPatterns) {
+                const match = descText.match(pattern);
+                if (match) {
+                  const ha = parseFloat(match[1].replace(',', '.'));
+                  prop.land_surface = Math.round(ha * 10000);
+                  break;
+                }
+              }
+            }
+            
+            // Pattern: Complex notation "1ha 13ca 4a"
+            // 1 hectare = 10,000 m²
+            // 1 are (a) = 100 m²
+            // 1 centiare (ca) = 1 m²
+            if (!prop.land_surface) {
+              const complexMatch = descText.match(/(\d+)\s*ha(?:\s+(\d+)\s*ca)?(?:\s+(\d+)\s*a)?/i);
+              if (complexMatch) {
+                const ha = parseInt(complexMatch[1]) || 0;
+                const ca = parseInt(complexMatch[2]) || 0;
+                const a = parseInt(complexMatch[3]) || 0;
+                prop.land_surface = (ha * 10000) + (a * 100) + ca;
+              }
+            }
+          }
+
+          // Validation: Ignore unrealistic values
+          if (prop.land_surface) {
+            if (prop.land_surface < 50 || prop.land_surface > 1000000) {
+              prop.land_surface = null;
+            }
+          }
 
           // Images
           const allImages = [];
@@ -400,18 +490,16 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         
         property.images = finalImages.slice(0, 15);
 
-        // ===== NEW: API-based postal code lookup =====
+        // API-based postal code lookup
         if (property.city) {
           property.postal_code = await getPostalCodeFromCity(property.city);
-          
-          // Add small delay to respect API rate limits
           await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         // Validation
         if (property.price && (property.reference || property.title)) {
           properties.push(property);
-          console.log(`   ✅ ${property.reference || 'N/A'}: ${property.city} (${property.postal_code || 'N/A'}), Beds=${property.bedrooms || 0}, Baths=${property.bathrooms || 0}`);
+          console.log(`   ✅ ${property.reference || 'N/A'}: ${property.city} (${property.postal_code || 'N/A'}), Land=${property.land_surface || 0}m², Beds=${property.bedrooms || 0}, Baths=${property.bathrooms || 0}`);
         } else {
           console.log(`   ⚠️  Skipped: Missing data`);
         }
@@ -440,6 +528,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         bedrooms: p.bedrooms,
         bathrooms: p.bathrooms,
         building_surface: p.building_surface,
+        land_surface: p.land_surface,
         city: p.city,
         postal_code: p.postal_code,
         heating_system: p.heating_system,
@@ -453,7 +542,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           imageCount: p.images.length,
           features: p.features || [],
           heroImageMatched: !!p.heroImageFromListing,
-          scraper_version: '2.2',
+          scraper_version: '2.3',
           postal_code_api: 'geo.api.gouv.fr'
         }),
         scraped_at: new Date().toISOString(),
@@ -467,12 +556,14 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
     const bedroomStats = properties.filter(p => p.bedrooms && p.bedrooms > 0);
     const bathroomStats = properties.filter(p => p.bathrooms && p.bathrooms > 0);
     const postalCodeStats = properties.filter(p => p.postal_code);
+    const landSurfaceStats = properties.filter(p => p.land_surface && p.land_surface > 0);
 
     console.log(`\n🎉 Scraping complete!`);
     console.log(`   Total: ${properties.length}`);
     console.log(`   Inserted/Updated: ${inserted}`);
     console.log(`   With Bedrooms: ${bedroomStats.length} (avg: ${bedroomStats.length > 0 ? (bedroomStats.reduce((sum, p) => sum + p.bedrooms, 0) / bedroomStats.length).toFixed(1) : 0})`);
     console.log(`   With Bathrooms: ${bathroomStats.length}`);
+    console.log(`   With Land Surface: ${landSurfaceStats.length} (avg: ${landSurfaceStats.length > 0 ? (landSurfaceStats.reduce((sum, p) => sum + p.land_surface, 0) / landSurfaceStats.length).toFixed(0) : 0} m²)`);
     console.log(`   With Postal Code: ${postalCodeStats.length}/${properties.length} (${((postalCodeStats.length / properties.length) * 100).toFixed(0)}%)`);
     console.log(`   With Pool: ${properties.filter(p => p.pool).length}`);
 
@@ -491,6 +582,12 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
       },
       bathroomStats: {
         withBathrooms: bathroomStats.length
+      },
+      landSurfaceStats: {
+        withLandSurface: landSurfaceStats.length,
+        avgLandSurface: landSurfaceStats.length > 0 
+          ? Math.round(landSurfaceStats.reduce((sum, p) => sum + p.land_surface, 0) / landSurfaceStats.length)
+          : 0
       },
       postalCodeCoverage: {
         found: postalCodeStats.length,
