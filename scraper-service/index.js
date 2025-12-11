@@ -9,7 +9,8 @@ const { scrapeCadImmo } = require('./scrapers/cadimmo');
 const { scrapeEleonor, debugEleonorProperty } = require('./scrapers/eleonor');
 const { scrapeBeauxVillages } = require('./scrapers/beauxvillages');
 const { scrapeLeggett } = require('./scrapers/leggett');
-const { scrapeCyrano } = require('./scrapers/cyrano'); // NEW
+const { scrapeCyrano } = require('./scrapers/cyrano');
+const { scrapeCharbit } = require('./scrapers/charbit'); // NEW
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
@@ -34,13 +35,14 @@ console.log('✅ Supabase client created successfully');
 
 app.get('/', (req, res) => {
   res.json({ 
-    status: 'Barracuda Scraper Service v2.8', // Updated version
+    status: 'Barracuda Scraper Service v2.9', // Updated version
     features: [
       'CAD-IMMO scraper', 
-      'Agence Eleonor scraper with listing extraction',
+      'Agence Eleonor scraper',
       'Beaux Villages Immobilier scraper',
       'Leggett Immobilier scraper',
-      'Cyrano Immobilier scraper' // NEW
+      'Cyrano Immobilier scraper',
+      'Charbit Immobilier scraper' // NEW
     ],
     endpoints: [
       '/scrape', 
@@ -48,7 +50,8 @@ app.get('/', (req, res) => {
       '/debug-eleonor-property',
       '/scrape-beauxvillages',
       '/scrape-leggett',
-      '/scrape-cyrano' // NEW
+      '/scrape-cyrano',
+      '/scrape-charbit' // NEW
     ]
   });
 });
@@ -73,9 +76,13 @@ app.post('/scrape-leggett', async (req, res) => {
   await scrapeLeggett(req, res, { puppeteer, chromium, supabase });
 });
 
-// NEW ROUTE
 app.post('/scrape-cyrano', async (req, res) => {
   await scrapeCyrano(req, res, { puppeteer, chromium, supabase });
+});
+
+// NEW ROUTE
+app.post('/scrape-charbit', async (req, res) => {
+  await scrapeCharbit(req, res, { puppeteer, chromium, supabase });
 });
 
 app.get('/test-logs', (req, res) => {
@@ -96,5 +103,5 @@ app.get('/test-logs', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 Scraper service v2.8 running on port ${PORT}`);
+  console.log(`🚀 Scraper service v2.9 running on port ${PORT}`);
 });

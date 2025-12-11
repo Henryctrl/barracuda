@@ -17,6 +17,7 @@ type ScrapeResult = {
     withImages: number;
     avgImagesPerProperty: string | number;
   };
+  poolCount?: number; // NEW for Charbit
   message?: string;
 };
 
@@ -171,7 +172,6 @@ export default function TestScrapersPage() {
     setLoading(null);
   };
 
-  // NEW: Cyrano Scraper
   const scrapeCyrano = async () => {
     setLoading('cyrano');
     setError('');
@@ -196,6 +196,35 @@ export default function TestScrapersPage() {
       }
     } catch (err) {
       setError('Cyrano Error: ' + (err instanceof Error ? err.message : 'Unknown'));
+    }
+    setLoading(null);
+  };
+
+  // NEW: Charbit Scraper
+  const scrapeCharbit = async () => {
+    setLoading('charbit');
+    setError('');
+  
+    try {
+      const response = await fetch('https://barracuda-production.up.railway.app/scrape-charbit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://charbit-immo.fr/fr/ventes',
+          maxPages: 1,
+          maxProperties: 5
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setResults(prev => ({ ...prev, charbit: data }));
+      } else {
+        setError('Charbit: ' + (data.error || 'Failed to scrape'));
+      }
+    } catch (err) {
+      setError('Charbit Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
     setLoading(null);
   };
@@ -303,7 +332,7 @@ export default function TestScrapersPage() {
       const leggettData = await leggettResponse.json();
       setResults(prev => ({ ...prev, leggett: leggettData }));
 
-      // NEW: Cyrano
+      // Cyrano
       const cyranoResponse = await fetch('https://barracuda-production.up.railway.app/scrape-cyrano', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -315,6 +344,18 @@ export default function TestScrapersPage() {
       const cyranoData = await cyranoResponse.json();
       setResults(prev => ({ ...prev, cyrano: cyranoData }));
 
+      // NEW: Charbit
+      const charbitResponse = await fetch('https://barracuda-production.up.railway.app/scrape-charbit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchUrl: 'https://charbit-immo.fr/fr/ventes',
+          maxPages: 2
+        })
+      });
+      const charbitData = await charbitResponse.json();
+      setResults(prev => ({ ...prev, charbit: charbitData }));
+
     } catch (err) {
       setError('Error: ' + (err instanceof Error ? err.message : 'Unknown'));
     }
@@ -325,7 +366,8 @@ export default function TestScrapersPage() {
   const eleonorResult = results.eleonor && isScrapeResult(results.eleonor) ? results.eleonor : null;
   const beauxVillagesResult = results.beauxvillages && isScrapeResult(results.beauxvillages) ? results.beauxvillages : null;
   const leggettResult = results.leggett && isScrapeResult(results.leggett) ? results.leggett : null;
-  const cyranoResult = results.cyrano && isScrapeResult(results.cyrano) ? results.cyrano : null; // NEW
+  const cyranoResult = results.cyrano && isScrapeResult(results.cyrano) ? results.cyrano : null;
+  const charbitResult = results.charbit && isScrapeResult(results.charbit) ? results.charbit : null; // NEW
   const priceUpdateResult = results.priceupdate && isPriceUpdateResult(results.priceupdate) ? results.priceupdate : null;
 
   return (
@@ -375,7 +417,6 @@ export default function TestScrapersPage() {
             {loading === 'leggett' ? 'Scraping Leggett...' : '🏰 Scrape Leggett'}
           </button>
 
-          {/* NEW: Cyrano Button */}
           <button
             onClick={scrapeCyrano}
             disabled={loading !== null}
@@ -383,6 +424,16 @@ export default function TestScrapersPage() {
           >
             {loading === 'cyrano' && <Loader2 className="animate-spin" size={20} />}
             {loading === 'cyrano' ? 'Scraping Cyrano...' : '🏛️ Scrape Cyrano'}
+          </button>
+
+          {/* NEW: Charbit Button */}
+          <button
+            onClick={scrapeCharbit}
+            disabled={loading !== null}
+            className="px-6 py-3 bg-indigo-600 text-white font-bold rounded text-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-3"
+          >
+            {loading === 'charbit' && <Loader2 className="animate-spin" size={20} />}
+            {loading === 'charbit' ? 'Scraping Charbit...' : '🏢 Scrape Charbit'}
           </button>
 
           <button
@@ -564,7 +615,7 @@ export default function TestScrapersPage() {
           </div>
         )}
 
-        {/* NEW: Cyrano Results */}
+        {/* Cyrano Results */}
         {cyranoResult && (
           <div className="mb-8 p-6 bg-teal-900/30 border border-teal-500 rounded">
             <h2 className="text-2xl font-bold text-teal-400 mb-4 flex items-center gap-2">
@@ -595,6 +646,46 @@ export default function TestScrapersPage() {
               </summary>
               <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
                 {JSON.stringify(cyranoResult, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
+
+        {/* NEW: Charbit Results */}
+        {charbitResult && (
+          <div className="mb-8 p-6 bg-indigo-900/30 border border-indigo-500 rounded">
+            <h2 className="text-2xl font-bold text-indigo-400 mb-4 flex items-center gap-2">
+              {charbitResult.totalScraped > 0 ? '✅' : '⚠️'} Charbit Immobilier Results
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-white mb-4">
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{charbitResult.totalScraped}</div>
+                <div className="text-sm text-gray-400">Scraped</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{charbitResult.inserted || 0}</div>
+                <div className="text-sm text-gray-400">Inserted</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{charbitResult.imageStats?.withImages || 0}</div>
+                <div className="text-sm text-gray-400">With Images</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-[#00ff00]">{charbitResult.imageStats?.avgImagesPerProperty || 0}</div>
+                <div className="text-sm text-gray-400">Avg Images</div>
+              </div>
+              <div className="bg-black/30 p-4 rounded">
+                <div className="text-2xl font-bold text-blue-400">{charbitResult.poolCount || 0}</div>
+                <div className="text-sm text-gray-400">🏊 With Pool</div>
+              </div>
+            </div>
+            
+            <details className="mt-4">
+              <summary className="cursor-pointer text-[#00ffff] hover:underline">
+                View Full Response
+              </summary>
+              <pre className="mt-4 p-4 bg-black/50 rounded text-xs overflow-auto max-h-96">
+                {JSON.stringify(charbitResult, null, 2)}
               </pre>
             </details>
           </div>
