@@ -1,7 +1,7 @@
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
-// CHARBIT IMMOBILIER SCRAPER
+// CHARBIT IMMOBILIER SCRAPER v2.0
 // ========================================
 
 async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
@@ -24,8 +24,8 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
 
-    // ===== PART 1: Collect all property URLs from listing pages =====
-    const propertyUrls = new Set();
+    // ===== PART 1: Collect all property URLs + HERO IMAGES from listing pages =====
+    const propertyData = new Map(); // Store { url, heroImage }
     let currentPageNum = 1;
 
     while (currentPageNum <= maxPages) {
@@ -45,32 +45,76 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         });
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        // Extract property links
-        const links = await page.evaluate(() => {
+        // Extract property links AND their hero images
+        const listings = await page.evaluate(() => {
           const results = [];
           
-          // Method 1: Find links with /propriete/ in href
-          const propertyLinks = document.querySelectorAll('a[href*="/propriete/vente"]');
+          // Find all property card containers
+          const cards = document.querySelectorAll('.property, .module-listing-template-3 > div > div');
           
-          propertyLinks.forEach(link => {
-            const href = link.href;
-            // Only include detail pages
-            if (href && href.includes('/propriete/vente+')) {
-              results.push(href);
+          cards.forEach(card => {
+            // Find the link
+            const link = card.querySelector('a[href*="/propriete/vente"]');
+            if (!link || !link.href || !link.href.includes('/propriete/vente+')) {
+              return;
             }
+
+            const url = link.href;
+            
+            // Find the hero image - could be in picture tag or img directly
+            let heroImage = null;
+            
+            // Method 1: Look for main image in the card
+            const img = card.querySelector('img[src*="cloudfront"], img[data-src*="cloudfront"]');
+            if (img) {
+              heroImage = img.getAttribute('src') || img.getAttribute('data-src');
+              if (heroImage && heroImage.startsWith('//')) {
+                heroImage = 'https:' + heroImage;
+              }
+            }
+
+            // Method 2: Look in picture source
+            if (!heroImage) {
+              const picture = card.querySelector('picture source[srcset*="cloudfront"]');
+              if (picture) {
+                const srcset = picture.getAttribute('srcset');
+                if (srcset) {
+                  // Extract first URL from srcset
+                  const match = srcset.match(/(https?:\/\/[^\s,]+)/);
+                  if (match) heroImage = match[1];
+                }
+              }
+            }
+
+            // Method 3: Look in background-image style
+            if (!heroImage) {
+              const bgEl = card.querySelector('[style*="background-image"]');
+              if (bgEl) {
+                const style = bgEl.getAttribute('style');
+                const match = style.match(/url\(['"](https?:\/\/[^'"]+)['"]\)/);
+                if (match) heroImage = match[1];
+              }
+            }
+
+            results.push({ url, heroImage });
           });
           
-          return [...new Set(results)]; // Remove duplicates
+          return results;
         });
 
-        console.log(`   Found ${links.length} property links on page ${currentPageNum}`);
+        console.log(`   Found ${listings.length} property listings on page ${currentPageNum}`);
         
-        if (links.length === 0) {
+        if (listings.length === 0) {
           console.log(`   ✅ No more properties found. Stopping at page ${currentPageNum}`);
           break;
         }
 
-        links.forEach(url => propertyUrls.add(url));
+        listings.forEach(item => {
+          if (item.url && !propertyData.has(item.url)) {
+            propertyData.set(item.url, { heroImage: item.heroImage });
+          }
+        });
+
         currentPageNum++;
 
       } catch (pageError) {
@@ -79,24 +123,24 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
       }
     }
 
-    console.log(`\n✅ Found ${propertyUrls.size} total property URLs\n`);
+    console.log(`\n✅ Found ${propertyData.size} total property URLs with hero images\n`);
 
     // ===== PART 2: Scrape detailed data from each property page =====
     const properties = [];
-    const propertyArray = Array.from(propertyUrls);
+    const propertyArray = Array.from(propertyData.entries());
     const limit = maxProperties || propertyArray.length;
     
     console.log(`🔍 Scraping details for ${Math.min(limit, propertyArray.length)} properties...\n`);
 
     for (let i = 0; i < Math.min(limit, propertyArray.length); i++) {
-      const url = propertyArray[i];
+      const [url, listingInfo] = propertyArray[i];
       console.log(`[${i + 1}/${Math.min(limit, propertyArray.length)}] Scraping: ${url}`);
 
       try {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const property = await page.evaluate((url) => {
+        const property = await page.evaluate((url, heroImageFromListing) => {
           const prop = { url };
           const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
 
@@ -104,7 +148,6 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           const titleEl = document.querySelector('h1');
           if (titleEl) {
             const titleText = clean(titleEl.textContent);
-            // Remove city from title (it's in a span)
             const citySpan = titleEl.querySelector('span');
             if (citySpan) {
               prop.title = titleText.replace(clean(citySpan.textContent), '').trim();
@@ -214,25 +257,67 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             }
           }
 
-          // Detailed surfaces (rooms)
+          // ===== FIX 1: BEDROOMS - Count "chambre" in Surfaces section =====
+          prop.bedrooms = 0;
+          prop.bathrooms = 0;
+          
           const surfacesEl = document.querySelector('.module-property-info-template-5');
           if (surfacesEl) {
             const surfaceItems = surfacesEl.querySelectorAll('li');
-            let bedroomCount = 0;
-            let bathroomCount = 0;
             
             surfaceItems.forEach(li => {
               const text = clean(li.textContent).toLowerCase();
-              if (text.includes('chambre')) bedroomCount++;
-              if (text.includes('salle de bains') || text.includes('salle d\'eau')) bathroomCount++;
+              
+              // Count bedrooms - look for "chambre" but not "salle" to avoid "salle de bain avec chambre"
+              if (text.includes('chambre') && !text.includes('salle')) {
+                prop.bedrooms++;
+              }
+              
+              // Count bathrooms
+              if (text.includes('salle de bains') || text.includes('salle de bain')) {
+                prop.bathrooms++;
+              }
+              
+              // Also count "salle d'eau" as bathrooms
+              if (text.includes("salle d'eau") || text.includes("salle d eau")) {
+                prop.bathrooms++;
+              }
             });
-            
-            if (bedroomCount > 0) prop.bedrooms = bedroomCount;
-            if (bathroomCount > 0) prop.bathrooms = bathroomCount;
           }
 
-          // Images
-          prop.images = [];
+          // Fallback: if no Surfaces section, try to extract from description
+          if (prop.bedrooms === 0 && prop.description) {
+            const descLower = prop.description.toLowerCase();
+            
+            // Look for patterns like "3 chambres", "trois chambres"
+            const chambreMatch = descLower.match(/(\d+)\s*chambres?/);
+            if (chambreMatch) {
+              prop.bedrooms = parseInt(chambreMatch[1]);
+            }
+            
+            // French number words
+            const numberWords = {
+              'une': 1, 'deux': 2, 'trois': 3, 'quatre': 4, 'cinq': 5,
+              'six': 6, 'sept': 7, 'huit': 8, 'neuf': 9, 'dix': 10
+            };
+            
+            if (prop.bedrooms === 0) {
+              for (const [word, num] of Object.entries(numberWords)) {
+                const regex = new RegExp(`\\b${word}\\s+chambres?\\b`, 'i');
+                if (regex.test(descLower)) {
+                  prop.bedrooms = num;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Set to null if still 0 (no bedrooms found)
+          if (prop.bedrooms === 0) prop.bedrooms = null;
+          if (prop.bathrooms === 0) prop.bathrooms = null;
+
+          // ===== FIX 2: IMAGES - Prioritize hero image from listing =====
+          const allImages = [];
           
           // Method 1: Main slider images
           const sliderImages = document.querySelectorAll('.module_Slider_Content img, .slider img');
@@ -240,12 +325,9 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             let imgUrl = img.getAttribute('src') || img.getAttribute('data-src');
             if (imgUrl && imgUrl.includes('d36vnx92dgl2c5.cloudfront.net')) {
               if (imgUrl.startsWith('//')) imgUrl = 'https:' + imgUrl;
-              // Get high-res version
-              if (imgUrl.includes('staticlbi.com') || imgUrl.includes('cloudfront.net')) {
-                imgUrl = imgUrl.replace(/\/\d+x\d+\//, '/original/');
-              }
-              if (!prop.images.includes(imgUrl)) {
-                prop.images.push(imgUrl);
+              imgUrl = imgUrl.replace(/\/\d+x\d+\//, '/original/');
+              if (!allImages.includes(imgUrl)) {
+                allImages.push(imgUrl);
               }
             }
           });
@@ -257,22 +339,52 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             if (imgUrl && imgUrl.includes('d36vnx92dgl2c5.cloudfront.net') && !imgUrl.includes('data-low-src')) {
               if (imgUrl.startsWith('//')) imgUrl = 'https:' + imgUrl;
               imgUrl = imgUrl.replace(/\/\d+x\d+\//, '/original/');
-              if (!prop.images.includes(imgUrl)) {
-                prop.images.push(imgUrl);
+              if (!allImages.includes(imgUrl)) {
+                allImages.push(imgUrl);
               }
             }
           });
 
-          // Remove duplicates and limit
-          prop.images = [...new Set(prop.images)].slice(0, 15);
+          // Store hero image separately
+          prop.heroImageFromListing = heroImageFromListing;
+          prop.allImagesFromDetail = allImages;
 
           return prop;
-        }, url);
+        }, url, listingInfo.heroImage);
+
+        // ===== FIX 2 CONTINUED: Organize images with hero first =====
+        const finalImages = [];
+        
+        // 1. Add hero image from listing page first (if found)
+        if (property.heroImageFromListing) {
+          let heroImg = property.heroImageFromListing.replace(/\/\d+x\d+\//, '/original/');
+          finalImages.push(heroImg);
+        }
+        
+        // 2. Add remaining images (excluding the hero if it appears again)
+        if (property.allImagesFromDetail) {
+          property.allImagesFromDetail.forEach(img => {
+            // Normalize both URLs for comparison
+            const normalizedImg = img.replace(/\/\d+x\d+\//, '/original/');
+            const normalizedHero = property.heroImageFromListing 
+              ? property.heroImageFromListing.replace(/\/\d+x\d+\//, '/original/')
+              : null;
+            
+            // Only add if it's not the hero or if there's no hero
+            if (!normalizedHero || normalizedImg !== normalizedHero) {
+              if (!finalImages.includes(normalizedImg)) {
+                finalImages.push(normalizedImg);
+              }
+            }
+          });
+        }
+        
+        property.images = finalImages.slice(0, 15);
 
         // Validation
         if (property.price && (property.reference || property.title)) {
           properties.push(property);
-          console.log(`   ✅ ${property.reference || 'N/A'}: ${property.title?.substring(0, 50)}... [Pool: ${property.pool}]`);
+          console.log(`   ✅ ${property.reference || 'N/A'}: ${property.title?.substring(0, 50)}... [Beds: ${property.bedrooms || 0}, Pool: ${property.pool}, Imgs: ${property.images.length}]`);
         } else {
           console.log(`   ⚠️  Skipped: Missing reference or price`);
         }
@@ -313,7 +425,8 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           scrapedAt: new Date().toISOString(),
           imageCount: p.images.length,
           features: p.features || [],
-          scraper_version: '1.0'
+          heroImageMatched: !!p.heroImageFromListing,
+          scraper_version: '2.0'
         }),
         scraped_at: new Date().toISOString(),
         last_seen_at: new Date().toISOString()
@@ -322,10 +435,16 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
       inserted = await savePropertiesToDB(propertiesForDB, 'charbit', supabase);
     }
 
+    // Calculate stats
+    const bedroomStats = properties.filter(p => p.bedrooms && p.bedrooms > 0);
+    const heroMatchStats = properties.filter(p => p.heroImageFromListing);
+
     console.log(`\n🎉 Scraping complete!`);
     console.log(`   Total: ${properties.length}`);
     console.log(`   Inserted/Updated: ${inserted}`);
+    console.log(`   With Bedrooms: ${bedroomStats.length} (avg: ${bedroomStats.length > 0 ? (bedroomStats.reduce((sum, p) => sum + p.bedrooms, 0) / bedroomStats.length).toFixed(1) : 0})`);
     console.log(`   With Pool: ${properties.filter(p => p.pool).length}`);
+    console.log(`   Hero Image Matched: ${heroMatchStats.length}/${properties.length}`);
 
     await browser.close();
 
@@ -335,7 +454,14 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
       source: 'charbit-immobilier',
       totalScraped: properties.length,
       inserted,
+      bedroomStats: {
+        withBedrooms: bedroomStats.length,
+        avgBedrooms: bedroomStats.length > 0 
+          ? (bedroomStats.reduce((sum, p) => sum + p.bedrooms, 0) / bedroomStats.length).toFixed(1)
+          : 0
+      },
       poolCount: properties.filter(p => p.pool).length,
+      heroImageMatched: heroMatchStats.length,
       imageStats: {
         withImages: properties.filter(p => p.images && p.images.length > 0).length,
         avgImagesPerProperty: properties.length > 0 
