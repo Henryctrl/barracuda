@@ -466,80 +466,129 @@ const propertyMap = new Map();
 
 // PART 1: Collect all listings (UPDATED WITH DEBUG)
 // Leggett pagination: /page:1, /page:2, /page:3, etc.
+// PART 1: Collect all listings (UPDATED WITH CLOUDFLARE HANDLING)
 while (currentPageNum <= maxPages) {
-  console.log(`📄 Scraping Leggett listing page ${currentPageNum}...`);
-
-  // Build page URL
-  let pageUrl = searchUrl;
-  if (currentPageNum > 1) {
-    pageUrl = pageUrl.replace(/\/page:\d+/, '');
-    pageUrl = `${pageUrl}/page:${currentPageNum}`;
-  }
-
-  try {
-    // ENHANCED: More human-like behavior
-    await page.goto(pageUrl, { 
-      waitUntil: 'networkidle0',  // Changed from networkidle2
-      timeout: 30000 
-    });
-    
-    // Wait for main content to load
-    await page.waitForSelector('.page-wrapper, .container-large, body', { timeout: 10000 });
-    await new Promise(resolve => setTimeout(resolve, 5000)); // Increased wait
-    
-    // Scroll like a human
-    await page.evaluate(() => {
-      window.scrollTo(0, document.body.scrollHeight / 2);
-    });
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    await page.evaluate(() => {
-      window.scrollTo(0, document.body.scrollHeight);
-    });
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    await page.evaluate(() => {
-      window.scrollTo(0, 0);
-    });
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // DEBUG: Check what we actually got
-    const pageContent = await page.evaluate(() => {
-      return {
-        title: document.title,
-        hasPropertyLinks: document.querySelectorAll('a[href*="/acheter-vendre-une-maison/view/"]').length,
-        hasSelectionItems: document.querySelectorAll('.selection-item').length,
-        hasResultItems: document.querySelectorAll('.result-item').length,
-        bodyText: document.body.textContent.substring(0, 500)
-      };
-    });
-    
-    console.log('🔍 Page debug:', JSON.stringify(pageContent, null, 2));
-
-    const cards = await extractLeggettListingCards(page);
-
-    if (cards.length === 0) {
-      console.log(`   ⚠️  No cards found. Possible bot detection or wrong selectors.`);
-      console.log(`   💡 Check page title: ${pageContent.title}`);
+    console.log(`📄 Scraping Leggett listing page ${currentPageNum}...`);
+  
+    // Build page URL
+    let pageUrl = searchUrl;
+    if (currentPageNum > 1) {
+      pageUrl = pageUrl.replace(/\/page:\d+/, '');
+      pageUrl = `${pageUrl}/page:${currentPageNum}`;
+    }
+  
+    try {
+      // Navigate to page (don't wait for full load yet)
+      await page.goto(pageUrl, { 
+        waitUntil: 'domcontentloaded',
+        timeout: 30000 
+      });
+      
+      // ===== CLOUDFLARE CHALLENGE HANDLER =====
+      console.log('   ⏳ Waiting for Cloudflare challenge...');
+      
+      try {
+        // Wait for either challenge to disappear OR real content to appear
+        await Promise.race([
+          // Option A: Title changes from "Just a moment..."
+          page.waitForFunction(() => {
+            return !document.title.includes('Just a moment') && 
+                   !document.body.textContent.includes('Verifying you are human');
+          }, { timeout: 20000 }),
+          
+          // Option B: Real property content appears
+          page.waitForSelector('a[href*="/acheter-vendre-une-maison/view/"]', { timeout: 20000 })
+        ]);
+        
+        console.log('   ✅ Cloudflare challenge passed!');
+        
+      } catch (challengeError) {
+        console.log('   ❌ Cloudflare challenge failed or timed out');
+        
+        // Check if we're still on challenge page
+        const currentTitle = await page.title();
+        if (currentTitle.includes('Just a moment')) {
+          console.log('   ⚠️  Still blocked by Cloudflare - stopping scrape');
+          break;
+        }
+      }
+      
+      // Wait for network to settle after challenge
+      await page.waitForNetworkIdle({ timeout: 10000 }).catch(() => {
+        console.log('   ⚠️  Network idle timeout - continuing anyway');
+      });
+      
+      // Extra wait for JavaScript to fully render
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // ===== HUMAN-LIKE SCROLLING =====
+      console.log('   🖱️  Scrolling page...');
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight / 2);
+      });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+  
+      // ===== DEBUG: Check what we got =====
+      const pageContent = await page.evaluate(() => {
+        return {
+          title: document.title,
+          hasPropertyLinks: document.querySelectorAll('a[href*="/acheter-vendre-une-maison/view/"]').length,
+          hasSelectionItems: document.querySelectorAll('.selection-item').length,
+          hasResultItems: document.querySelectorAll('.result-item').length,
+          bodyText: document.body.textContent.substring(0, 200)
+        };
+      });
+      
+      console.log('🔍 Page debug:', JSON.stringify(pageContent, null, 2));
+  
+      // ===== EXTRACT CARDS =====
+      const cards = await extractLeggettListingCards(page);
+  
+      if (cards.length === 0) {
+        console.log(`   ⚠️  No cards found. Possible bot detection or wrong selectors.`);
+        console.log(`   💡 Page title: "${pageContent.title}"`);
+        
+        // If still blocked, stop trying
+        if (pageContent.title.includes('Just a moment') || 
+            pageContent.title.includes('Access denied')) {
+          console.log('   🛑 Cloudflare blocking confirmed - stopping scrape');
+          break;
+        }
+        
+        break;
+      }
+  
+      cards.forEach(card => {
+        if (card.url && card.reference && !propertyMap.has(card.reference)) {
+          propertyMap.set(card.reference, card);
+        }
+      });
+  
+      console.log(`   ✅ Found ${cards.length} Leggett properties on page ${currentPageNum}`);
+      currentPageNum++;
+      
+      // Delay between pages to look more human
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+    } catch (pageError) {
+      console.error(`❌ Error on listing page ${currentPageNum}:`, pageError.message);
       break;
     }
-
-    cards.forEach(card => {
-      if (card.url && card.reference && !propertyMap.has(card.reference)) {
-        propertyMap.set(card.reference, card);
-      }
-    });
-
-    console.log(`   Found ${cards.length} Leggett properties on page ${currentPageNum}`);
-    currentPageNum++;
-  } catch (pageError) {
-    console.error(`Error on listing page ${currentPageNum}:`, pageError.message);
-    break;
   }
-}
-
-
-    console.log(`\n✅ Found ${propertyMap.size} unique Leggett properties from listing pages\n`);
+  
+  console.log(`\n✅ Found ${propertyMap.size} unique Leggett properties from listing pages\n`);
+  
 
     // PART 2: Smart filtering - separate existing vs new
     const existingPropertiesMap = await getExistingProperties(supabase, 'leggett');
