@@ -1,4 +1,23 @@
+// At the top of the file
+const ALLOWED_SOURCES = [
+  'cad-immo',
+  'cadimmo', 
+  'eleonor',
+  'agence-eleonor',
+  'beaux-villages',
+  'leggett'
+];
+
 async function savePropertiesToDB(properties, source, supabase) {
+  // Validate source
+  if (!ALLOWED_SOURCES.includes(source)) {
+    const error = `❌ Invalid source: '${source}'. Allowed sources: ${ALLOWED_SOURCES.join(', ')}`;
+    console.error(error);
+    throw new Error(error);
+  }
+
+  console.log(`💾 Saving ${properties.length} properties from ${source}...`);
+  
     if (!properties || properties.length === 0) {
       console.log('⚠️  No properties to save');
       return 0;
