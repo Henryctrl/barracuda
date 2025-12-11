@@ -6,7 +6,8 @@ const ALLOWED_SOURCES = [
   'agence-eleonor',
   'beaux-villages',
   'leggett',
-  'cyrano' // NEW
+  'cyrano', // NEW
+  'charbit',
 ];
 
 async function savePropertiesToDB(properties, source, supabase) {
