@@ -1,7 +1,8 @@
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
-// CHARBIT IMMOBILIER SCRAPER v2.0
+// CHARBIT IMMOBILIER SCRAPER v2.2
+// Uses French Government Geo API for postal codes
 // ========================================
 
 async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
@@ -11,7 +12,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
     maxProperties = null 
   } = req.body;
 
-  console.log('🎯 Starting Charbit Immobilier scrape:', searchUrl);
+  console.log('🎯 Starting Charbit Immobilier scrape v2.2:', searchUrl);
 
   const browser = await puppeteer.launch({
     args: chromium.args,
@@ -24,8 +25,45 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
 
-    // ===== PART 1: Collect all property URLs + HERO IMAGES from listing pages =====
-    const propertyData = new Map(); // Store { url, heroImage }
+    // ===== HELPER: Fetch postal code from Geo API =====
+    async function getPostalCodeFromCity(cityName) {
+      if (!cityName) return null;
+      
+      try {
+        // Clean city name
+        const cleanCity = cityName
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+          .trim();
+        
+        console.log(`      🔍 Looking up postal code for: ${cityName}`);
+        
+        const response = await fetch(
+          `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(cleanCity)}&fields=codesPostaux&limit=1`
+        );
+        
+        if (!response.ok) {
+          console.log(`      ⚠️  Geo API failed: ${response.status}`);
+          return null;
+        }
+        
+        const data = await response.json();
+        
+        if (data && data.length > 0 && data[0].codesPostaux && data[0].codesPostaux.length > 0) {
+          const postalCode = data[0].codesPostaux[0];
+          console.log(`      ✅ Found: ${postalCode}`);
+          return postalCode;
+        } else {
+          console.log(`      ⚠️  No postal code found for ${cityName}`);
+          return null;
+        }
+      } catch (error) {
+        console.error(`      ❌ Error fetching postal code:`, error.message);
+        return null;
+      }
+    }
+
+    // ===== PART 1: Collect property URLs + hero images =====
+    const propertyData = new Map();
     let currentPageNum = 1;
 
     while (currentPageNum <= maxPages) {
@@ -39,32 +77,20 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Scroll to trigger lazy loading
-        await page.evaluate(() => {
-          window.scrollTo(0, document.body.scrollHeight);
-        });
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        // Extract property links AND their hero images
         const listings = await page.evaluate(() => {
           const results = [];
-          
-          // Find all property card containers
           const cards = document.querySelectorAll('.property, .module-listing-template-3 > div > div');
           
           cards.forEach(card => {
-            // Find the link
             const link = card.querySelector('a[href*="/propriete/vente"]');
-            if (!link || !link.href || !link.href.includes('/propriete/vente+')) {
-              return;
-            }
+            if (!link || !link.href || !link.href.includes('/propriete/vente+')) return;
 
             const url = link.href;
-            
-            // Find the hero image - could be in picture tag or img directly
             let heroImage = null;
             
-            // Method 1: Look for main image in the card
             const img = card.querySelector('img[src*="cloudfront"], img[data-src*="cloudfront"]');
             if (img) {
               heroImage = img.getAttribute('src') || img.getAttribute('data-src');
@@ -73,26 +99,14 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
               }
             }
 
-            // Method 2: Look in picture source
             if (!heroImage) {
               const picture = card.querySelector('picture source[srcset*="cloudfront"]');
               if (picture) {
                 const srcset = picture.getAttribute('srcset');
                 if (srcset) {
-                  // Extract first URL from srcset
                   const match = srcset.match(/(https?:\/\/[^\s,]+)/);
                   if (match) heroImage = match[1];
                 }
-              }
-            }
-
-            // Method 3: Look in background-image style
-            if (!heroImage) {
-              const bgEl = card.querySelector('[style*="background-image"]');
-              if (bgEl) {
-                const style = bgEl.getAttribute('style');
-                const match = style.match(/url\(['"](https?:\/\/[^'"]+)['"]\)/);
-                if (match) heroImage = match[1];
               }
             }
 
@@ -102,10 +116,10 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           return results;
         });
 
-        console.log(`   Found ${listings.length} property listings on page ${currentPageNum}`);
+        console.log(`   Found ${listings.length} properties on page ${currentPageNum}`);
         
         if (listings.length === 0) {
-          console.log(`   ✅ No more properties found. Stopping at page ${currentPageNum}`);
+          console.log(`   ✅ No more properties. Stopping.`);
           break;
         }
 
@@ -118,14 +132,14 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         currentPageNum++;
 
       } catch (pageError) {
-        console.error(`❌ Error scraping listing page ${currentPageNum}:`, pageError.message);
+        console.error(`❌ Error on listing page ${currentPageNum}:`, pageError.message);
         break;
       }
     }
 
-    console.log(`\n✅ Found ${propertyData.size} total property URLs with hero images\n`);
+    console.log(`\n✅ Found ${propertyData.size} properties with hero images\n`);
 
-    // ===== PART 2: Scrape detailed data from each property page =====
+    // ===== PART 2: Scrape detailed data =====
     const properties = [];
     const propertyArray = Array.from(propertyData.entries());
     const limit = maxProperties || propertyArray.length;
@@ -134,7 +148,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
 
     for (let i = 0; i < Math.min(limit, propertyArray.length); i++) {
       const [url, listingInfo] = propertyArray[i];
-      console.log(`[${i + 1}/${Math.min(limit, propertyArray.length)}] Scraping: ${url}`);
+      console.log(`[${i + 1}/${Math.min(limit, propertyArray.length)}] ${url}`);
 
       try {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
@@ -144,7 +158,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           const prop = { url };
           const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
 
-          // Title
+          // Title & City
           const titleEl = document.querySelector('h1');
           if (titleEl) {
             const titleText = clean(titleEl.textContent);
@@ -164,7 +178,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             prop.price = priceText ? parseInt(priceText) : null;
           }
 
-          // Reference - from details summary
+          // Details from summary
           const detailsItems = document.querySelectorAll('.summary.details li');
           detailsItems.forEach(item => {
             const text = clean(item.textContent);
@@ -183,11 +197,6 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             if (textLower.includes('surface') && !textLower.includes('totale')) {
               const match = text.match(/(\d+)\s*m/i);
               if (match) prop.building_surface = parseInt(match[1]);
-            }
-            
-            if (textLower.includes('surface totale')) {
-              const match = text.match(/(\d+(?:\.\d+)?)\s*m/i);
-              if (match) prop.total_surface = parseFloat(match[1]);
             }
             
             if (textLower.includes('type de chauffage')) {
@@ -210,7 +219,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           const descEl = document.querySelector('#description, .comment');
           if (descEl) prop.description = clean(descEl.textContent).substring(0, 1500);
 
-          // Property type from URL or title
+          // Property type
           const urlLower = url.toLowerCase();
           if (urlLower.includes('+maison+') || prop.title?.toLowerCase().includes('maison')) {
             prop.property_type = 'Maison';
@@ -232,7 +241,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             }
           }
 
-          // Prestations (Features) - includes pool detection
+          // Prestations - pool detection
           prop.pool = false;
           const prestationsEl = document.querySelector('.module-property-info-template-6');
           if (prestationsEl) {
@@ -248,7 +257,6 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             prop.features = prestations;
           }
 
-          // Also check title and description for pool
           if (!prop.pool) {
             const titleLower = (prop.title || '').toLowerCase();
             const descLower = (prop.description || '').toLowerCase();
@@ -257,10 +265,11 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             }
           }
 
-          // ===== FIX 1: BEDROOMS - Count "chambre" in Surfaces section =====
+          // ===== BEDROOMS & BATHROOMS =====
           prop.bedrooms = 0;
           prop.bathrooms = 0;
           
+          // Method 1: Parse Surfaces section
           const surfacesEl = document.querySelector('.module-property-info-template-5');
           if (surfacesEl) {
             const surfaceItems = surfacesEl.querySelectorAll('li');
@@ -268,59 +277,75 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             surfaceItems.forEach(li => {
               const text = clean(li.textContent).toLowerCase();
               
-              // Count bedrooms - look for "chambre" but not "salle" to avoid "salle de bain avec chambre"
-              if (text.includes('chambre') && !text.includes('salle')) {
-                prop.bedrooms++;
+              if (text.includes('chambre')) {
+                if (!text.includes('salle') && !text.includes('suite')) {
+                  prop.bedrooms++;
+                }
               }
               
-              // Count bathrooms
-              if (text.includes('salle de bains') || text.includes('salle de bain')) {
-                prop.bathrooms++;
-              }
-              
-              // Also count "salle d'eau" as bathrooms
-              if (text.includes("salle d'eau") || text.includes("salle d eau")) {
+              if (text.includes('salle de bains') || 
+                  text.includes('salle de bain') ||
+                  text.includes('salle d\'eau') || 
+                  text.includes('salle d eau') ||
+                  text.includes('salle de douche')) {
                 prop.bathrooms++;
               }
             });
           }
 
-          // Fallback: if no Surfaces section, try to extract from description
+          // Method 2: Fallback from description
           if (prop.bedrooms === 0 && prop.description) {
             const descLower = prop.description.toLowerCase();
             
-            // Look for patterns like "3 chambres", "trois chambres"
-            const chambreMatch = descLower.match(/(\d+)\s*chambres?/);
-            if (chambreMatch) {
-              prop.bedrooms = parseInt(chambreMatch[1]);
+            const chambreMatches = descLower.match(/(\d+)\s*chambres?(?!\s+d'enfant)/gi);
+            if (chambreMatches) {
+              chambreMatches.forEach(match => {
+                const num = parseInt(match.match(/\d+/)[0]);
+                prop.bedrooms += num;
+              });
             }
             
-            // French number words
             const numberWords = {
               'une': 1, 'deux': 2, 'trois': 3, 'quatre': 4, 'cinq': 5,
               'six': 6, 'sept': 7, 'huit': 8, 'neuf': 9, 'dix': 10
             };
             
-            if (prop.bedrooms === 0) {
-              for (const [word, num] of Object.entries(numberWords)) {
-                const regex = new RegExp(`\\b${word}\\s+chambres?\\b`, 'i');
-                if (regex.test(descLower)) {
-                  prop.bedrooms = num;
-                  break;
-                }
+            for (const [word, num] of Object.entries(numberWords)) {
+              const regex = new RegExp(`\\b${word}\\s+chambres?\\b`, 'gi');
+              const matches = descLower.match(regex);
+              if (matches) {
+                prop.bedrooms += (num * matches.length);
               }
+            }
+            
+            if (prop.bedrooms === 0) {
+              const individualChambreMatches = descLower.match(/chambre\s+de\s+[\d.]+\s*m/gi);
+              if (individualChambreMatches) {
+                prop.bedrooms = individualChambreMatches.length;
+              }
+            }
+
+            if (descLower.includes('suite parentale')) {
+              prop.bedrooms += 1;
             }
           }
 
-          // Set to null if still 0 (no bedrooms found)
+          // Bathrooms from description
+          if (prop.bathrooms === 0 && prop.description) {
+            const descLower = prop.description.toLowerCase();
+            const bathroomMatches = descLower.match(/salle\s+de\s+(bains?|douche|d['']eau)/gi);
+            if (bathroomMatches) {
+              prop.bathrooms = bathroomMatches.length;
+            }
+          }
+
           if (prop.bedrooms === 0) prop.bedrooms = null;
           if (prop.bathrooms === 0) prop.bathrooms = null;
 
-          // ===== FIX 2: IMAGES - Prioritize hero image from listing =====
+          // Images
           const allImages = [];
           
-          // Method 1: Main slider images
-          const sliderImages = document.querySelectorAll('.module_Slider_Content img, .slider img');
+          const sliderImages = document.querySelectorAll('.module-slider img, .slider img');
           sliderImages.forEach(img => {
             let imgUrl = img.getAttribute('src') || img.getAttribute('data-src');
             if (imgUrl && imgUrl.includes('d36vnx92dgl2c5.cloudfront.net')) {
@@ -332,7 +357,6 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             }
           });
 
-          // Method 2: Gallery/thumbnail images
           const thumbnailImages = document.querySelectorAll('.thumbnail img, .picture img');
           thumbnailImages.forEach(img => {
             let imgUrl = img.getAttribute('src') || img.getAttribute('data-src');
@@ -345,32 +369,27 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
             }
           });
 
-          // Store hero image separately
           prop.heroImageFromListing = heroImageFromListing;
           prop.allImagesFromDetail = allImages;
 
           return prop;
         }, url, listingInfo.heroImage);
 
-        // ===== FIX 2 CONTINUED: Organize images with hero first =====
+        // Organize images with hero first
         const finalImages = [];
         
-        // 1. Add hero image from listing page first (if found)
         if (property.heroImageFromListing) {
           let heroImg = property.heroImageFromListing.replace(/\/\d+x\d+\//, '/original/');
           finalImages.push(heroImg);
         }
         
-        // 2. Add remaining images (excluding the hero if it appears again)
         if (property.allImagesFromDetail) {
           property.allImagesFromDetail.forEach(img => {
-            // Normalize both URLs for comparison
             const normalizedImg = img.replace(/\/\d+x\d+\//, '/original/');
             const normalizedHero = property.heroImageFromListing 
               ? property.heroImageFromListing.replace(/\/\d+x\d+\//, '/original/')
               : null;
             
-            // Only add if it's not the hero or if there's no hero
             if (!normalizedHero || normalizedImg !== normalizedHero) {
               if (!finalImages.includes(normalizedImg)) {
                 finalImages.push(normalizedImg);
@@ -381,19 +400,26 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         
         property.images = finalImages.slice(0, 15);
 
+        // ===== NEW: API-based postal code lookup =====
+        if (property.city) {
+          property.postal_code = await getPostalCodeFromCity(property.city);
+          
+          // Add small delay to respect API rate limits
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
         // Validation
         if (property.price && (property.reference || property.title)) {
           properties.push(property);
-          console.log(`   ✅ ${property.reference || 'N/A'}: ${property.title?.substring(0, 50)}... [Beds: ${property.bedrooms || 0}, Pool: ${property.pool}, Imgs: ${property.images.length}]`);
+          console.log(`   ✅ ${property.reference || 'N/A'}: ${property.city} (${property.postal_code || 'N/A'}), Beds=${property.bedrooms || 0}, Baths=${property.bathrooms || 0}`);
         } else {
-          console.log(`   ⚠️  Skipped: Missing reference or price`);
+          console.log(`   ⚠️  Skipped: Missing data`);
         }
 
       } catch (propError) {
-        console.error(`   ❌ Error scraping property: ${propError.message}`);
+        console.error(`   ❌ Error: ${propError.message}`);
       }
 
-      // Delay between requests
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
@@ -415,6 +441,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         bathrooms: p.bathrooms,
         building_surface: p.building_surface,
         city: p.city,
+        postal_code: p.postal_code,
         heating_system: p.heating_system,
         drainage_system: p.drainage_system,
         pool: p.pool,
@@ -426,7 +453,8 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           imageCount: p.images.length,
           features: p.features || [],
           heroImageMatched: !!p.heroImageFromListing,
-          scraper_version: '2.0'
+          scraper_version: '2.2',
+          postal_code_api: 'geo.api.gouv.fr'
         }),
         scraped_at: new Date().toISOString(),
         last_seen_at: new Date().toISOString()
@@ -437,18 +465,19 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
 
     // Calculate stats
     const bedroomStats = properties.filter(p => p.bedrooms && p.bedrooms > 0);
-    const heroMatchStats = properties.filter(p => p.heroImageFromListing);
+    const bathroomStats = properties.filter(p => p.bathrooms && p.bathrooms > 0);
+    const postalCodeStats = properties.filter(p => p.postal_code);
 
     console.log(`\n🎉 Scraping complete!`);
     console.log(`   Total: ${properties.length}`);
     console.log(`   Inserted/Updated: ${inserted}`);
     console.log(`   With Bedrooms: ${bedroomStats.length} (avg: ${bedroomStats.length > 0 ? (bedroomStats.reduce((sum, p) => sum + p.bedrooms, 0) / bedroomStats.length).toFixed(1) : 0})`);
+    console.log(`   With Bathrooms: ${bathroomStats.length}`);
+    console.log(`   With Postal Code: ${postalCodeStats.length}/${properties.length} (${((postalCodeStats.length / properties.length) * 100).toFixed(0)}%)`);
     console.log(`   With Pool: ${properties.filter(p => p.pool).length}`);
-    console.log(`   Hero Image Matched: ${heroMatchStats.length}/${properties.length}`);
 
     await browser.close();
 
-    // Send response
     res.json({
       success: true,
       source: 'charbit-immobilier',
@@ -460,8 +489,16 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           ? (bedroomStats.reduce((sum, p) => sum + p.bedrooms, 0) / bedroomStats.length).toFixed(1)
           : 0
       },
+      bathroomStats: {
+        withBathrooms: bathroomStats.length
+      },
+      postalCodeCoverage: {
+        found: postalCodeStats.length,
+        total: properties.length,
+        percentage: `${((postalCodeStats.length / properties.length) * 100).toFixed(0)}%`,
+        source: 'geo.api.gouv.fr'
+      },
       poolCount: properties.filter(p => p.pool).length,
-      heroImageMatched: heroMatchStats.length,
       imageStats: {
         withImages: properties.filter(p => p.images && p.images.length > 0).length,
         avgImagesPerProperty: properties.length > 0 
