@@ -129,271 +129,302 @@ async function extractBeauxVillagesListingCards(page) {
 // ========================================
 
 async function extractBeauxVillagesPropertyData(page, url) {
-  try {
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    const propertyData = await page.evaluate(() => {
-      const data = {};
-      const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
-
-      // Helper to get value from label-result pairs
-      const getValue = (labelText) => {
-        const labels = Array.from(document.querySelectorAll('.label-r, .label-r-com'));
-        for (const label of labels) {
-          if (clean(label.textContent).toLowerCase().includes(labelText.toLowerCase())) {
-            let result = label.nextElementSibling;
-            if (result && (result.classList.contains('result-r') || result.classList.contains('result-r-com'))) {
-              return clean(result.textContent);
+    try {
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+  
+      const propertyData = await page.evaluate(() => {
+        const data = {};
+        const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
+  
+        // Helper to get value from label-result pairs
+        const getValue = (labelText) => {
+          const labels = Array.from(document.querySelectorAll('.label-r, .label-r-com'));
+          for (const label of labels) {
+            if (clean(label.textContent).toLowerCase().includes(labelText.toLowerCase())) {
+              let result = label.nextElementSibling;
+              if (result && (result.classList.contains('result-r') || result.classList.contains('result-r-com'))) {
+                return clean(result.textContent);
+              }
+            }
+          }
+          return null;
+        };
+  
+        // ===== FIX 1: REFERENCE (include BVI prefix) =====
+        data.reference = null;
+        
+        // Try to get both spans (BVI + number)
+        const refi1Span = document.querySelector('span.refi1');
+        const refi2Span = document.querySelector('span.refi2');
+        
+        if (refi1Span && refi2Span) {
+          data.reference = clean(refi1Span.textContent) + clean(refi2Span.textContent);
+        } else if (refi2Span) {
+          // If only refi2, add BVI prefix
+          data.reference = 'BVI' + clean(refi2Span.textContent);
+        }
+  
+        // Fallback: extract full reference from URL
+        if (!data.reference) {
+          const urlMatch = window.location.pathname.match(/property\/\d+-([A-Z]+\d+)/i);
+          if (urlMatch) {
+            data.reference = urlMatch[1];
+          }
+        }
+  
+        // ===== TITLE =====
+        const h1 = document.querySelector('h1');
+        data.title = h1 ? clean(h1.textContent) : '';
+  
+        // ===== PRICE =====
+        const priceDiv = document.querySelector('.ip-detail-price, div.ip-detail-price');
+        if (priceDiv) {
+          const priceText = clean(priceDiv.textContent);
+          const priceMatch = priceText.match(/€\s*([\d,\s]+)/);
+          if (priceMatch) {
+            data.price = parseInt(priceMatch[1].replace(/[^\d]/g, ''), 10);
+          }
+        }
+  
+        // ===== PROPERTY TYPE =====
+        const typeValue = getValue('Type de bien');
+        if (typeValue) {
+          const typeLower = typeValue.toLowerCase();
+          if (typeLower.includes('maison') || typeLower.includes('villa')) {
+            data.property_type = 'House/Villa';
+          } else if (typeLower.includes('appartement')) {
+            data.property_type = 'Apartment';
+          } else if (typeLower.includes('terrain')) {
+            data.property_type = 'Land';
+          } else if (typeLower.includes('immeuble')) {
+            data.property_type = 'Building';
+          } else {
+            data.property_type = typeValue;
+          }
+        } else {
+          data.property_type = null;
+        }
+  
+        // ===== BASIC DETAILS =====
+        const chambresValue = getValue('Chambres');
+        data.bedrooms = chambresValue ? parseInt(chambresValue, 10) : null;
+  
+        const bathroomsValue = getValue('Salle des bains');
+        data.bathrooms = bathroomsValue ? parseInt(bathroomsValue, 10) : null;
+  
+        const roomsValue = getValue('N° pieces');
+        data.rooms = roomsValue ? parseInt(roomsValue, 10) : null;
+  
+        // ===== SURFACES =====
+        const habitableValue = getValue('Surface habitable');
+        if (habitableValue) {
+          // Extract all digits, removing commas and spaces
+          const match = habitableValue.match(/([\d,\s]+)/);
+          data.building_surface = match ? parseInt(match[1].replace(/[^\d]/g, ''), 10) : null;
+        } else {
+          data.building_surface = null;
+        }
+  
+        // ===== FIX 2: LAND SURFACE (extract full number with commas) =====
+        const terrainValue = getValue('Surface terrain');
+        if (terrainValue) {
+          // Extract all digits, handle commas: "2,390 m²" -> 2390
+          const match = terrainValue.match(/([\d,\s]+)/);
+          data.land_surface = match ? parseInt(match[1].replace(/[^\d]/g, ''), 10) : null;
+        } else {
+          data.land_surface = null;
+        }
+  
+        // ===== LOCATION =====
+        const secteurValue = getValue('Secteur');
+        data.city = secteurValue || null;
+  
+        const deptValue = getValue('Département');
+        data.location_department = deptValue || null;
+  
+        // ===== FIX 3: POSTAL CODE (extract from Google Maps iframe) =====
+        data.postal_code = null;
+        
+        // Try to get from Google Maps iframe
+        const mapIframe = document.querySelector('iframe[src*="maps.google.com"]');
+        if (mapIframe) {
+          const mapSrc = mapIframe.getAttribute('src');
+          // Extract postal code from URL like: "?q=24320+Bertric-Burée+france"
+          const postalMatch = mapSrc.match(/[?&]q=(\d{5})[+\s]/);
+          if (postalMatch) {
+            data.postal_code = postalMatch[1];
+          }
+        }
+        
+        // Fallback: look in location info section
+        if (!data.postal_code) {
+          const locationSection = document.querySelector('#location, .location-info');
+          if (locationSection) {
+            const locationText = locationSection.textContent;
+            const postalMatch = locationText.match(/\b(\d{5})\b/);
+            if (postalMatch) {
+              data.postal_code = postalMatch[1];
             }
           }
         }
-        return null;
-      };
-
-      // ===== REFERENCE =====
-      const refi2Span = document.querySelector('span.refi2');
-      if (refi2Span) {
-        data.reference = clean(refi2Span.textContent);
-      }
-
-      // Fallback: extract from URL
-      if (!data.reference) {
-        const urlMatch = window.location.pathname.match(/property\/\d+-([A-Z]+\d+)/i);
-        if (urlMatch) {
-          data.reference = urlMatch[1];
-        }
-      }
-
-      // ===== TITLE =====
-      const h1 = document.querySelector('h1');
-      data.title = h1 ? clean(h1.textContent) : '';
-
-      // ===== PRICE =====
-      const priceDiv = document.querySelector('.ip-detail-price, div.ip-detail-price');
-      if (priceDiv) {
-        const priceText = clean(priceDiv.textContent);
-        const priceMatch = priceText.match(/€\s*([\d,\s]+)/);
-        if (priceMatch) {
-          data.price = parseInt(priceMatch[1].replace(/[^\d]/g, ''), 10);
-        }
-      }
-
-      // ===== PROPERTY TYPE =====
-      const typeValue = getValue('Type de bien');
-      if (typeValue) {
-        const typeLower = typeValue.toLowerCase();
-        if (typeLower.includes('maison') || typeLower.includes('villa')) {
-          data.property_type = 'House/Villa';
-        } else if (typeLower.includes('appartement')) {
-          data.property_type = 'Apartment';
-        } else if (typeLower.includes('terrain')) {
-          data.property_type = 'Land';
-        } else if (typeLower.includes('immeuble')) {
-          data.property_type = 'Building';
+  
+        // ===== POOL =====
+        const poolValue = getValue('Piscine');
+        if (poolValue) {
+          const poolLower = poolValue.toLowerCase();
+          data.pool = poolLower.includes('oui') || poolLower.includes('yes');
         } else {
-          data.property_type = typeValue;
+          data.pool = false;
         }
-      } else {
-        data.property_type = null;
-      }
-
-      // ===== BASIC DETAILS =====
-      const chambresValue = getValue('Chambres');
-      data.bedrooms = chambresValue ? parseInt(chambresValue, 10) : null;
-
-      const bathroomsValue = getValue('Salle des bains');
-      data.bathrooms = bathroomsValue ? parseInt(bathroomsValue, 10) : null;
-
-      const roomsValue = getValue('N° pieces');
-      data.rooms = roomsValue ? parseInt(roomsValue, 10) : null;
-
-      // ===== SURFACES =====
-      const habitableValue = getValue('Surface habitable');
-      if (habitableValue) {
-        const match = habitableValue.match(/(\d+)/);
-        data.building_surface = match ? parseInt(match[1], 10) : null;
-      } else {
-        data.building_surface = null;
-      }
-
-      const terrainValue = getValue('Surface terrain');
-      if (terrainValue) {
-        const match = terrainValue.match(/(\d+)/);
-        data.land_surface = match ? parseInt(match[1], 10) : null;
-      } else {
-        data.land_surface = null;
-      }
-
-      // ===== LOCATION =====
-      const secteurValue = getValue('Secteur');
-      data.city = secteurValue || null;
-
-      const deptValue = getValue('Département');
-      data.location_department = deptValue || null;
-
-      // Try to extract postal code from description or other text
-      data.postal_code = null;
-      const pageText = document.body.textContent;
-      const postalMatch = pageText.match(/\b(\d{5})\b/);
-      if (postalMatch) {
-        data.postal_code = postalMatch[1];
-      }
-
-      // ===== POOL =====
-      const poolValue = getValue('Piscine');
-      if (poolValue) {
-        const poolLower = poolValue.toLowerCase();
-        data.pool = poolLower.includes('oui') || poolLower.includes('yes');
-      } else {
-        data.pool = false;
-      }
-
-      // Check title and description for pool mentions
-      if (!data.pool) {
-        const fullText = document.body.textContent.toLowerCase();
-        if (fullText.includes('piscine') && 
-            (fullText.includes('avec piscine') || fullText.includes('et piscine'))) {
-          data.pool = true;
-        }
-      }
-
-      // ===== PROPERTY CONDITION =====
-      const etatValue = getValue('État');
-      if (etatValue) {
-        const etatLower = etatValue.toLowerCase();
-        if (etatLower.includes('excellent')) {
-          data.property_condition = 'Excellent';
-        } else if (etatLower.includes('bon')) {
-          data.property_condition = 'Good';
-        } else if (etatLower.includes('mise à jour') || etatLower.includes('travaux')) {
-          data.property_condition = 'To Renovate';
-        } else if (etatLower.includes('neuf') || etatLower.includes('récent')) {
-          data.property_condition = 'New/Recent';
-        } else {
-          data.property_condition = etatValue;
-        }
-      } else {
-        data.property_condition = null;
-      }
-
-      // ===== DRAINAGE =====
-      const drainageValue = getValue('Eaux usées');
-      if (drainageValue) {
-        const drainageLower = drainageValue.toLowerCase();
-        if (drainageLower.includes('tout') && drainageLower.includes('égout')) {
-          data.drainage_system = 'Mains';
-        } else if (drainageLower.includes('fosse') || drainageLower.includes('septique')) {
-          data.drainage_system = 'Individual (Septic)';
-        } else {
-          data.drainage_system = drainageValue;
-        }
-      } else {
-        data.drainage_system = null;
-      }
-
-      // ===== HEATING =====
-      const heatingValue = getValue('Chauffage');
-      data.heating_system = heatingValue || null;
-
-      // ===== ENERGY (DPE) =====
-      data.energy_consumption = null;
-      data.co2_emissions = null;
-
-      // Look for energy consumption
-      const consumptionEl = document.querySelector('.line2');
-      if (consumptionEl) {
-        const siblings = Array.from(consumptionEl.parentElement.querySelectorAll('.line1, .line2'));
-        siblings.forEach((el, i) => {
-          const text = clean(el.textContent);
-          if (text.includes('kWh')) {
-            const prev = siblings[i - 1];
-            if (prev) {
-              const match = prev.textContent.match(/(\d+)/);
-              if (match) data.energy_consumption = parseInt(match[1], 10);
-            }
+  
+        // Check title and description for pool mentions
+        if (!data.pool) {
+          const fullText = document.body.textContent.toLowerCase();
+          if (fullText.includes('piscine') && 
+              (fullText.includes('avec piscine') || fullText.includes('et piscine'))) {
+            data.pool = true;
           }
-          if (text.includes('kg CO2')) {
-            const prev = siblings[i - 1];
-            if (prev) {
-              const match = prev.textContent.match(/(\d+)/);
-              if (match) data.co2_emissions = parseInt(match[1], 10);
+        }
+  
+        // ===== PROPERTY CONDITION =====
+        const etatValue = getValue('État');
+        if (etatValue) {
+          const etatLower = etatValue.toLowerCase();
+          if (etatLower.includes('excellent')) {
+            data.property_condition = 'Excellent';
+          } else if (etatLower.includes('bon')) {
+            data.property_condition = 'Good';
+          } else if (etatLower.includes('mise à jour') || etatLower.includes('travaux')) {
+            data.property_condition = 'To Renovate';
+          } else if (etatLower.includes('neuf') || etatLower.includes('récent')) {
+            data.property_condition = 'New/Recent';
+          } else {
+            data.property_condition = etatValue;
+          }
+        } else {
+          data.property_condition = null;
+        }
+  
+        // ===== DRAINAGE =====
+        const drainageValue = getValue('Eaux usées');
+        if (drainageValue) {
+          const drainageLower = drainageValue.toLowerCase();
+          if (drainageLower.includes('tout') && drainageLower.includes('égout')) {
+            data.drainage_system = 'Mains';
+          } else if (drainageLower.includes('fosse') || drainageLower.includes('septique')) {
+            data.drainage_system = 'Individual (Septic)';
+          } else {
+            data.drainage_system = drainageValue;
+          }
+        } else {
+          data.drainage_system = null;
+        }
+  
+        // ===== HEATING =====
+        const heatingValue = getValue('Chauffage');
+        data.heating_system = heatingValue || null;
+  
+        // ===== ENERGY (DPE) =====
+        data.energy_consumption = null;
+        data.co2_emissions = null;
+  
+        // Look for energy consumption
+        const consumptionEl = document.querySelector('.line2');
+        if (consumptionEl) {
+          const siblings = Array.from(consumptionEl.parentElement.querySelectorAll('.line1, .line2'));
+          siblings.forEach((el, i) => {
+            const text = clean(el.textContent);
+            if (text.includes('kWh')) {
+              const prev = siblings[i - 1];
+              if (prev) {
+                const match = prev.textContent.match(/(\d+)/);
+                if (match) data.energy_consumption = parseInt(match[1], 10);
+              }
             }
+            if (text.includes('kg CO2')) {
+              const prev = siblings[i - 1];
+              if (prev) {
+                const match = prev.textContent.match(/(\d+)/);
+                if (match) data.co2_emissions = parseInt(match[1], 10);
+              }
+            }
+          });
+        }
+  
+        // Fallback: search in page text
+        const pageText = document.body.textContent;
+        if (!data.energy_consumption) {
+          const match = pageText.match(/consumption[^\d]*(\d+)\s*kWh/i);
+          if (match) data.energy_consumption = parseInt(match[1], 10);
+        }
+  
+        if (!data.co2_emissions) {
+          const match = pageText.match(/emission[^\d]*(\d+)\s*kg\s*CO2/i);
+          if (match) data.co2_emissions = parseInt(match[1], 10);
+        }
+  
+        // ===== IMAGES =====
+        const images = [];
+        
+        // Get hero images from prop-mason
+        const masonImages = document.querySelectorAll('#prop-mason img');
+        masonImages.forEach(img => {
+          const src = img.src || img.getAttribute('data-src');
+          if (src && src.startsWith('http') && !images.includes(src)) {
+            images.push(src);
           }
         });
-      }
-
-      // Fallback: search in page text
-      if (!data.energy_consumption) {
-        const match = pageText.match(/consumption[^\d]*(\d+)\s*kWh/i);
-        if (match) data.energy_consumption = parseInt(match[1], 10);
-      }
-
-      if (!data.co2_emissions) {
-        const match = pageText.match(/emission[^\d]*(\d+)\s*kg\s*CO2/i);
-        if (match) data.co2_emissions = parseInt(match[1], 10);
-      }
-
-      // ===== IMAGES =====
-      const images = [];
+  
+        // Get all gallery images
+        const galleryImages = document.querySelectorAll('#ipgalleryplug img, .ip-galleryplug-img img');
+        galleryImages.forEach(img => {
+          const src = img.src || img.getAttribute('data-src');
+          if (src && src.startsWith('http') && !images.includes(src)) {
+            images.push(src);
+          }
+        });
+  
+        // Also check for images in links
+        const imageLinks = document.querySelectorAll('a[href*=".jpg"], a[href*=".jpeg"], a[href*=".png"]');
+        imageLinks.forEach(link => {
+          const href = link.href;
+          if (href && !images.includes(href)) {
+            images.push(href);
+          }
+        });
+  
+        data.allImages = images;
+  
+        // ===== DESCRIPTION =====
+        const descriptionCol = document.querySelector('.description-col');
+        if (descriptionCol) {
+          // Get all paragraphs and list items, excluding headers
+          const textElements = descriptionCol.querySelectorAll('p, li');
+          let descriptionText = '';
+          textElements.forEach(el => {
+            const text = clean(el.textContent);
+            if (text && text.length > 20 && !text.startsWith('Prix honoraires')) {
+              descriptionText += text + ' ';
+            }
+          });
+          data.description = descriptionText.trim().substring(0, 1000);
+        } else {
+          data.description = '';
+        }
+  
+        return data;
+      });
+  
+      console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}...`);
       
-      // Get hero images from prop-mason
-      const masonImages = document.querySelectorAll('#prop-mason img');
-      masonImages.forEach(img => {
-        const src = img.src || img.getAttribute('data-src');
-        if (src && src.startsWith('http') && !images.includes(src)) {
-          images.push(src);
-        }
-      });
-
-      // Get all gallery images
-      const galleryImages = document.querySelectorAll('#ipgalleryplug img, .ip-galleryplug-img img');
-      galleryImages.forEach(img => {
-        const src = img.src || img.getAttribute('data-src');
-        if (src && src.startsWith('http') && !images.includes(src)) {
-          images.push(src);
-        }
-      });
-
-      // Also check for images in links
-      const imageLinks = document.querySelectorAll('a[href*=".jpg"], a[href*=".jpeg"], a[href*=".png"]');
-      imageLinks.forEach(link => {
-        const href = link.href;
-        if (href && !images.includes(href)) {
-          images.push(href);
-        }
-      });
-
-      data.allImages = images;
-
-      // ===== DESCRIPTION =====
-      const descriptionCol = document.querySelector('.description-col');
-      if (descriptionCol) {
-        // Get all paragraphs and list items, excluding headers
-        const textElements = descriptionCol.querySelectorAll('p, li');
-        let descriptionText = '';
-        textElements.forEach(el => {
-          const text = clean(el.textContent);
-          if (text && text.length > 20 && !text.startsWith('Prix honoraires')) {
-            descriptionText += text + ' ';
-          }
-        });
-        data.description = descriptionText.trim().substring(0, 1000);
-      } else {
-        data.description = '';
-      }
-
-      return data;
-    });
-
-    console.log(`✅ ${propertyData.reference}: ${propertyData.title.substring(0, 60)}...`);
-    
-    return propertyData;
-  } catch (error) {
-    console.error(`❌ Error extracting ${url}:`, error.message);
-    return null;
+      return propertyData;
+    } catch (error) {
+      console.error(`❌ Error extracting ${url}:`, error.message);
+      return null;
+    }
   }
-}
+  
 
 // ========================================
 // MAIN SCRAPER
