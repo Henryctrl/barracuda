@@ -591,11 +591,17 @@ async function scrapeBeauxVillages(req, res, { puppeteer, chromium, supabase }) 
     }
 
     // PART 4: Full detail scraping for NEW properties
-    if (newProperties.length > 0) {
-      console.log(`🔍 Full scraping for ${newProperties.length} NEW properties...\n`);
-
-      for (const { reference, listingData } of newProperties) {
-        const detailData = await extractBeauxVillagesPropertyData(page, listingData.url);
+    // changed this to have a limit on amount done 
+if (newProperties.length > 0) {
+    // ADD TEST LIMIT
+    const maxPropertiesToScrape = req.body.maxProperties || newProperties.length;
+    const propertiesToScrape = newProperties.slice(0, maxPropertiesToScrape);
+    
+    console.log(`🔍 Full scraping for ${propertiesToScrape.length} of ${newProperties.length} NEW properties (limit: ${maxPropertiesToScrape})\n`);
+  
+    for (const { reference, listingData } of propertiesToScrape) {  // Changed this line
+      const detailData = await extractBeauxVillagesPropertyData(page, listingData.url);
+  
 
         if (!detailData) {
           console.log(`⚠️  Skipping ${listingData.url} - detail page failed`);

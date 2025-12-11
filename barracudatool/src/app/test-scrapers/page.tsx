@@ -119,16 +119,18 @@ export default function TestScrapersPage() {
   const scrapeBeauxVillages = async () => {
     setLoading('beauxvillages');
     setError('');
-
+  
     try {
       const response = await fetch('https://barracuda-production.up.railway.app/scrape-beauxvillages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           searchUrl: 'https://beauxvillages.com/fr/nos-biens_fr',
-          maxPages: 2
+          maxPages: 1,           // Just 1 page of listings
+          maxProperties: 5       // Only scrape detail for 5 properties ✅
         })
       });
+  
       
       const data = await response.json();
       
