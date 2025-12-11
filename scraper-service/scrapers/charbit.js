@@ -1,9 +1,11 @@
 const { savePropertiesToDB } = require('../utils/database');
 
 // ========================================
-// CHARBIT IMMOBILIER SCRAPER v2.3
-// + Land Surface Extraction
-// + French Government Geo API for postal codes
+// CHARBIT IMMOBILIER SCRAPER v2.8
+// + Improved Land Surface Extraction
+// + French cadastral units (ha, ca, a)
+// + "Parc de X m²" detection
+// + Better validation
 // ========================================
 
 async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
@@ -13,7 +15,7 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
     maxProperties = null 
   } = req.body;
 
-  console.log('🎯 Starting Charbit Immobilier scrape v2.3:', searchUrl);
+  console.log('🎯 Starting Charbit Immobilier scrape v2.8:', searchUrl);
 
   const browser = await puppeteer.launch({
     args: chromium.args,
@@ -157,6 +159,14 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
         const property = await page.evaluate((url, heroImageFromListing) => {
           const prop = { url };
           const clean = (txt) => txt ? txt.replace(/\s+/g, ' ').trim() : '';
+          
+          // Helper to parse numbers with spaces (e.g., "92 000" -> 92000)
+          const parseNumber = (str) => {
+            if (!str) return null;
+            const cleaned = str.replace(/[\s,.']/g, '');
+            const num = parseInt(cleaned);
+            return isNaN(num) ? null : num;
+          };
 
           // Title & City
           const titleEl = document.querySelector('h1');
@@ -340,121 +350,85 @@ async function scrapeCharbit(req, res, { puppeteer, chromium, supabase }) {
           if (prop.bedrooms === 0) prop.bedrooms = null;
           if (prop.bathrooms === 0) prop.bathrooms = null;
 
-          // ===== LAND SURFACE EXTRACTION (IMPROVED) =====
-prop.land_surface = null;
+          // ===== LAND SURFACE EXTRACTION (v2.8 - IMPROVED) =====
+          prop.land_surface = null;
 
-// Method 1: From Surfaces section "1 Terrain X m²" (MOST RELIABLE)
-if (surfacesEl) {
-  const surfaceItems = surfacesEl.querySelectorAll('li');
-  
-  surfaceItems.forEach(li => {
-    const text = clean(li.textContent);
-    const textLower = text.toLowerCase();
-    
-    // Look for explicit "Terrain" entries with number prefix
-    if ((textLower.match(/^\s*\d+\s+terrain/) || textLower.includes('terrain')) && 
-        !textLower.includes('zone')) {
-      
-      const spans = li.querySelectorAll('span');
-      if (spans.length > 0) {
-        const surfaceText = clean(spans[0].textContent);
-        
-        // Extract m² - handle spaces in numbers (e.g., "92 000 m²")
-        const m2Match = surfaceText.match(/(\d+(?:\s*\d+)*)\s*m[²2]?/i);
-        if (m2Match) {
-          const value = parseInt(m2Match[1].replace(/\s+/g, ''));
-          // Only accept if > 500 m² (to avoid room sizes)
-          if (value > 500) {
-            prop.land_surface = value;
+          // Method 1: From Surfaces section "1 Terrain X m²" (MOST RELIABLE)
+          if (surfacesEl) {
+            const surfaceItems = surfacesEl.querySelectorAll('li');
+            for (const li of surfaceItems) {
+              const text = clean(li.textContent);
+              const textLower = text.toLowerCase();
+              
+              if (textLower.includes('terrain') && !textLower.includes('zone')) {
+                const m2Match = text.match(/(\d[\d\s,.']*)\s*m[²2]/i);
+                if (m2Match) {
+                  const value = parseNumber(m2Match[1]);
+                  if (value && value > 100) {
+                    prop.land_surface = value;
+                    break;
+                  }
+                }
+              }
+            }
           }
-        }
-        
-        // Extract hectares and convert to m²
-        if (!prop.land_surface) {
-          const haMatch = surfaceText.match(/([\d.,]+)\s*(?:ha|hectares?)\b/i);
-          if (haMatch) {
-            const ha = parseFloat(haMatch[1].replace(',', '.'));
-            prop.land_surface = Math.round(ha * 10000);
+
+          // Method 2: From description - Complex cadastral notation "1ha 13ca 4a"
+          if (!prop.land_surface && prop.description) {
+            const hectareMatch = prop.description.match(/(\d+)\s*ha\s+(\d+)\s*ca\s+(\d+)\s*a\b/i);
+            if (hectareMatch) {
+              const ha = parseInt(hectareMatch[1]) || 0;
+              const ca = parseInt(hectareMatch[2]) || 0;
+              const a = parseInt(hectareMatch[3]) || 0;
+              // 1 ha = 10,000 m², 1 ca = 1 m², 1 a = 100 m²
+              prop.land_surface = (ha * 10000) + ca + (a * 100);
+            }
           }
-        }
-      }
-    }
-  });
-}
 
-// Method 2: From description - Complex notation "1ha 13ca 4a" (HIGH PRIORITY)
-if (!prop.land_surface && prop.description) {
-  const descText = prop.description;
-  
-  // Pattern: "1ha 13ca 4a" or "1 ha 13 ca 4 a"
-  const complexMatch = descText.match(/(\d+)\s*ha(?:\s+(\d+)\s*ca)?(?:\s+(\d+)\s*a\b)?/i);
-  if (complexMatch) {
-    const ha = parseInt(complexMatch[1]) || 0;
-    const ca = parseInt(complexMatch[2]) || 0;
-    const a = parseInt(complexMatch[3]) || 0;
-    prop.land_surface = (ha * 10000) + (a * 100) + ca;
-  }
-}
+          // Method 3: From description - Simple hectares "9Ha" or "9 hectares"
+          if (!prop.land_surface && prop.description) {
+            const haMatch = prop.description.match(/(?:terrain|parc|parcelle)[^\d.]*?([\d.,]+)\s*(?:ha|hectares?)\b/i);
+            if (haMatch) {
+              const ha = parseFloat(haMatch[1].replace(',', '.'));
+              prop.land_surface = Math.round(ha * 10000);
+            }
+          }
 
-// Method 3: From description - Simple hectares "9Ha" or "9 hectares"
-if (!prop.land_surface && prop.description) {
-  const descLower = prop.description.toLowerCase();
-  
-  // Look for "terrain de X Ha" or "sur X Ha"
-  const haPatterns = [
-    /terrain[^.]{0,30}?([\d.,]+)\s*(?:ha|hectares?)\b/i,
-    /sur\s+(?:un\s+)?[^.]{0,20}?([\d.,]+)\s*(?:ha|hectares?)\b/i,
-    /parcelle[^.]{0,30}?([\d.,]+)\s*(?:ha|hectares?)\b/i
-  ];
-  
-  for (const pattern of haPatterns) {
-    const match = prop.description.match(pattern);
-    if (match) {
-      const ha = parseFloat(match[1].replace(',', '.'));
-      prop.land_surface = Math.round(ha * 10000);
-      break;
-    }
-  }
-}
+          // Method 4: From description - "Parc de X m²" or "terrain de X m²"
+          if (!prop.land_surface && prop.description) {
+            const parcMatch = prop.description.match(/(?:parc|terrain|parcelle)\s+(?:de|d'environ|d')\s+(\d[\d\s,.']*)\s*m[²2]/i);
+            if (parcMatch) {
+              const value = parseNumber(parcMatch[1]);
+              if (value && value > 500) {
+                prop.land_surface = value;
+              }
+            }
+          }
 
-// Method 4: From description - "terrain de X m²" (ONLY if > 1000m²)
-if (!prop.land_surface && prop.description) {
-  const m2Patterns = [
-    /terrain[^.]{0,30}?(\d+(?:\s*\d+)*)\s*m[²2]/i,
-    /parcelle[^.]{0,30}?(\d+(?:\s*\d+)*)\s*m[²2]/i,
-    /sur\s+(?:un\s+)?(?:terrain|parcelle)[^.]{0,30}?(\d+(?:\s*\d+)*)\s*m[²2]/i
-  ];
-  
-  for (const pattern of m2Patterns) {
-    const match = prop.description.match(pattern);
-    if (match) {
-      const value = parseInt(match[1].replace(/\s+/g, ''));
-      // Only accept if significantly larger than typical building
-      if (value > 1000) {
-        prop.land_surface = value;
-        break;
-      }
-    }
-  }
-}
+          // Method 5: From description - standalone "X m²" after terrain/parc mention
+          if (!prop.land_surface && prop.description) {
+            const standaloneMatch = prop.description.match(/(?:terrain|parc|parcelle)[^.]*?(\d{3,}[\d\s,.']*)\s*m[²2]/i);
+            if (standaloneMatch) {
+              const value = parseNumber(standaloneMatch[1]);
+              if (value && value > 500) {
+                prop.land_surface = value;
+              }
+            }
+          }
 
-// Validation: Cross-check with building_surface
-if (prop.land_surface && prop.building_surface) {
-  // If land_surface <= building_surface, it's likely wrong
-  if (prop.land_surface <= prop.building_surface) {
-    prop.land_surface = null;
-  }
-}
+          // Validation: Reject if land_surface equals or is less than building_surface
+          if (prop.land_surface && prop.building_surface) {
+            if (prop.land_surface <= prop.building_surface) {
+              prop.land_surface = null;
+            }
+          }
 
-// Final validation: Ignore unrealistic values
-if (prop.land_surface) {
-  if (prop.land_surface < 500 || prop.land_surface > 1000000) {
-    prop.land_surface = null;
-  }
-}
-
-
-
+          // Final validation: Ignore unrealistic values
+          if (prop.land_surface) {
+            if (prop.land_surface < 100 || prop.land_surface > 1000000) {
+              prop.land_surface = null;
+            }
+          }
 
           // Images
           const allImages = [];
@@ -566,7 +540,7 @@ if (prop.land_surface) {
           imageCount: p.images.length,
           features: p.features || [],
           heroImageMatched: !!p.heroImageFromListing,
-          scraper_version: '2.3',
+          scraper_version: '2.8',
           postal_code_api: 'geo.api.gouv.fr'
         }),
         scraped_at: new Date().toISOString(),
@@ -596,6 +570,7 @@ if (prop.land_surface) {
     res.json({
       success: true,
       source: 'charbit-immobilier',
+      version: '2.8',
       totalScraped: properties.length,
       inserted,
       bedroomStats: {
