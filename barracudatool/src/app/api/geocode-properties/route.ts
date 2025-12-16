@@ -10,7 +10,7 @@ interface Property {
   location_city: string | null;
   location_postal_code: string | null;
   location_department: string | null;
-  location_lat: number | null; 
+  location_lat: number | null;
   location_lng: number | null;
 }
 
@@ -24,10 +24,16 @@ interface BanFeature {
   };
 }
 
+interface GeocodingError {
+  propertyId: string;
+  location: string;
+  reason: string;
+  details?: string;
+}
+
 async function geocodeAddress(city: string | null, postalCode: string | null): Promise<[number, number] | null> {
   if (!city && !postalCode) return null;
 
-  // Build search query
   const query = [city, postalCode].filter(Boolean).join(' ');
   
   try {
@@ -43,7 +49,6 @@ async function geocodeAddress(city: string | null, postalCode: string | null): P
       const feature = data.features[0] as BanFeature;
       const [lon, lat] = feature.geometry.coordinates;
       
-      // Only return if confidence score is decent
       if (feature.properties.score > 0.4) {
         return [lat, lon];
       }
@@ -58,7 +63,6 @@ async function geocodeAddress(city: string | null, postalCode: string | null): P
 
 export async function POST(request: NextRequest) {
   try {
-    // Check for cron secret or admin auth
     const cronSecret = request.headers.get('x-cron-secret');
     const isAuthorized = cronSecret === process.env.CRON_SECRET;
     
@@ -69,10 +73,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { limit = 100, force = false } = body;
 
-    // Fetch properties without coordinates
     let query = supabase
       .from('properties')
-      .select('id, location_city, location_postal_code, location_department, location_lat, location_lng')
+      .select('id, location_city, location_postal_code, location_department, location_lat, location_lng, title, reference')
       .eq('is_active', true);
 
     if (!force) {
@@ -91,16 +94,31 @@ export async function POST(request: NextRequest) {
         message: 'No properties need geocoding',
         processed: 0,
         geocoded: 0,
+        failed: 0,
+        errors: [],
       });
     }
 
     let geocoded = 0;
     let failed = 0;
     const results = [];
+    const errors: GeocodingError[] = [];
 
     for (const property of properties as Property[]) {
-      // Skip if already has coordinates (unless force mode)
       if (!force && property.location_lat && property.location_lng) {
+        continue;
+      }
+
+      const locationString = `${property.location_city || ''} ${property.location_postal_code || ''}`.trim();
+
+      if (!property.location_city && !property.location_postal_code) {
+        failed++;
+        errors.push({
+          propertyId: property.id,
+          location: 'No location data',
+          reason: 'Missing both city and postal code',
+          details: `Property has no location data to geocode`,
+        });
         continue;
       }
 
@@ -124,17 +142,28 @@ export async function POST(request: NextRequest) {
           geocoded++;
           results.push({
             id: property.id,
-            location: `${property.location_city || ''} ${property.location_postal_code || ''}`.trim(),
+            location: locationString,
             coordinates: { lat, lng },
           });
         } else {
           failed++;
+          errors.push({
+            propertyId: property.id,
+            location: locationString,
+            reason: 'Database update failed',
+            details: updateError.message,
+          });
         }
       } else {
         failed++;
+        errors.push({
+          propertyId: property.id,
+          location: locationString,
+          reason: 'Address not found or low confidence score',
+          details: 'BAN API returned no results or confidence score < 0.4',
+        });
       }
 
-      // Rate limiting - wait 100ms between requests
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
@@ -144,7 +173,8 @@ export async function POST(request: NextRequest) {
       processed: properties.length,
       geocoded,
       failed,
-      results: results.slice(0, 10), // Show first 10 results
+      results: results.slice(0, 10),
+      errors: errors, // Return ALL errors
     });
   } catch (error) {
     console.error('Geocoding error:', error);

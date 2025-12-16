@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Loader2, MapPin, Database, RefreshCw } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader2, MapPin, Database, RefreshCw, AlertTriangle, Info, XCircle } from 'lucide-react';
 import MainHeader from '../../../components/MainHeader';
 
 type ScrapeResult = {
@@ -33,12 +33,31 @@ type GeocodeResult = {
     location: string;
     coordinates: { lat: number; lng: number };
   }>;
+  errors?: Array<{
+    propertyId: string;
+    location: string;
+    reason: string;
+    details?: string;
+  }>;
 };
+
+type ErrorLog = {
+    id: string;
+    timestamp: string;
+    level: 'error' | 'warning' | 'info';
+    source: string;
+    message: string;
+    details?: string | Record<string, any> | null;
+    created_at: string;
+  };
+  
 
 export default function AdminDashboard() {
   const [loading, setLoading] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ScrapeResult | GeocodeResult>>({});
   const [error, setError] = useState('');
+  const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
+  const [showErrorLogs, setShowErrorLogs] = useState(false);
 
   const SCRAPERS = [
     { id: 'cadimmo', name: 'CAD-IMMO', url: 'https://cad-immo.com/fr/ventes', icon: '🏠', color: 'blue' },
@@ -48,6 +67,23 @@ export default function AdminDashboard() {
     { id: 'cyrano', name: 'Cyrano', url: 'https://www.cyranoimmobilier.com/vente/1', icon: '🏛️', color: 'teal' },
     { id: 'charbit', name: 'Charbit', url: 'https://charbit-immo.fr/fr/ventes', icon: '🏢', color: 'indigo' },
   ];
+
+  // Fetch error logs on mount
+  useEffect(() => {
+    fetchErrorLogs();
+  }, []);
+
+  const fetchErrorLogs = async () => {
+    try {
+      const response = await fetch('/api/errors');
+      if (response.ok) {
+        const data = await response.json();
+        setErrorLogs(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch error logs:', err);
+    }
+  };
 
   const triggerScraper = async (scraperId: string, scraperUrl: string, maxPages: number = 2) => {
     setLoading(scraperId);
@@ -71,7 +107,6 @@ export default function AdminDashboard() {
       if (response.ok) {
         setResults(prev => ({ ...prev, [scraperId]: data }));
         
-        // Auto-trigger geocoding after successful scrape
         setTimeout(() => {
           geocodeProperties(50);
         }, 1000);
@@ -92,7 +127,6 @@ export default function AdminDashboard() {
     for (const scraper of SCRAPERS) {
       try {
         await triggerScraper(scraper.id, scraper.url, 2);
-        // Small delay between scrapers
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (err) {
         console.error(`Failed to scrape ${scraper.name}:`, err);
@@ -137,6 +171,32 @@ export default function AdminDashboard() {
     return 'geocoded' in result;
   };
 
+  const getLevelIcon = (level: string) => {
+    switch (level) {
+      case 'error': return <XCircle size={16} color="#ff0000" />;
+      case 'warning': return <AlertTriangle size={16} color="#ffaa00" />;
+      case 'info': return <Info size={16} color="#00ffff" />;
+      default: return <Info size={16} />;
+    }
+  };
+
+  // Helper function to safely render log details
+    // Helper function to safely render log details
+    const renderLogDetails = (details: unknown) => {
+        if (typeof details === 'string') {
+          return details as string;
+        }
+        if (details === null || details === undefined) {
+          return 'null';
+        }
+        try {
+          return JSON.stringify(details, null, 2);
+        } catch {
+          return String(details);
+        }
+      };
+    
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0d0d21', fontFamily: "'Orbitron', sans-serif" }}>
       <MainHeader />
@@ -148,8 +208,111 @@ export default function AdminDashboard() {
             {'// ADMIN CONTROL PANEL'}
           </h1>
           <p style={{ color: '#00ffff', fontSize: '0.9rem' }}>
-            Manage property scrapers and system maintenance
+            Manage property scrapers, geocoding, and system monitoring
           </p>
+        </div>
+
+        {/* Error Logs Section */}
+        <div style={{ marginBottom: '40px', padding: '20px', backgroundColor: 'rgba(255, 0, 0, 0.05)', border: '2px solid #ff0000', borderRadius: '8px' }}>
+          <button
+            onClick={() => {
+              setShowErrorLogs(!showErrorLogs);
+              if (!showErrorLogs) fetchErrorLogs();
+            }}
+            style={{
+              width: '100%',
+              padding: '15px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#ff0000',
+              fontSize: '1.2rem',
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertTriangle size={24} />
+              System Error Logs ({errorLogs.length})
+            </span>
+            <span>{showErrorLogs ? '▼' : '▶'}</span>
+          </button>
+
+          {showErrorLogs && (
+            <div style={{ marginTop: '20px' }}>
+              {errorLogs.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#00ff00', padding: '20px' }}>
+                  ✅ No errors logged! System is healthy.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
+                  {errorLogs.map(log => (
+                    <div
+                      key={log.id}
+                      style={{
+                        padding: '15px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        border: `1px solid ${log.level === 'error' ? '#ff0000' : log.level === 'warning' ? '#ffaa00' : '#00ffff'}`,
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                        {getLevelIcon(log.level)}
+                        <span style={{ color: '#00ffff', fontSize: '0.8rem' }}>
+                          {new Date(log.timestamp).toLocaleString()}
+                        </span>
+                        <span style={{ color: '#ff00ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                          [{log.source}]
+                        </span>
+                      </div>
+                      <div style={{ color: '#ffffff', marginBottom: '5px' }}>
+                        {log.message}
+                      </div>
+                      {log.details && (
+  <details style={{ marginTop: '8px' }}>
+    <summary style={{ cursor: 'pointer', color: '#00ffff', fontSize: '0.75rem' }}>
+      View Details
+    </summary>
+    <pre style={{
+      marginTop: '8px',
+      padding: '10px',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      borderRadius: '4px',
+      fontSize: '0.7rem',
+      overflow: 'auto',
+      color: '#00ff00',
+    }}>
+      {String(renderLogDetails(log.details))}
+    </pre>
+  </details>
+)}
+
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={fetchErrorLogs}
+                style={{
+                  marginTop: '15px',
+                  padding: '10px 20px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid #ff00ff',
+                  color: '#ff00ff',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 'bold',
+                }}
+              >
+                <RefreshCw size={14} style={{ display: 'inline', marginRight: '5px' }} />
+                Refresh Logs
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Main Action Buttons */}
@@ -310,6 +473,41 @@ export default function AdminDashboard() {
                       <div style={{ fontSize: '0.8rem', color: '#a0a0ff' }}>Failed</div>
                     </div>
                   </div>
+
+                  {/* ERROR DISPLAY */}
+                  {result.errors && result.errors.length > 0 && (
+                    <div style={{ marginTop: '20px', padding: '15px', backgroundColor: 'rgba(255, 0, 0, 0.1)', border: '1px solid #ff0000', borderRadius: '8px' }}>
+                      <h4 style={{ color: '#ff0000', marginBottom: '15px', fontSize: '1.1rem' }}>
+                        ⚠️ Geocoding Errors ({result.errors.length})
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+                        {result.errors.map((err, idx) => (
+                          <div key={idx} style={{
+                            padding: '12px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                            borderLeft: '3px solid #ff0000',
+                            borderRadius: '4px',
+                          }}>
+                            <div style={{ color: '#ffffff', fontWeight: 'bold', marginBottom: '5px' }}>
+                              Property ID: <span style={{ color: '#ff00ff', fontFamily: 'monospace' }}>{err.propertyId}</span>
+                            </div>
+                            <div style={{ color: '#00ffff', fontSize: '0.85rem', marginBottom: '5px' }}>
+                              Location: {err.location}
+                            </div>
+                            <div style={{ color: '#ffaa00', fontSize: '0.85rem', marginBottom: '5px' }}>
+                              Reason: {err.reason}
+                            </div>
+                            {err.details && (
+                              <div style={{ color: '#a0a0ff', fontSize: '0.75rem', marginTop: '5px', fontStyle: 'italic' }}>
+                                Details: {err.details}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {result.results && result.results.length > 0 && (
                     <details style={{ marginTop: '15px' }}>
                       <summary style={{ cursor: 'pointer', color: '#00ffff', fontSize: '0.9rem', textDecoration: 'underline' }}>
