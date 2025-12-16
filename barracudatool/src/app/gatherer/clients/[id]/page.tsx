@@ -691,7 +691,7 @@ export default function ClientDetailPage() {
                                   </a>
                               </div>
                           </div>
-                        );
+                        ); 
                       })}
                   </div>
                 )}

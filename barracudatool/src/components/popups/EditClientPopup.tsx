@@ -190,7 +190,7 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
       } else if (criteriaData.radiusSearches.length > 0) {
         locationMode = 'radius';
       }
-
+ 
       const criteriaPayload = {
         client_id: clientId,
         min_budget: toNumber(criteriaData.minBudget),
