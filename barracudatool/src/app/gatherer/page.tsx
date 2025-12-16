@@ -16,6 +16,7 @@ import {
   Edit,
   RotateCcw,
   Crown,
+  ExternalLink,
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import MainHeader from '../../components/MainHeader';
@@ -521,82 +522,108 @@ export default function GathererPage() {
 
                     return (
                       <li
-                        key={client.id}
-                        style={{
-                          ...styles.cardItem,
-                          padding: '15px',
-                          borderLeft: '4px solid #00ffff',
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '8px',
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: '1.1rem',
-                                fontWeight: 'bold',
-                                color: '#fff',
-                              }}
-                            >
-                              {name}
-                            </div>
-                            <div style={{ fontSize: '0.7rem', color: '#a0a0ff' }}>
-                              ID: {client.id.slice(0, 8)}
-                            </div>
-                          </div>
+  key={client.id}
+  style={{
+    ...styles.cardItem,
+    padding: '15px',
+    borderLeft: '4px solid #00ffff',
+  }}
+>
+  <div
+    style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '8px',
+    }}
+  >
+    <div>
+      <div
+        style={{
+          fontSize: '1.1rem',
+          fontWeight: 'bold',
+          color: '#fff',
+        }}
+      >
+        {name}
+      </div>
+      <div style={{ fontSize: '0.7rem', color: '#a0a0ff' }}>
+        ID: {client.id.slice(0, 8)}
+      </div>
+    </div>
 
-                          <button
-                            onClick={() => setEditingClientId(client.id)}
-                            style={{
-                              background: 'transparent',
-                              border: '1px solid #00ffff',
-                              color: '#00ffff',
-                              borderRadius: '4px',
-                              padding: '5px 10px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              fontSize: '0.75rem',
-                            }}
-                          >
-                            <Edit size={14} /> Edit File
-                          </button>
-                        </div>
+    {/* Button container with both buttons side-by-side */}
+    <div style={{ display: 'flex', gap: '8px' }}>
+      <button
+        onClick={() => setEditingClientId(client.id)}
+        style={{
+          background: 'transparent',
+          border: '1px solid #00ffff',
+          color: '#00ffff',
+          borderRadius: '4px',
+          padding: '5px 10px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          fontSize: '0.75rem',
+        }}
+      >
+        <Edit size={14} /> Edit File
+      </button>
 
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '5px',
-                            fontSize: '0.9rem',
-                          }}
-                        >
-                          <div style={{ color: '#e0e0ff' }}>
-                            <strong>Budget:</strong>{' '}
-                            <span style={{ color: '#00ff00' }}>{budgetLabel}</span>
-                          </div>
-                          <div style={{ color: '#e0e0ff' }}>
-                            <strong>Looking in:</strong>{' '}
-                            <span style={{ color: '#ff00ff' }}>{areas}</span>
-                          </div>
-                          <div
-                            style={{
-                              fontSize: '0.75rem',
-                              color: '#888',
-                              marginTop: '5px',
-                            }}
-                          >
-                            Added: {created}
-                          </div>
-                        </div>
-                      </li>
+      <Link 
+        href={`/gatherer/clients/${client.id}`} 
+        style={{ textDecoration: 'none' }}
+      >
+        <button
+          style={{
+            background: 'transparent',
+            border: '1px solid #ff00ff',
+            color: '#ff00ff',
+            borderRadius: '4px',
+            padding: '5px 10px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '0.75rem',
+          }}
+        >
+          <ExternalLink size={14} /> Scanner
+        </button>
+      </Link>
+    </div>
+  </div>
+
+  <div
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '5px',
+      fontSize: '0.9rem',
+    }}
+  >
+    <div style={{ color: '#e0e0ff' }}>
+      <strong>Budget:</strong>{' '}
+      <span style={{ color: '#00ff00' }}>{budgetLabel}</span>
+    </div>
+    <div style={{ color: '#e0e0ff' }}>
+      <strong>Looking in:</strong>{' '}
+      <span style={{ color: '#ff00ff' }}>{areas}</span>
+    </div>
+    <div
+      style={{
+        fontSize: '0.75rem',
+        color: '#888',
+        marginTop: '5px',
+      }}
+    >
+      Added: {created}
+    </div>
+  </div>
+</li>
+
                     );
                   })}
                   {recentClients.length === 0 && (
