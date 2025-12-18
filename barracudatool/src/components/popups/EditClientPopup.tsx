@@ -1,3 +1,5 @@
+// src/components/popups/EditClientPopup.tsx
+
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -33,7 +35,16 @@ interface SearchCriteriaData {
   radiusSearches: RadiusSearch[];
   customSectors: GeoJSON.FeatureCollection | null;
   propertyTypes: string[];
-  minSurface: string; maxSurface: string; minRooms: string; minBedrooms: string;
+  minSurface: string; maxSurface: string; 
+  minRooms: string; maxRooms: string; // NEW
+  minBedrooms: string; maxBedrooms: string; // NEW
+  minLandSurface: string; maxLandSurface: string; // NEW
+  poolPreference: string; // NEW
+  heatingSystem: string; // NEW
+  drainageSystem: string; // NEW
+  propertyCondition: string; // NEW
+  minYearBuilt: string; maxYearBuilt: string; // NEW
+  minBathrooms: string; // NEW
   desiredDPE: string; features: string[]; notes: string;
 }
 
@@ -73,10 +84,18 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
     radiusSearches: [],
     customSectors: null,
     propertyTypes: [],
-    minSurface: '', maxSurface: '', minRooms: '', minBedrooms: '',
+    minSurface: '', maxSurface: '', 
+    minRooms: '', maxRooms: '',
+    minBedrooms: '', maxBedrooms: '',
+    minLandSurface: '', maxLandSurface: '',
+    poolPreference: '',
+    heatingSystem: '',
+    drainageSystem: '',
+    propertyCondition: '',
+    minYearBuilt: '', maxYearBuilt: '',
+    minBathrooms: '',
     desiredDPE: '', features: [], notes: ''
   });
-
   const [visits, setVisits] = useState<Visit[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
 
@@ -122,7 +141,18 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
           minSurface: c.min_surface?.toString() || '',
           maxSurface: c.max_surface?.toString() || '',
           minRooms: c.min_rooms?.toString() || '',
+          maxRooms: c.max_rooms?.toString() || '', // NEW
           minBedrooms: c.min_bedrooms?.toString() || '',
+          maxBedrooms: c.max_bedrooms?.toString() || '', // NEW
+          minLandSurface: c.min_land_surface?.toString() || '', // NEW
+          maxLandSurface: c.max_land_surface?.toString() || '', // NEW
+          poolPreference: c.pool_preference || '', // NEW
+          heatingSystem: c.heating_system || '', // NEW
+          drainageSystem: c.drainage_system || '', // NEW
+          propertyCondition: c.property_condition || '', // NEW
+          minYearBuilt: c.min_year_built?.toString() || '', // NEW
+          maxYearBuilt: c.max_year_built?.toString() || '', // NEW
+          minBathrooms: c.min_bathrooms?.toString() || '', // NEW
           desiredDPE: c.desired_dpe || '',
           features: c.features || [],
           notes: c.notes || ''
@@ -204,7 +234,18 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
         min_surface: toNumber(criteriaData.minSurface),
         max_surface: toNumber(criteriaData.maxSurface),
         min_rooms: toNumber(criteriaData.minRooms),
+        max_rooms: toNumber(criteriaData.maxRooms), // NEW
         min_bedrooms: toNumber(criteriaData.minBedrooms),
+        max_bedrooms: toNumber(criteriaData.maxBedrooms), // NEW
+        min_land_surface: toNumber(criteriaData.minLandSurface), // NEW
+        max_land_surface: toNumber(criteriaData.maxLandSurface), // NEW
+        pool_preference: criteriaData.poolPreference || null, // NEW
+        heating_system: criteriaData.heatingSystem || null, // NEW
+        drainage_system: criteriaData.drainageSystem || null, // NEW
+        property_condition: criteriaData.propertyCondition || null, // NEW
+        min_year_built: toNumber(criteriaData.minYearBuilt), // NEW
+        max_year_built: toNumber(criteriaData.maxYearBuilt), // NEW
+        min_bathrooms: toNumber(criteriaData.minBathrooms), // NEW
         desired_dpe: criteriaData.desiredDPE || null,
         features: criteriaData.features,
         notes: criteriaData.notes
@@ -296,6 +337,7 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
 
   const propertyTypes = ['Apartment', 'House/Villa', 'Mansion (Hôtel Particulier)', 'Castle (Château)', 'Loft/Atelier', 'Building (Immeuble)', 'Land (Terrain)'];
   const featuresList = ['Elevator (Ascenseur)', 'Balcony', 'Terrace', 'Garden (Jardin)', 'Parking', 'Garage', 'Cellar (Cave)', 'Haussmannian (Parquet/Moulures)', 'Fireplace', 'Top Floor', 'Ground Floor Garden', 'Sea View', 'Renovated (Refait à neuf)', 'Works Needed (Travaux)', 'Quiet (Calme)'];
+  const dpeRatings = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 
   return (
     <Popup isOpen={isOpen} onClose={onClose} title="Edit Client File">
@@ -345,19 +387,77 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
               </div>
 
               <div>
-                <div className={sectionHeaderClass}>Specs</div>
+                <div className={sectionHeaderClass}>Property Specs</div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className={labelClass}>Min Surface</label><input type="number" className={inputClass} value={criteriaData.minSurface} onChange={e => updateCriteria('minSurface', e.target.value)} /></div>
-                  <div><label className={labelClass}>Max Surface</label><input type="number" className={inputClass} value={criteriaData.maxSurface} onChange={e => updateCriteria('maxSurface', e.target.value)} /></div>
+                  <div><label className={labelClass}>Min Habitable Surface</label><input type="number" className={inputClass} value={criteriaData.minSurface} onChange={e => updateCriteria('minSurface', e.target.value)} placeholder="m²" /></div>
+                  <div><label className={labelClass}>Max Habitable Surface</label><input type="number" className={inputClass} value={criteriaData.maxSurface} onChange={e => updateCriteria('maxSurface', e.target.value)} placeholder="m²" /></div>
+                  <div><label className={labelClass}>Min Land Surface</label><input type="number" className={inputClass} value={criteriaData.minLandSurface} onChange={e => updateCriteria('minLandSurface', e.target.value)} placeholder="m²" /></div>
+                  <div><label className={labelClass}>Max Land Surface</label><input type="number" className={inputClass} value={criteriaData.maxLandSurface} onChange={e => updateCriteria('maxLandSurface', e.target.value)} placeholder="m²" /></div>
                   <div><label className={labelClass}>Min Rooms</label><input type="number" className={inputClass} value={criteriaData.minRooms} onChange={e => updateCriteria('minRooms', e.target.value)} /></div>
+                  <div><label className={labelClass}>Max Rooms</label><input type="number" className={inputClass} value={criteriaData.maxRooms} onChange={e => updateCriteria('maxRooms', e.target.value)} /></div>
                   <div><label className={labelClass}>Min Bedrooms</label><input type="number" className={inputClass} value={criteriaData.minBedrooms} onChange={e => updateCriteria('minBedrooms', e.target.value)} /></div>
+                  <div><label className={labelClass}>Max Bedrooms</label><input type="number" className={inputClass} value={criteriaData.maxBedrooms} onChange={e => updateCriteria('maxBedrooms', e.target.value)} /></div>
+                  <div><label className={labelClass}>Min Bathrooms</label><input type="number" className={inputClass} value={criteriaData.minBathrooms} onChange={e => updateCriteria('minBathrooms', e.target.value)} /></div>
+                  <div><label className={labelClass}>Min Year Built</label><input type="number" className={inputClass} value={criteriaData.minYearBuilt} onChange={e => updateCriteria('minYearBuilt', e.target.value)} placeholder="e.g., 2000" /></div>
+                  <div><label className={labelClass}>Max Year Built</label><input type="number" className={inputClass} value={criteriaData.maxYearBuilt} onChange={e => updateCriteria('maxYearBuilt', e.target.value)} placeholder="e.g., 2023" /></div>
+                  <div><label className={labelClass}>Min DPE</label><select className={inputClass} value={criteriaData.desiredDPE} onChange={e => updateCriteria('desiredDPE', e.target.value)}><option value="">Any</option>{dpeRatings.map(r => <option key={r} value={r}>Class {r}</option>)}</select></div>
                 </div>
               </div>
 
               <div>
-                <div className={sectionHeaderClass}>Features</div>
+                <div className={sectionHeaderClass}>Special Requirements</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Pool Preference</label>
+                    <select className={inputClass} value={criteriaData.poolPreference} onChange={e => updateCriteria('poolPreference', e.target.value)}>
+                      <option value="">No preference</option>
+                      <option value="required">Required (Must have)</option>
+                      <option value="preferred">Preferred (Nice to have)</option>
+                      <option value="no">No pool wanted</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Heating System</label>
+                    <select className={inputClass} value={criteriaData.heatingSystem} onChange={e => updateCriteria('heatingSystem', e.target.value)}>
+                      <option value="">Any</option>
+                      <option value="Central">Central Heating</option>
+                      <option value="Floor">Floor Heating</option>
+                      <option value="Heat Pump">Heat Pump</option>
+                      <option value="Gas">Gas</option>
+                      <option value="Electric">Electric</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Drainage System</label>
+                    <select className={inputClass} value={criteriaData.drainageSystem} onChange={e => updateCriteria('drainageSystem', e.target.value)}>
+                      <option value="">Any</option>
+                      <option value="Mains">Mains (Tout à l'égout)</option>
+                      <option value="Septic">Septic Tank</option>
+                      <option value="Micro-station">Micro-station</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Property Condition</label>
+                    <select className={inputClass} value={criteriaData.propertyCondition} onChange={e => updateCriteria('propertyCondition', e.target.value)}>
+                      <option value="">Any</option>
+                      <option value="Excellent">Excellent / New</option>
+                      <option value="Good">Good Condition</option>
+                      <option value="Renovation">Needs Renovation</option>
+                      <option value="Project">Renovation Project</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className={sectionHeaderClass}>Type & Features</div>
                 <div className="flex flex-wrap gap-2 mb-4">{propertyTypes.map(type => <label key={type} className={`flex items-center px-3 py-1 border rounded cursor-pointer text-xs ${criteriaData.propertyTypes.includes(type) ? 'bg-[#ff00ff]/20 border-[#ff00ff]' : 'border-gray-600 hover:border-[#ff00ff]'}`}><input type="checkbox" className="hidden" checked={criteriaData.propertyTypes.includes(type)} onChange={() => toggleCheckbox('propertyTypes', type)} /> {type}</label>)}</div>
                 <div className="grid grid-cols-2 gap-2">{featuresList.map(feature => <label key={feature} className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" className="accent-[#ff00ff]" checked={criteriaData.features.includes(feature)} onChange={() => toggleCheckbox('features', feature)} /> {feature}</label>)}</div>
+              </div>
+
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea className={inputClass} rows={3} value={criteriaData.notes} onChange={e => updateCriteria('notes', e.target.value)} />
               </div>
             </div>
           )}
@@ -433,36 +533,37 @@ export default function EditClientPopup({ isOpen, onClose, clientId }: { isOpen:
                   <div key={t.id} className={`bg-[#020222] border rounded p-3 flex justify-between items-start ${t.status === 'done' ? 'border-green-500/30 opacity-60' : 'border-[#ff00ff]/30'}`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <input type="checkbox" checked={t.status === 'done'} onChange={() => toggleTaskStatus(t.id, t.status)} className="accent-[#00ff00]" />
-                        <div className="text-sm font-bold text-white">{t.task_type === 'follow_up' ? 'Follow Up Call' : t.task_type}</div>
-                        <span className="text-xs text-gray-400">Due: {new Date(t.due_date).toLocaleDateString()}</span>
+                        <input type="checkbox" checked={t.status === 'done'} onChange={() => toggleTaskStatus(t.id, t.status)} className="accent-[#ff00ff]" />
+                        <span className={`text-sm font-bold ${t.status === 'done' ? 'line-through text-gray-500' : 'text-white'}`}>{t.task_type.replace('_', ' ').toUpperCase()}</span>
                       </div>
-                      <div className="text-xs text-gray-400 ml-6">{t.notes || 'No notes'}</div>
+                      <div className="text-xs text-gray-400">Due: {new Date(t.due_date).toLocaleDateString()}</div>
+                      {t.notes && <div className="text-xs text-gray-500 mt-1">{t.notes}</div>}
                     </div>
                     <button onClick={() => deleteTask(t.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
                   </div>
                 ))}
-                {tasks.length === 0 && <div className="text-gray-500 text-sm italic">No tasks created</div>}
+                {tasks.length === 0 && <div className="text-gray-500 text-sm italic">No tasks</div>}
               </div>
             </div>
           )}
 
-          {error && <div className="text-red-500 font-bold text-center flex items-center justify-center gap-2"><AlertCircle size={16}/> {error}</div>}
+          {/* Error Display */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500 rounded p-3 text-red-400 flex items-center gap-2">
+              <AlertCircle size={18} />
+              {error}
+            </div>
+          )}
 
-          {/* NAVIGATION */}
-          <div className="flex justify-between mt-4">
-            {stage > 1 ? (
-              <button onClick={() => setStage(stage - 1)} className="flex items-center gap-2 text-[#00ffff] border border-[#00ffff] px-4 py-2 rounded uppercase hover:bg-[#00ffff]/10"><ArrowLeft size={16} /> Back</button>
-            ) : <div></div>}
-            
-            {stage < 4 ? (
-              <button onClick={() => setStage(stage + 1)} className="flex items-center gap-2 bg-[#00ffff] text-black px-6 py-2 rounded uppercase font-bold hover:bg-[#00ffff]/80">Next <ArrowRight size={16} /></button>
-            ) : (
-              <button onClick={handleSave} disabled={isSubmitting} className="flex items-center gap-2 bg-[#ff00ff] text-white px-6 py-2 rounded uppercase font-bold hover:bg-[#ff00ff]/80 disabled:opacity-50">
-                {isSubmitting ? <Loader2 className="animate-spin" /> : <Save size={18} />} Save All Changes
-              </button>
-            )}
-          </div>
+          {/* Save Button */}
+          <button 
+            onClick={handleSave} 
+            disabled={isSubmitting}
+            className="w-full py-3 bg-[#ff00ff] text-white font-bold rounded uppercase text-sm hover:bg-[#ff00ff]/80 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+            {isSubmitting ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       )}
     </Popup>

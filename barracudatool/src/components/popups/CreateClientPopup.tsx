@@ -1,3 +1,5 @@
+// src/components/popups/CreateClientPopup.tsx
+
 'use client';
 
 import React, { useState, CSSProperties } from 'react';
@@ -34,7 +36,16 @@ interface SearchCriteriaData {
   radiusSearches: RadiusSearch[];
   customSectors: GeoJSON.FeatureCollection | null;
   propertyTypes: string[];
-  minSurface: string; maxSurface: string; minRooms: string; minBedrooms: string;
+  minSurface: string; maxSurface: string; 
+  minRooms: string; maxRooms: string; // NEW
+  minBedrooms: string; maxBedrooms: string; // NEW
+  minLandSurface: string; maxLandSurface: string; // NEW
+  poolPreference: string; // NEW
+  heatingSystem: string; // NEW
+  drainageSystem: string; // NEW
+  propertyCondition: string; // NEW
+  minYearBuilt: string; maxYearBuilt: string; // NEW
+  minBathrooms: string; // NEW
   desiredDPE: string; features: string[]; notes: string;
   visitStartDate: string; visitEndDate: string; visitNotes: string;
 }
@@ -45,7 +56,17 @@ const initialSearchData: SearchCriteriaData = {
   selectedPlaces: [],
   radiusSearches: [],
   customSectors: null,
-  propertyTypes: [], minSurface: '', maxSurface: '', minRooms: '', minBedrooms: '', 
+  propertyTypes: [], 
+  minSurface: '', maxSurface: '', 
+  minRooms: '', maxRooms: '',
+  minBedrooms: '', maxBedrooms: '',
+  minLandSurface: '', maxLandSurface: '',
+  poolPreference: '',
+  heatingSystem: '',
+  drainageSystem: '',
+  propertyCondition: '',
+  minYearBuilt: '', maxYearBuilt: '',
+  minBathrooms: '',
   desiredDPE: '', features: [], notes: '', 
   visitStartDate: '', visitEndDate: '', visitNotes: '' 
 };
@@ -140,14 +161,13 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         await supabase.from('client_relationships').insert([{ primary_client_id: primaryData.id, related_client_id: relData.id, relationship_type: rel.type }]);
       }
       
-      // 3. Create Criteria with NEW location system
+      // 3. Create Criteria with NEW fields
       const toNumber = (val: string): number | null => {
         if (val === '') return null;
         const parsed = parseFloat(val);
         return isNaN(parsed) ? null : parsed;
       };
 
-      // Determine location mode based on what's filled
       let locationMode = 'places';
       if (searchCriteria.customSectors && searchCriteria.customSectors.features.length > 0) {
         locationMode = 'sectors';
@@ -160,20 +180,28 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
         min_budget: toNumber(searchCriteria.minBudget), 
         max_budget: toNumber(searchCriteria.maxBudget), 
         
-        // NEW: Advanced location fields
         location_mode: locationMode,
         selected_places: searchCriteria.selectedPlaces.length > 0 ? searchCriteria.selectedPlaces : null,
         radius_searches: searchCriteria.radiusSearches.length > 0 ? searchCriteria.radiusSearches : null,
         custom_sectors: searchCriteria.customSectors,
-        
-        // Keep old locations field for backwards compatibility
         locations: searchCriteria.selectedPlaces.map(p => p.name).join(', ') || null,
         
         property_types: searchCriteria.propertyTypes.length > 0 ? searchCriteria.propertyTypes : null, 
         min_surface: toNumber(searchCriteria.minSurface), 
         max_surface: toNumber(searchCriteria.maxSurface),
-        min_rooms: toNumber(searchCriteria.minRooms), 
-        min_bedrooms: toNumber(searchCriteria.minBedrooms), 
+        min_rooms: toNumber(searchCriteria.minRooms),
+        max_rooms: toNumber(searchCriteria.maxRooms), // NEW
+        min_bedrooms: toNumber(searchCriteria.minBedrooms),
+        max_bedrooms: toNumber(searchCriteria.maxBedrooms), // NEW
+        min_land_surface: toNumber(searchCriteria.minLandSurface), // NEW
+        max_land_surface: toNumber(searchCriteria.maxLandSurface), // NEW
+        pool_preference: searchCriteria.poolPreference || null, // NEW
+        heating_system: searchCriteria.heatingSystem || null, // NEW
+        drainage_system: searchCriteria.drainageSystem || null, // NEW
+        property_condition: searchCriteria.propertyCondition || null, // NEW
+        min_year_built: toNumber(searchCriteria.minYearBuilt), // NEW
+        max_year_built: toNumber(searchCriteria.maxYearBuilt), // NEW
+        min_bathrooms: toNumber(searchCriteria.minBathrooms), // NEW
         desired_dpe: searchCriteria.desiredDPE || null,
         features: searchCriteria.features.length > 0 ? searchCriteria.features : null, 
         notes: searchCriteria.notes || null,
@@ -276,6 +304,11 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
               <div><label className={labelClass}>Min Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.minBudget} onChange={e => updateSearchCriteria('minBudget', e.target.value)} placeholder="e.g., 400000" /></div>
               <div><label className={labelClass}>Max Budget (€)</label><input type="number" className={inputClass} value={searchCriteria.maxBudget} onChange={e => updateSearchCriteria('maxBudget', e.target.value)} placeholder="e.g., 600000" /></div>
             </div>
+            {!searchCriteria.minBudget && !searchCriteria.maxBudget && (
+              <div className="mt-2 text-yellow-400 text-xs flex items-center gap-2">
+                ⚠️ No budget set - properties will only match if location criteria is provided
+              </div>
+            )}
           </div>
 
           <div>
@@ -288,6 +321,11 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
               onRadiusChange={(radius) => updateSearchCriteria('radiusSearches', radius)}
               onSectorsChange={(sectors) => updateSearchCriteria('customSectors', sectors)}
             />
+            {searchCriteria.selectedPlaces.length === 0 && !searchCriteria.radiusSearches.length && (
+              <div className="mt-2 text-yellow-400 text-xs flex items-center gap-2">
+                ⚠️ No location set - properties will only match if budget criteria is provided
+              </div>
+            )}
           </div>
           
           <div>
@@ -302,11 +340,63 @@ export default function CreateClientPopup({ isOpen, onClose }: { isOpen: boolean
           <div>
             <div className={sectionHeaderClass}>Property Specs</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className={labelClass}>Min Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.minSurface} onChange={e => updateSearchCriteria('minSurface', e.target.value)} /></div>
-              <div><label className={labelClass}>Max Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.maxSurface} onChange={e => updateSearchCriteria('maxSurface', e.target.value)} /></div>
+              <div><label className={labelClass}>Min Habitable Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.minSurface} onChange={e => updateSearchCriteria('minSurface', e.target.value)} /></div>
+              <div><label className={labelClass}>Max Habitable Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.maxSurface} onChange={e => updateSearchCriteria('maxSurface', e.target.value)} /></div>
+              <div><label className={labelClass}>Min Land Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.minLandSurface} onChange={e => updateSearchCriteria('minLandSurface', e.target.value)} placeholder="e.g., 500" /></div>
+              <div><label className={labelClass}>Max Land Surface (m²)</label><input type="number" className={inputClass} value={searchCriteria.maxLandSurface} onChange={e => updateSearchCriteria('maxLandSurface', e.target.value)} placeholder="e.g., 5000" /></div>
               <div><label className={labelClass}>Min Rooms (Pièces)</label><input type="number" className={inputClass} value={searchCriteria.minRooms} onChange={e => updateSearchCriteria('minRooms', e.target.value)} /></div>
+              <div><label className={labelClass}>Max Rooms (Pièces)</label><input type="number" className={inputClass} value={searchCriteria.maxRooms} onChange={e => updateSearchCriteria('maxRooms', e.target.value)} /></div>
               <div><label className={labelClass}>Min Bedrooms (Chambres)</label><input type="number" className={inputClass} value={searchCriteria.minBedrooms} onChange={e => updateSearchCriteria('minBedrooms', e.target.value)} /></div>
-              <div className="md:col-span-2"><label className={labelClass}>Min DPE Rating</label><select className={inputClass} value={searchCriteria.desiredDPE} onChange={e => updateSearchCriteria('desiredDPE', e.target.value)}><option value="" className="bg-[#0d0d21]">Any</option>{dpeRatings.map(r => <option key={r} value={r} className="bg-[#0d0d21]">Class {r}</option>)}</select></div>
+              <div><label className={labelClass}>Max Bedrooms (Chambres)</label><input type="number" className={inputClass} value={searchCriteria.maxBedrooms} onChange={e => updateSearchCriteria('maxBedrooms', e.target.value)} /></div>
+              <div><label className={labelClass}>Min Bathrooms</label><input type="number" className={inputClass} value={searchCriteria.minBathrooms} onChange={e => updateSearchCriteria('minBathrooms', e.target.value)} /></div>
+              <div><label className={labelClass}>Min Year Built</label><input type="number" className={inputClass} value={searchCriteria.minYearBuilt} onChange={e => updateSearchCriteria('minYearBuilt', e.target.value)} placeholder="e.g., 2000" /></div>
+              <div><label className={labelClass}>Max Year Built</label><input type="number" className={inputClass} value={searchCriteria.maxYearBuilt} onChange={e => updateSearchCriteria('maxYearBuilt', e.target.value)} placeholder="e.g., 2023" /></div>
+              <div><label className={labelClass}>Min DPE Rating</label><select className={inputClass} value={searchCriteria.desiredDPE} onChange={e => updateSearchCriteria('desiredDPE', e.target.value)}><option value="" className="bg-[#0d0d21]">Any</option>{dpeRatings.map(r => <option key={r} value={r} className="bg-[#0d0d21]">Class {r}</option>)}</select></div>
+            </div>
+          </div>
+
+          <div>
+            <div className={sectionHeaderClass}>Special Requirements</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Pool Preference</label>
+                <select className={inputClass} value={searchCriteria.poolPreference} onChange={e => updateSearchCriteria('poolPreference', e.target.value)}>
+                  <option value="" className="bg-[#0d0d21]">No preference</option>
+                  <option value="required" className="bg-[#0d0d21]">Required (Must have)</option>
+                  <option value="preferred" className="bg-[#0d0d21]">Preferred (Nice to have)</option>
+                  <option value="no" className="bg-[#0d0d21]">No pool wanted</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Heating System Preference</label>
+                <select className={inputClass} value={searchCriteria.heatingSystem} onChange={e => updateSearchCriteria('heatingSystem', e.target.value)}>
+                  <option value="" className="bg-[#0d0d21]">Any</option>
+                  <option value="Central" className="bg-[#0d0d21]">Central Heating</option>
+                  <option value="Floor" className="bg-[#0d0d21]">Floor Heating</option>
+                  <option value="Heat Pump" className="bg-[#0d0d21]">Heat Pump</option>
+                  <option value="Gas" className="bg-[#0d0d21]">Gas</option>
+                  <option value="Electric" className="bg-[#0d0d21]">Electric</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Drainage System</label>
+                <select className={inputClass} value={searchCriteria.drainageSystem} onChange={e => updateSearchCriteria('drainageSystem', e.target.value)}>
+                  <option value="" className="bg-[#0d0d21]">Any</option>
+                  <option value="Mains" className="bg-[#0d0d21]">Mains (Tout à l'égout)</option>
+                  <option value="Septic" className="bg-[#0d0d21]">Septic Tank</option>
+                  <option value="Micro-station" className="bg-[#0d0d21]">Micro-station</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Property Condition</label>
+                <select className={inputClass} value={searchCriteria.propertyCondition} onChange={e => updateSearchCriteria('propertyCondition', e.target.value)}>
+                  <option value="" className="bg-[#0d0d21]">Any</option>
+                  <option value="Excellent" className="bg-[#0d0d21]">Excellent / New</option>
+                  <option value="Good" className="bg-[#0d0d21]">Good Condition</option>
+                  <option value="Renovation" className="bg-[#0d0d21]">Needs Renovation</option>
+                  <option value="Project" className="bg-[#0d0d21]">Renovation Project</option>
+                </select>
+              </div>
             </div>
           </div>
           
