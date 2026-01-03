@@ -82,23 +82,37 @@ interface PropertyMatch {
     price: string;
     location_city: string;
     location_department: string;
+    location_postal_code: string;
+    location_lat: number | null;
+    location_lng: number | null;
     surface: string;
     rooms: number;
     bedrooms: number;
     property_type: string;
     url: string;
     source: string;
+    reference: string;
     images: string[];
+    description: string | null;
     data_quality_score: string;
     validation_errors: string[];
     land_surface: number | null;
+    building_surface: number | null;
+    floors: number | null;
     pool: boolean | null;
     heating_system: string | null;
     drainage_system: string | null;
     property_condition: string | null;
     year_built: number | null;
     bathrooms: number | null;
+    wc_count: number | null;
     energy_consumption: number | null;
+    co2_emissions: number | null;
+    previous_price: number | null;
+    price_changed_at: string | null;
+    price_drop_amount: number | null;
+    scraped_at: string;
+    last_seen_at: string;
   } | null;
 }
 
@@ -117,6 +131,7 @@ export default function ClientDetailPage() {
   const [scrapeStatus, setScrapeStatus] = useState<string>('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [hasAutoMatched, setHasAutoMatched] = useState(false);
+  const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchClientData();
@@ -124,162 +139,153 @@ export default function ClientDetailPage() {
 
   const fetchClientData = async () => {
     setLoading(true);
-    
-    console.log('🔍 Fetching data for client:', clientId);
-    
-    // Fetch client details - FIXED: use 'data' not 'clientData'
+  
+    // 1) Fetch client + criteria
     const { data, error: clientError } = await supabase
       .from('clients')
-      .select(`*, client_search_criteria (*)`)
+      .select('*, client_search_criteria (*)')
       .eq('id', clientId)
       .single();
-    
-    if (data && !clientError) {
-      console.log('✅ Client loaded:', data.first_name, data.last_name);
+  
+    if (!clientError && data) {
       setClient(data as unknown as ClientDetails);
+    } else {
+      setClient(null);
     }
-
-    // Fetch matches - FIXED: renamed 'data' to 'matchesResult'
-    const { data: matchesResult, error: matchError } = await supabase
+  
+    // 2) Fetch matches for this client
+    const matchesResponse = await supabase
       .from('property_matches')
       .select('*')
       .eq('client_id', clientId)
       .order('match_score', { ascending: false });
-
-    console.log('📊 Matches found:', matchesResult?.length || 0);
-
-    if (matchesResult && matchesResult.length > 0 && !matchError) {
-      // Get all property IDs
-      const propertyIds = matchesResult.map((m: any) => m.property_id);
-      
-      // Fetch properties - FIXED: renamed 'data' to 'propertiesResult'
-      const { data: propertiesResult, error: propertiesError } = await supabase
+  
+    if (!matchesResponse.error && matchesResponse.data && matchesResponse.data.length > 0) {
+      const propertyIds = matchesResponse.data.map((m: any) => m.property_id);
+  
+      // 3) Fetch properties for those matches
+      const propertiesResponse = await supabase
         .from('properties')
         .select('*')
         .in('id', propertyIds);
-
-      // ✅ Parse JSON fields safely
-      const parsedProperties = propertiesResult?.map((p: any) => {
-        let images: string[] = [];
-        let validation_errors: string[] = [];
-        
-        // Parse images
-        try {
-          if (p.images) {
-            if (typeof p.images === 'string') {
-              images = JSON.parse(p.images);
-            } else if (Array.isArray(p.images)) {
-              images = p.images;
+  
+      let parsedProperties: any[] | undefined = propertiesResponse.data ?? undefined;
+  
+      if (!propertiesResponse.error && propertiesResponse.data) {
+        parsedProperties = propertiesResponse.data.map((p: any) => {
+          let images: string[] = [];
+          let validation_errors: string[] = [];
+  
+          try {
+            if (p.images) {
+              if (typeof p.images === 'string') {
+                images = JSON.parse(p.images);
+              } else if (Array.isArray(p.images)) {
+                images = p.images;
+              }
             }
+          } catch {
+            // ignore
           }
-        } catch (e) {
-          console.warn('Failed to parse images for property:', p.id);
-        }
-        
-        // Parse validation_errors
-        try {
-          if (p.validation_errors) {
-            if (typeof p.validation_errors === 'string') {
-              const parsed = JSON.parse(p.validation_errors);
-              validation_errors = Array.isArray(parsed) ? parsed : [];
-            } else if (Array.isArray(p.validation_errors)) {
-              validation_errors = p.validation_errors;
+  
+          try {
+            if (p.validation_errors) {
+              if (typeof p.validation_errors === 'string') {
+                const parsed = JSON.parse(p.validation_errors);
+                validation_errors = Array.isArray(parsed) ? parsed : [];
+              } else if (Array.isArray(p.validation_errors)) {
+                validation_errors = p.validation_errors;
+              }
             }
+          } catch {
+            // ignore
           }
-        } catch (e) {
-          console.warn('Failed to parse validation_errors for property:', p.id);
-        }
-        
-        return {
-          ...p,
-          images,
-          validation_errors,
-          data_quality_score: p.data_quality_score || '1.0'
-        };
-      });
-
-      // Merge the data manually
-      const mergedMatches = matchesResult.map((match: any) => {
-        const matchedProperty = parsedProperties?.find((p: any) => p.id === match.property_id);
-        return {
-          ...match,
-          properties: matchedProperty || null,
-        };
-      }).filter((m: any) => m.properties !== null);
-
-      setMatches(mergedMatches as unknown as PropertyMatch[]);
-
-      // Calculate last updated
+  
+          return {
+            ...p,
+            images,
+            validation_errors,
+            data_quality_score: p.data_quality_score || '1.0',
+          };
+        });
+      }
+  
+      const mergedMatches = matchesResponse.data
+        .map((match: any) => {
+          const matchedProperty = parsedProperties?.find((p: any) => p.id === match.property_id);
+          return {
+            ...match,
+            properties: matchedProperty || null,
+          };
+        })
+        .filter((m: any) => m.properties !== null);
+  
+      setMatches(mergedMatches as PropertyMatch[]);
+  
       if (mergedMatches.length > 0) {
-        const dates = mergedMatches.map((m: any) => 
-          new Date(m.updated_at || m.matched_at)
-        );
+        const dates = mergedMatches.map((m: any) => new Date(m.updated_at || m.matched_at));
         const mostRecent = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
         setLastUpdated(mostRecent);
+      } else {
+        setLastUpdated(null);
       }
     } else {
       setMatches([]);
       setLastUpdated(null);
     }
-
+  
     setLoading(false);
   };
+  
 
-  // AUTO-MATCH on first load if no matches exist
+  // Auto-match once on first load if there are criteria
   useEffect(() => {
     if (!loading && !hasAutoMatched && client && matches.length === 0) {
       const criteria = client.client_search_criteria?.[0];
-      
-      // Check if criteria exists and has at least location OR budget
+
       const hasLocation = !!(
-        criteria?.locations || 
-        criteria?.selected_places || 
+        criteria?.locations ||
+        criteria?.selected_places ||
         criteria?.radius_searches
       );
       const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
 
       if (hasLocation || hasBudget) {
-        console.log('🤖 Auto-running initial match...');
         setHasAutoMatched(true);
         handleRunScan();
       }
     }
   }, [loading, hasAutoMatched, client, matches.length]);
 
-  // NEW: Trigger scraper + matching
   const handleRunFullScan = async () => {
     setIsScraping(true);
     setScrapeStatus('Starting scraper...');
-    
+
     try {
-      // Step 1: Trigger scraper
       setScrapeStatus('🔄 Scraping CAD-IMMO...');
       const scrapeResponse = await fetch('/api/trigger-scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          searchUrl: 'https://cad-immo.com/fr/ventes' 
-        }),
+        body: JSON.stringify({ searchUrl: 'https://cad-immo.com/fr/ventes' }),
       });
 
       const scrapeResult = await scrapeResponse.json();
-      
+
       if (!scrapeResponse.ok) {
         throw new Error(scrapeResult.error || 'Scraping failed');
       }
 
       setScrapeStatus(`✅ Scraped ${scrapeResult.stats.total} properties`);
-      
-      // Step 2: Run matching
+
       setScrapeStatus('🎯 Running property matching...');
       await handleRunScan();
-      
+
       setScrapeStatus('✨ Complete!');
       setTimeout(() => setScrapeStatus(''), 3000);
-      
     } catch (error) {
-      console.error('Full scan error:', error);
-      setScrapeStatus(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setScrapeStatus(
+        `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
       setTimeout(() => setScrapeStatus(''), 5000);
     } finally {
       setIsScraping(false);
@@ -288,39 +294,37 @@ export default function ClientDetailPage() {
 
   const handleRunScan = async () => {
     setIsScanning(true);
-    
-    // Call the matching API for this specific client
-    const response = await fetch('/api/match-properties', {
+
+    await fetch('/api/match-properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId }),
     });
 
-    const result = await response.json();
-    
-    // Refresh matches after scan
     await fetchClientData();
     setIsScanning(false);
   };
 
-  const updateMatchStatus = async (matchId: string, newStatus: 'shortlisted' | 'rejected' | 'new') => {
+  const updateMatchStatus = async (
+    matchId: string,
+    newStatus: 'shortlisted' | 'rejected' | 'new'
+  ) => {
     setUpdatingMatchId(matchId);
-    
+
     const { error } = await supabase
       .from('property_matches')
-      .update({ 
+      .update({
         status: newStatus,
         updated_at: new Date().toISOString(),
       })
       .eq('id', matchId);
 
     if (!error) {
-      // Update local state
-      setMatches(prev => 
-        prev.map(m => m.id === matchId ? { ...m, status: newStatus } : m)
+      setMatches(prev =>
+        prev.map(m => (m.id === matchId ? { ...m, status: newStatus } : m))
       );
     }
-    
+
     setUpdatingMatchId(null);
   };
 
@@ -334,7 +338,7 @@ export default function ClientDetailPage() {
   const getQualityBadge = (score: string, errors: string[]) => {
     const numScore = parseFloat(score);
     if (numScore === 1.0) return null;
-    
+
     return (
       <div className="absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-yellow-500/20 border border-yellow-500 text-yellow-500 flex items-center gap-1">
         <AlertTriangle size={10} />
@@ -347,39 +351,43 @@ export default function ClientDetailPage() {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'just now';
     if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    
+
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    
+
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
   };
 
-  if (loading) return (
-    <div className="min-h-screen bg-[#0d0d21] flex items-center justify-center">
-      <Loader2 className="animate-spin text-[#00ffff]" size={40} />
-    </div>
-  );
-  
-  if (!client) return (
-    <div className="min-h-screen bg-[#0d0d21] flex items-center justify-center text-red-500">
-      Client not found.
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0d0d21] flex items-center justify-center">
+        <Loader2 className="animate-spin text-[#00ffff]" size={40} />
+      </div>
+    );
+  }
+
+  if (!client) {
+    return (
+      <div className="min-h-screen bg-[#0d0d21] flex items-center justify-center text-red-500">
+        Client not found.
+      </div>
+    );
+  }
 
   const criteria = client.client_search_criteria?.[0];
   const newMatches = matches.filter(m => m.status === 'new');
   const shortlistedMatches = matches.filter(m => m.status === 'shortlisted');
   const rejectedMatches = matches.filter(m => m.status === 'rejected');
-  const displayedMatches = activeTab === 'shortlist' ? shortlistedMatches : newMatches;
+  const displayedMatches =
+    activeTab === 'shortlist' ? shortlistedMatches : newMatches;
 
-  // Check if matching is disabled
   const hasLocation = !!(
-    criteria?.locations || 
-    criteria?.selected_places || 
+    criteria?.locations ||
+    criteria?.selected_places ||
     criteria?.radius_searches
   );
   const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
@@ -390,10 +398,13 @@ export default function ClientDetailPage() {
       <MainHeader />
       <main className="p-4 md:p-8 max-w-7xl mx-auto">
         
-        {/* --- HEADER --- */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 border-b border-[#00ffff]/30 pb-6">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10 text-[#00ffff]">
+            <button
+              onClick={() => router.back()}
+              className="p-2 border border-[#00ffff] rounded hover:bg-[#00ffff]/10 text-[#00ffff]"
+            >
               <ArrowLeft size={20} />
             </button>
             <div>
@@ -407,36 +418,43 @@ export default function ClientDetailPage() {
               </div>
               <div className="flex gap-4 text-sm text-[#a0a0ff] mt-1">
                 <span className="flex items-center gap-1 hover:text-white cursor-pointer">
-                  <Mail size={12}/> {client.email || 'No Email'}
+                  <Mail size={12} /> {client.email || 'No Email'}
                 </span>
                 <span className="flex items-center gap-1 hover:text-white cursor-pointer">
-                  <Phone size={12}/> {client.mobile || 'No Mobile'}
+                  <Phone size={12} /> {client.mobile || 'No Mobile'}
                 </span>
               </div>
             </div>
           </div>
 
           <div className="flex gap-3">
-             <button className="px-4 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold flex items-center gap-2">
-                <BellRing size={14} /> Alerts On
-             </button>
-             <button className="px-4 py-2 bg-[#00ffff] text-black hover:bg-[#00ffff]/80 rounded uppercase text-xs font-bold flex items-center gap-2">
-                <User size={14} /> Edit File
-             </button>
+            <button className="px-4 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold flex items-center gap-2">
+              <BellRing size={14} /> Alerts On
+            </button>
+            <button className="px-4 py-2 bg-[#00ffff] text-black hover:bg-[#00ffff]/80 rounded uppercase text-xs font-bold flex items-center gap-2">
+              <User size={14} /> Edit File
+            </button>
           </div>
         </div>
 
-        {/* WARNING BANNER - Missing Criteria */}
+        {/* WARNING BANNER */}
         {matchingDisabled && (
           <div className="mb-6 p-4 bg-red-500/10 border-2 border-red-500 rounded-lg flex items-start gap-3">
-            <AlertTriangle size={24} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <AlertTriangle
+              size={24}
+              className="text-red-500 flex-shrink-0 mt-0.5"
+            />
             <div>
               <div className="text-red-500 font-bold text-sm uppercase mb-1">
                 ⚠️ Matching Disabled
               </div>
               <div className="text-white text-sm">
-                This client has <span className="font-bold">no location criteria AND no budget criteria</span> set. 
-                The matching system requires at least one of these to find relevant properties.
+                This client has{' '}
+                <span className="font-bold">
+                  no location criteria AND no budget criteria
+                </span>{' '}
+                set. The matching system requires at least one of these to find
+                relevant properties.
               </div>
               <button className="mt-3 px-4 py-2 bg-red-500 text-white rounded text-xs font-bold uppercase hover:bg-red-600">
                 Configure Search Criteria
@@ -445,450 +463,849 @@ export default function ClientDetailPage() {
           </div>
         )}
 
-        {/* --- TABS --- */}
+        {/* TABS */}
         <div className="flex gap-6 mb-6 overflow-x-auto">
-            <button 
-              onClick={() => setActiveTab('dashboard')} 
-              className={`pb-2 px-2 text-sm font-bold uppercase transition-all whitespace-nowrap ${
-                activeTab === 'dashboard' ? 'text-[#00ffff] border-b-2 border-[#00ffff]' : 'text-gray-500 hover:text-[#00ffff]'
-              }`}
-            >
-                Criteria & Configuration
-            </button>
-            <button 
-              onClick={() => setActiveTab('market_scan')} 
-              className={`pb-2 px-2 text-sm font-bold uppercase transition-all whitespace-nowrap ${
-                activeTab === 'market_scan' ? 'text-[#ff00ff] border-b-2 border-[#ff00ff]' : 'text-gray-500 hover:text-[#ff00ff]'
-              }`}
-            >
-                External Market Feed 
-                {newMatches.length > 0 && (
-                  <span className="ml-1 bg-[#ff00ff] text-black text-[0.6rem] px-1 rounded-full">
-                    {newMatches.length} New
-                  </span>
-                )}
-            </button>
-            <button 
-              onClick={() => setActiveTab('shortlist')} 
-              className={`pb-2 px-2 text-sm font-bold uppercase transition-all whitespace-nowrap ${
-                activeTab === 'shortlist' ? 'text-[#00ff00] border-b-2 border-[#00ff00]' : 'text-gray-500 hover:text-[#00ff00]'
-              }`}
-            >
-                Selection / Shortlist
-                {shortlistedMatches.length > 0 && (
-                  <span className="ml-1 bg-[#00ff00] text-black text-[0.6rem] px-1 rounded-full">
-                    {shortlistedMatches.length}
-                  </span>
-                )}
-            </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`pb-2 px-2 text-sm font-bold uppercase transition-all whitespace-nowrap ${
+              activeTab === 'dashboard'
+                ? 'text-[#00ffff] border-b-2 border-[#00ffff]'
+                : 'text-gray-500 hover:text-[#00ffff]'
+            }`}
+          >
+            Criteria & Configuration
+          </button>
+          <button
+            onClick={() => setActiveTab('market_scan')}
+            className={`pb-2 px-2 text-sm font-bold uppercase transition-all whitespace-nowrap ${
+              activeTab === 'market_scan'
+                ? 'text-[#ff00ff] border-b-2 border-[#ff00ff]'
+                : 'text-gray-500 hover:text-[#ff00ff]'
+            }`}
+          >
+            External Market Feed
+            {newMatches.length > 0 && (
+              <span className="ml-1 bg-[#ff00ff] text-black text-[0.6rem] px-1 rounded-full">
+                {newMatches.length} New
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('shortlist')}
+            className={`pb-2 px-2 text-sm font-bold uppercase transition-all whitespace-nowrap ${
+              activeTab === 'shortlist'
+                ? 'text-[#00ff00] border-b-2 border-[#00ff00]'
+                : 'text-gray-500 hover:text-[#00ff00]'
+            }`}
+          >
+            Selection / Shortlist
+            {shortlistedMatches.length > 0 && (
+              <span className="ml-1 bg-[#00ff00] text-black text-[0.6rem] px-1 rounded-full">
+                {shortlistedMatches.length}
+              </span>
+            )}
+          </button>
         </div>
 
-        {/* --- TAB CONTENT: DASHBOARD --- */}
+        {/* DASHBOARD TAB */}
         {activeTab === 'dashboard' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* LEFT: CRITERIA CONFIG */}
-                <div className="lg:col-span-2 space-y-6">
-                    <section className="bg-[#00ffff]/5 border border-[#00ffff] rounded-lg p-6 relative">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-lg text-white font-bold uppercase flex items-center gap-2">
-                                <Radar className="text-[#00ffff]"/> Search Configuration
-                            </h3>
-                            <button className="text-xs text-[#00ffff] underline hover:text-white">
-                              Modify Inputs
-                            </button>
-                        </div>
-
-                        {!criteria ? (
-                            <div className="text-gray-500 italic text-sm">
-                              No search criteria set. Configure to start scanning.
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                                <div>
-                                    <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
-                                      Budget Range
-                                    </label>
-                                    <div className="text-xl text-white font-bold">
-                                      {hasBudget ? (
-                                        `€${criteria.min_budget?.toLocaleString() || '0'} - €${criteria.max_budget?.toLocaleString() || '∞'}`
-                                      ) : (
-                                        <span className="text-red-500 text-sm">Not Set</span>
-                                      )}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
-                                      Target Sector
-                                    </label>
-                                    <div className="text-lg text-white">
-                                      {hasLocation ? (
-                                        criteria.locations || 'Custom area'
-                                      ) : (
-                                        <span className="text-red-500 text-sm">Not Set</span>
-                                      )}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
-                                      Min Surface
-                                    </label>
-                                    <div className="text-lg text-white">
-                                      {criteria.min_surface ? `${criteria.min_surface} m²` : 'Any'}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
-                                      Min Rooms/Bedrooms
-                                    </label>
-                                    <div className="text-lg text-white">
-                                      {criteria.min_rooms || 'Any'} / {criteria.min_bedrooms || 'Any'}
-                                    </div>
-                                </div>
-                                {criteria.property_types && criteria.property_types.length > 0 && (
-                                  <div className="col-span-2">
-                                      <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
-                                        Property Types
-                                      </label>
-                                      <div className="flex flex-wrap gap-2">
-                                          {criteria.property_types.map(t => (
-                                              <span key={t} className="text-xs border border-[#00ffff]/30 px-2 py-1 rounded bg-[#00ffff]/10">
-                                                {t}
-                                              </span>
-                                          ))}
-                                      </div>
-                                  </div>
-                                )}
-                            </div>
-                        )}
-                    </section>
-
-                    {/* ACTIVE SOURCES */}
-                    <section className="bg-[#020222] border border-[#333] rounded-lg p-6">
-                        <h3 className="text-sm text-[#a0a0ff] font-bold uppercase mb-4 flex items-center gap-2">
-                            <Globe size={16}/> Active Data Sources
-                        </h3>
-                        <div className="flex flex-wrap gap-3">
-                            {['CAD-IMMO', 'SeLoger (Soon)', 'Leboncoin (Soon)', 'Local Agencies (Coming)'].map((source, idx) => (
-                                <div key={source} className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded border border-white/10 text-xs text-white">
-                                    <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-[#00ff00] shadow-[0_0_5px_#00ff00]' : 'bg-gray-500'}`}></div>
-                                    {source}
-                                </div>
-                            ))}
-                        </div>
-                        <div className="mt-4 text-[0.7rem] text-gray-500">
-                            * System is currently monitoring active sources for new listings matching criteria.
-                        </div>
-                    </section>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* LEFT: CRITERIA */}
+            <div className="lg:col-span-2 space-y-6">
+              <section className="bg-[#00ffff]/5 border border-[#00ffff] rounded-lg p-6 relative">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg text-white font-bold uppercase flex items-center gap-2">
+                    <Radar className="text-[#00ffff]" /> Search Configuration
+                  </h3>
+                  <button className="text-xs text-[#00ffff] underline hover:text-white">
+                    Modify Inputs
+                  </button>
                 </div>
 
-                {/* RIGHT: STATUS & ACTIONS */}
-                <div className="space-y-6">
-                    <div className="bg-[#ff00ff]/10 border border-[#ff00ff] rounded-lg p-6 text-center">
-                        <h3 className="text-[#ff00ff] font-bold uppercase text-sm mb-4">
-                          Market Scanner Status
-                        </h3>
-                        
-                        {isScraping || isScanning ? (
-                            <div className="flex flex-col items-center py-4">
-                                <Loader2 size={40} className="animate-spin text-[#ff00ff] mb-2"/>
-                                <span className="text-white text-sm animate-pulse">
-                                  {scrapeStatus || 'Processing...'}
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center py-2">
-                                <div className="text-3xl font-bold text-white mb-1">
-                                  {newMatches.length}
-                                </div>
-                                <div className="text-xs text-[#ff00ff] uppercase mb-6">
-                                  New Matches Found
-                                </div>
-                                <button 
-                                    onClick={handleRunFullScan}
-                                    disabled={matchingDisabled}
-                                    className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                    <Database size={16} />
-                                    Scrape & Match
-                                </button>
-                                <button 
-                                    onClick={handleRunScan}
-                                    disabled={matchingDisabled}
-                                    className="w-full mt-2 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                    Refresh Matches
-                                </button>
-                            </div>
-                        )}
-                        {scrapeStatus && (
-                          <div className="mt-3 text-xs text-white/70">
-                            {scrapeStatus}
-                          </div>
-                        )}
-                        {lastUpdated && (
-                          <div className="mt-3 text-[0.65rem] text-[#a0a0ff] flex items-center justify-center gap-1">
-                            <Calendar size={10} />
-                            Last updated: {getTimeSince(lastUpdated)}
-                          </div>
-                        )}
-                    </div>
-
-                    {/* Quick Stats */}
-                    <div className="bg-[#020222] border border-[#333] rounded-lg p-4">
-                      <h4 className="text-xs text-gray-400 uppercase mb-3">Quick Stats</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-400">New Matches:</span>
-                          <span className="text-[#ff00ff] font-bold">{newMatches.length}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-400">Shortlisted:</span>
-                          <span className="text-[#00ff00] font-bold">{shortlistedMatches.length}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-400">Discarded:</span>
-                          <span className="text-red-500 font-bold">{rejectedMatches.length}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-400">Total Matches:</span>
-                          <span className="text-white font-bold">{matches.length}</span>
-                        </div>
-                      </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* --- TAB CONTENT: MARKET SCAN & SHORTLIST --- */}
-        {(activeTab === 'market_scan' || activeTab === 'shortlist') && (
-            <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                    <div className="text-sm text-gray-400 uppercase">
-                        {activeTab === 'market_scan' 
-                          ? `Showing ${displayedMatches.length} new matches` 
-                          : `${displayedMatches.length} shortlisted properties`
-                        }
-                        {lastUpdated && (
-                          <span className="ml-3 text-[#a0a0ff]">
-                            • Last updated: {getTimeSince(lastUpdated)}
-                          </span>
-                        )}
-                    </div>
-                    <button 
-                      onClick={handleRunFullScan}
-                      disabled={isScraping || matchingDisabled}
-                      className="text-xs text-[#ff00ff] border border-[#ff00ff] px-3 py-1 rounded uppercase hover:bg-[#ff00ff]/10 disabled:opacity-50"
-                    >
-                      {isScraping ? 'Scanning...' : 'Refresh Matches'}
-                    </button>
-                </div>
-
-                {displayedMatches.length === 0 ? (
-                  <div className="bg-[#020222] border border-[#333] rounded-lg p-12 text-center">
-                    <p className="text-gray-500 text-lg mb-4">
-                      {activeTab === 'market_scan' 
-                        ? 'No new matches found yet.' 
-                        : 'No properties shortlisted yet.'
-                      }
-                    </p>
-                    {activeTab === 'market_scan' && !matchingDisabled && (
-                      <button 
-                        onClick={handleRunFullScan}
-                        className="px-6 py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded hover:bg-[#ff00ff]/80"
-                      >
-                        Run First Scan
-                      </button>
-                    )}
+                {!criteria ? (
+                  <div className="text-gray-500 italic text-sm">
+                    No search criteria set. Configure to start scanning.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                      {displayedMatches.map((match) => {
-                        // Safety check
-                        if (!match.properties) return null;
-
-                        const prop = match.properties;
-                        const firstImage = Array.isArray(prop.images) ? prop.images[0] : null;
-                        const qualityScore = prop.data_quality_score || '1.0';
-                        const validationErrors = prop.validation_errors || [];
-                        
-                        return (
-                          <div 
-                            key={match.id} 
-                            className="bg-[#020222] border border-[#333] hover:border-[#ff00ff] transition-colors rounded-lg p-4 flex flex-col md:flex-row gap-4 items-start md:items-center"
-                          >
-                              {/* Image */}
-                              <div className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0">
-                                {firstImage ? (
-                                  <img src={firstImage} alt={prop.title} className="w-full h-full object-cover" />
-                                ) : (
-                                  <Home size={40} className="text-gray-600" />
-                                )}
-                                
-                                {/* Match Score Badge */}
-                                <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(match.match_score)}`}>
-                                  <TrendingUp size={10} className="inline mr-1" />
-                                  {match.match_score}%
-                                </div>
-
-                                {/* Quality Badge */}
-                                {getQualityBadge(qualityScore, validationErrors)}
-                              </div>
-                              
-                              <div className="flex-1">
-                                  <div className="flex gap-2 mb-2 flex-wrap">
-                                      <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
-                                        {prop.source}
-                                      </span>
-                                      <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
-                                        {prop.property_type || 'Property'}
-                                      </span>
-                                      {prop.pool && (
-                                        <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                                          <Droplets size={10} /> Pool
-                                        </span>
-                                      )}
-                                  </div>
-                                  <h4 className="text-lg font-bold text-white mb-1">
-                                    {prop.title}
-                                  </h4>
-                                  <div className="flex flex-wrap gap-3 text-[#a0a0ff] text-sm mb-2">
-                                    <span className="flex items-center gap-1">
-                                      <MapPin size={12} /> {prop.location_city}
-                                    </span>
-                                    {prop.surface && (
-                                      <span className="flex items-center gap-1">
-                                        <Maximize2 size={12} /> {prop.surface} m²
-                                      </span>
-                                    )}
-                                    {prop.land_surface && (
-                                      <span className="flex items-center gap-1">
-                                        <Home size={12} /> {prop.land_surface} m² land
-                                      </span>
-                                    )}
-                                    {prop.rooms && (
-                                      <span className="flex items-center gap-1">
-                                        <Home size={12} /> {prop.rooms} rooms
-                                      </span>
-                                    )}
-                                    {prop.bedrooms && (
-                                      <span className="flex items-center gap-1">
-                                        <Bed size={12} /> {prop.bedrooms} bed
-                                      </span>
-                                    )}
-                                    {prop.bathrooms && (
-                                      <span className="flex items-center gap-1">
-                                        <Bath size={12} /> {prop.bathrooms} bath
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
-                                    {prop.heating_system && (
-                                      <span className="flex items-center gap-1">
-                                        <Flame size={10} /> {prop.heating_system}
-                                      </span>
-                                    )}
-                                    {prop.drainage_system && (
-                                      <span className="flex items-center gap-1">
-                                        <Wrench size={10} /> {prop.drainage_system}
-                                      </span>
-                                    )}
-                                    {prop.year_built && (
-                                      <span className="flex items-center gap-1">
-                                        <Calendar size={10} /> Built {prop.year_built}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {validationErrors.length > 0 && (
-                                    <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
-                                      <AlertTriangle size={12} />
-                                      {Array.isArray(validationErrors) ? validationErrors.join(', ') : 'Data quality issues'}
-                                    </div>
-                                  )}
-                                  <div className="text-xl font-bold text-[#00ffff]">
-                                    €{parseInt(prop.price || '0').toLocaleString()}
-                                  </div>
-                              </div>
-
-                              <div className="flex md:flex-col gap-2 w-full md:w-auto">
-                                  {match.status !== 'shortlisted' && (
-                                    <button 
-                                      onClick={() => updateMatchStatus(match.id, 'shortlisted')}
-                                      disabled={updatingMatchId === match.id}
-                                      className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                                    >
-                                      {updatingMatchId === match.id ? (
-                                        <Loader2 size={14} className="animate-spin" />
-                                      ) : (
-                                        <>
-                                          <CheckCircle2 size={14} /> Select
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
-                                  {match.status !== 'rejected' && (
-                                    <button 
-                                      onClick={() => updateMatchStatus(match.id, 'rejected')}
-                                      disabled={updatingMatchId === match.id}
-                                      className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                                    >
-                                      {updatingMatchId === match.id ? (
-                                        <Loader2 size={14} className="animate-spin" />
-                                      ) : (
-                                        <>
-                                          <XCircle size={14} /> Discard
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
-                                  <a 
-                                    href={prop.url} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="flex-1 md:w-40 py-2 bg-[#ff00ff]/10 text-[#ff00ff] hover:bg-[#ff00ff]/20 rounded uppercase text-xs font-bold flex items-center justify-center gap-2"
-                                  >
-                                      <ExternalLink size={14} /> Source
-                                  </a>
-                              </div>
+                  <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                    <div>
+                      <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
+                        Budget Range
+                      </label>
+                      <div className="text-xl text-white font-bold">
+                        {hasBudget ? (
+                          `€${criteria.min_budget?.toLocaleString() || '0'} - €${
+                            criteria.max_budget?.toLocaleString() || '∞'
+                          }`
+                        ) : (
+                          <span className="text-red-500 text-sm">Not Set</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
+                        Target Sector
+                      </label>
+                      <div className="text-lg text-white">
+                        {hasLocation ? (
+                          criteria.locations || 'Custom area'
+                        ) : (
+                          <span className="text-red-500 text-sm">Not Set</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
+                        Min Surface
+                      </label>
+                      <div className="text-lg text-white">
+                        {criteria.min_surface
+                          ? `${criteria.min_surface} m²`
+                          : 'Any'}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
+                        Min Rooms/Bedrooms
+                      </label>
+                      <div className="text-lg text-white">
+                        {criteria.min_rooms || 'Any'} /{' '}
+                        {criteria.min_bedrooms || 'Any'}
+                      </div>
+                    </div>
+                    {criteria.property_types &&
+                      criteria.property_types.length > 0 && (
+                        <div className="col-span-2">
+                          <label className="text-[0.65rem] text-[#00ffff] uppercase block mb-1">
+                            Property Types
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {criteria.property_types.map(t => (
+                              <span
+                                key={t}
+                                className="text-xs border border-[#00ffff]/30 px-2 py-1 rounded bg-[#00ffff]/10"
+                              >
+                                {t}
+                              </span>
+                            ))}
                           </div>
-                        ); 
-                      })}
+                        </div>
+                      )}
+                  </div>
+                )}
+              </section>
+
+              <section className="bg-[#020222] border border-[#333] rounded-lg p-6">
+                <h3 className="text-sm text-[#a0a0ff] font-bold uppercase mb-4 flex items-center gap-2">
+                  <Globe size={16} /> Active Data Sources
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    'CAD-IMMO',
+                    'SeLoger (Soon)',
+                    'Leboncoin (Soon)',
+                    'Local Agencies (Coming)',
+                  ].map((source, idx) => (
+                    <div
+                      key={source}
+                      className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded border border-white/10 text-xs text-white"
+                    >
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          idx === 0
+                            ? 'bg-[#00ff00] shadow-[0_0_5px_#00ff00]'
+                            : 'bg-gray-500'
+                        }`}
+                      ></div>
+                      {source}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 text-[0.7rem] text-gray-500">
+                  * System is currently monitoring active sources for new
+                  listings matching criteria.
+                </div>
+              </section>
+            </div>
+
+            {/* RIGHT: STATUS */}
+            <div className="space-y-6">
+              <div className="bg-[#ff00ff]/10 border border-[#ff00ff] rounded-lg p-6 text-center">
+                <h3 className="text-[#ff00ff] font-bold uppercase text-sm mb-4">
+                  Market Scanner Status
+                </h3>
+
+                {isScraping || isScanning ? (
+                  <div className="flex flex-col items-center py-4">
+                    <Loader2
+                      size={40}
+                      className="animate-spin text-[#ff00ff] mb-2"
+                    />
+                    <span className="text-white text-sm animate-pulse">
+                      {scrapeStatus || 'Processing...'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center py-2">
+                    <div className="text-3xl font-bold text-white mb-1">
+                      {newMatches.length}
+                    </div>
+                    <div className="text-xs text-[#ff00ff] uppercase mb-6">
+                      New Matches Found
+                    </div>
+                    <button
+                      onClick={handleRunFullScan}
+                      disabled={matchingDisabled}
+                      className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Database size={16} />
+                      Scrape & Match
+                    </button>
+                    <button
+                      onClick={handleRunScan}
+                      disabled={matchingDisabled}
+                      className="w-full mt-2 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Refresh Matches
+                    </button>
                   </div>
                 )}
 
-                {/* DISCARDED PROPERTIES SECTION */}
-                {activeTab === 'shortlist' && rejectedMatches.length > 0 && (
-                  <details className="bg-[#020222] border border-red-500/30 rounded-lg p-4">
-                    <summary className="cursor-pointer text-red-500 font-bold uppercase text-sm flex items-center gap-2">
-                      <XCircle size={16} />
-                      Discarded Properties ({rejectedMatches.length})
-                    </summary>
-                    <div className="mt-4 space-y-3">
-                      {rejectedMatches.map((match) => {
-                        if (!match.properties) return null;
-                        const prop = match.properties;
-                        
-                        return (
-                          <div key={match.id} className="flex justify-between items-center p-3 bg-red-500/5 border border-red-500/20 rounded">
-                            <div>
-                              <div className="text-white font-bold text-sm">{prop.title}</div>
-                              <div className="text-gray-400 text-xs">{prop.location_city} • €{parseInt(prop.price || '0').toLocaleString()}</div>
-                            </div>
-                            <button 
-                              onClick={() => updateMatchStatus(match.id, 'new')}
-                              className="px-3 py-1 border border-[#00ffff] text-[#00ffff] hover:bg-[#00ffff]/10 rounded uppercase text-xs font-bold"
-                            >
-                              Restore
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </details>
+                {scrapeStatus && (
+                  <div className="mt-3 text-xs text-white/70">
+                    {scrapeStatus}
+                  </div>
                 )}
+                {lastUpdated && (
+                  <div className="mt-3 text-[0.65rem] text-[#a0a0ff] flex items-center justify-center gap-1">
+                    <Calendar size={10} />
+                    Last updated: {getTimeSince(lastUpdated)}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-[#020222] border border-[#333] rounded-lg p-4">
+                <h4 className="text-xs text-gray-400 uppercase mb-3">
+                  Quick Stats
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">New Matches:</span>
+                    <span className="text-[#ff00ff] font-bold">
+                      {newMatches.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Shortlisted:</span>
+                    <span className="text-[#00ff00] font-bold">
+                      {shortlistedMatches.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Discarded:</span>
+                    <span className="text-red-500 font-bold">
+                      {rejectedMatches.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Total Matches:</span>
+                    <span className="text-white font-bold">
+                      {matches.length}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
+          </div>
         )}
 
+        {/* MARKET & SHORTLIST TABS */}
+        {(activeTab === 'market_scan' || activeTab === 'shortlist') && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div className="text-sm text-gray-400 uppercase">
+                {activeTab === 'market_scan'
+                  ? `Showing ${displayedMatches.length} new matches`
+                  : `${displayedMatches.length} shortlisted properties`}
+                {lastUpdated && (
+                  <span className="ml-3 text-[#a0a0ff]">
+                    • Last updated: {getTimeSince(lastUpdated)}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleRunFullScan}
+                disabled={isScraping || matchingDisabled}
+                className="text-xs text-[#ff00ff] border border-[#ff00ff] px-3 py-1 rounded uppercase hover:bg-[#ff00ff]/10 disabled:opacity-50"
+              >
+                {isScraping ? 'Scanning...' : 'Refresh Matches'}
+              </button>
+            </div>
+
+            {displayedMatches.length === 0 ? (
+              <div className="bg-[#020222] border border-[#333] rounded-lg p-12 text-center">
+                <p className="text-gray-500 text-lg mb-4">
+                  {activeTab === 'market_scan'
+                    ? 'No new matches found yet.'
+                    : 'No properties shortlisted yet.'}
+                </p>
+                {activeTab === 'market_scan' && !matchingDisabled && (
+                  <button
+                    onClick={handleRunFullScan}
+                    className="px-6 py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded hover:bg-[#ff00ff]/80"
+                  >
+                    Run First Scan
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {displayedMatches.map(match => {
+                  if (!match.properties) return null;
+
+                  const prop = match.properties;
+                  const firstImage = Array.isArray(prop.images) ? prop.images[0] : null;
+                  const allImages = Array.isArray(prop.images) ? prop.images : [];
+                  const qualityScore = prop.data_quality_score || '1.0';
+                  const validationErrors = prop.validation_errors || [];
+                  const isExpanded = expandedPropertyId === match.id;
+
+                  // Price change indicator
+                  const hasPriceChange = prop.previous_price && prop.price_changed_at;
+                  const priceDrop = prop.price_drop_amount || 0;
+
+                  return (
+                    <div
+                      key={match.id}
+                      className="bg-[#020222] border border-[#333] hover:border-[#ff00ff] transition-colors rounded-lg overflow-hidden"
+                    >
+                      {/* COLLAPSED VIEW */}
+                      <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
+                        {/* Image */}
+                        <div
+                          className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
+                          onClick={() =>
+                            setExpandedPropertyId(isExpanded ? null : match.id)
+                          }
+                        >
+                          {firstImage ? (
+                            <img
+                              src={firstImage}
+                              alt={prop.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Home size={40} className="text-gray-600" />
+                          )}
+
+                          {/* Match Score Badge */}
+                          <div
+                            className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
+                              match.match_score
+                            )}`}
+                          >
+                            <TrendingUp size={10} className="inline mr-1" />
+                            {match.match_score}%
+                          </div>
+
+                          {/* Quality Badge */}
+                          {getQualityBadge(qualityScore, validationErrors)}
+
+                          {/* Expand indicator */}
+                          <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                            {isExpanded
+                              ? '▲ Less'
+                              : `▼ More (${allImages.length} photos)`}
+                          </div>
+                        </div>
+
+                        <div className="flex-1">
+                          <div className="flex gap-2 mb-2 flex-wrap">
+                            <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
+                              {prop.source}
+                            </span>
+                            <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
+                              {prop.property_type || 'Property'}
+                            </span>
+                            {prop.pool && (
+                              <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                <Droplets size={10} /> Pool
+                              </span>
+                            )}
+                            {hasPriceChange && priceDrop > 0 && (
+                              <span className="bg-green-500/20 text-green-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                💰 €{priceDrop.toLocaleString()} drop
+                              </span>
+                            )}
+                          </div>
+
+                          <h4
+                            className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
+                            onClick={() =>
+                              setExpandedPropertyId(isExpanded ? null : match.id)
+                            }
+                          >
+                            {prop.title}
+                          </h4>
+
+                          <div className="flex flex-wrap gap-3 text-[#a0a0ff] text-sm mb-2">
+                            <span className="flex items-center gap-1">
+                              <MapPin size={12} /> {prop.location_city}
+                            </span>
+                            {prop.surface && (
+                              <span className="flex items-center gap-1">
+                                <Maximize2 size={12} /> {prop.surface} m²
+                              </span>
+                            )}
+                            {prop.land_surface && (
+                              <span className="flex items-center gap-1">
+                                <Home size={12} /> {prop.land_surface} m² land
+                              </span>
+                            )}
+                            {prop.rooms && (
+                              <span className="flex items-center gap-1">
+                                <Home size={12} /> {prop.rooms} rooms
+                              </span>
+                            )}
+                            {prop.bedrooms && (
+                              <span className="flex items-center gap-1">
+                                <Bed size={12} /> {prop.bedrooms} bed
+                              </span>
+                            )}
+                            {prop.bathrooms && (
+                              <span className="flex items-center gap-1">
+                                <Bath size={12} /> {prop.bathrooms} bath
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
+                            {prop.heating_system && (
+                              <span className="flex items-center gap-1">
+                                <Flame size={10} /> {prop.heating_system}
+                              </span>
+                            )}
+                            {prop.drainage_system && (
+                              <span className="flex items-center gap-1">
+                                <Wrench size={10} /> {prop.drainage_system}
+                              </span>
+                            )}
+                            {prop.year_built && (
+                              <span className="flex items-center gap-1">
+                                <Calendar size={10} /> Built {prop.year_built}
+                              </span>
+                            )}
+                          </div>
+
+                          {validationErrors.length > 0 && (
+                            <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
+                              <AlertTriangle size={12} />
+                              {Array.isArray(validationErrors)
+                                ? validationErrors.join(', ')
+                                : 'Data quality issues'}
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-xl font-bold text-[#00ffff]">
+                              €{parseInt(prop.price || '0', 10).toLocaleString()}
+                            </div>
+                            {hasPriceChange && (
+                              <div className="text-xs text-gray-500 line-through">
+                                €
+                                {parseInt(
+                                  String(prop.previous_price),
+                                  10
+                                ).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex md:flex-col gap-2 w-full md:w-auto">
+                          {match.status !== 'shortlisted' && (
+                            <button
+                              onClick={() =>
+                                updateMatchStatus(match.id, 'shortlisted')
+                              }
+                              disabled={updatingMatchId === match.id}
+                              className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {updatingMatchId === match.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <>
+                                  <CheckCircle2 size={14} /> Select
+                                </>
+                              )}
+                            </button>
+                          )}
+                          {match.status !== 'rejected' && (
+                            <button
+                              onClick={() =>
+                                updateMatchStatus(match.id, 'rejected')
+                              }
+                              disabled={updatingMatchId === match.id}
+                              className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {updatingMatchId === match.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <>
+                                  <XCircle size={14} /> Discard
+                                </>
+                              )}
+                            </button>
+                          )}
+                          <a
+                            href={prop.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 md:w-40 py-2 bg-[#ff00ff]/10 text-[#ff00ff] hover:bg-[#ff00ff]/20 rounded uppercase text-xs font-bold flex items-center justify-center gap-2"
+                          >
+                            <ExternalLink size={14} /> Source
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* EXPANDED VIEW */}
+                      {isExpanded && (
+                        <div className="border-t border-[#333] p-6 bg-[#0d0d21] space-y-6 animate-in fade-in duration-300">
+                          {/* Image Gallery */}
+                          {allImages.length > 1 && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                📸 Photo Gallery ({allImages.length})
+                              </h5>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {allImages.map((img, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={img}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="relative h-40 bg-white/5 rounded overflow-hidden hover:ring-2 ring-[#ff00ff] transition-all group"
+                                  >
+                                    <img
+                                      src={img}
+                                      alt={`${prop.title} - Photo ${idx + 1}`}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <ExternalLink
+                                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                        size={24}
+                                      />
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Description */}
+                          {prop.description && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                📝 Description
+                              </h5>
+                              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-line">
+                                {prop.description}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Technical Details */}
+                          <div>
+                            <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                              🏗️ Technical Details
+                            </h5>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Surface Details */}
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                  Surface & Layout
+                                </div>
+                                <div className="space-y-1 text-sm text-white/80">
+                                  {prop.surface && (
+                                    <div>• Living space: {prop.surface} m²</div>
+                                  )}
+                                  {prop.building_surface && (
+                                    <div>
+                                      • Building: {prop.building_surface} m²
+                                    </div>
+                                  )}
+                                  {prop.land_surface && (
+                                    <div>• Land: {prop.land_surface} m²</div>
+                                  )}
+                                  {prop.floors && <div>• Floors: {prop.floors}</div>}
+                                  {prop.rooms && <div>• Rooms: {prop.rooms}</div>}
+                                  {prop.bedrooms && (
+                                    <div>• Bedrooms: {prop.bedrooms}</div>
+                                  )}
+                                  {prop.bathrooms && (
+                                    <div>• Bathrooms: {prop.bathrooms}</div>
+                                  )}
+                                  {prop.wc_count && <div>• WC: {prop.wc_count}</div>}
+                                </div>
+                              </div>
+
+                              {/* Systems & Condition */}
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                  Systems & Condition
+                                </div>
+                                <div className="space-y-1 text-sm text-white/80">
+                                  {prop.heating_system && (
+                                    <div className="flex items-center gap-2">
+                                      <Flame
+                                        size={12}
+                                        className="text-orange-400"
+                                      />
+                                      Heating: {prop.heating_system}
+                                    </div>
+                                  )}
+                                  {prop.drainage_system && (
+                                    <div className="flex items-center gap-2">
+                                      <Wrench size={12} className="text-blue-400" />
+                                      Drainage: {prop.drainage_system}
+                                    </div>
+                                  )}
+                                  {prop.pool !== null && (
+                                    <div className="flex items-center gap-2">
+                                      <Droplets
+                                        size={12}
+                                        className="text-blue-400"
+                                      />
+                                      Pool: {prop.pool ? 'Yes' : 'No'}
+                                    </div>
+                                  )}
+                                  {prop.property_condition && (
+                                    <div>• Condition: {prop.property_condition}</div>
+                                  )}
+                                  {prop.year_built && (
+                                    <div>• Built: {prop.year_built}</div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Energy Performance */}
+                              {(prop.energy_consumption || prop.co2_emissions) && (
+                                <div className="bg-white/5 rounded p-4">
+                                  <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                    Energy Performance
+                                  </div>
+                                  <div className="space-y-1 text-sm text-white/80">
+                                    {prop.energy_consumption && (
+                                      <div>
+                                        • Consumption: {prop.energy_consumption}{' '}
+                                        kWh/m²/year
+                                      </div>
+                                    )}
+                                    {prop.co2_emissions && (
+                                      <div>
+                                        • CO₂ Emissions: {prop.co2_emissions} kg/m²/year
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Location Details */}
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                  Location
+                                </div>
+                                <div className="space-y-1 text-sm text-white/80">
+                                  {prop.location_city && (
+                                    <div>• City: {prop.location_city}</div>
+                                  )}
+                                  {prop.location_postal_code && (
+                                    <div>• Postal: {prop.location_postal_code}</div>
+                                  )}
+                                  {prop.location_department && (
+                                    <div>• Department: {prop.location_department}</div>
+                                  )}
+                                  {prop.location_lat && prop.location_lng && (
+                                    <div>
+                                      • Coords: {prop.location_lat.toFixed(4)},{' '}
+                                      {prop.location_lng.toFixed(4)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Data Quality Issues */}
+                          {validationErrors.length > 0 && (
+                            <div>
+                              <h5 className="text-sm font-bold text-yellow-500 uppercase mb-3 flex items-center gap-2">
+                                <AlertTriangle size={16} />
+                                Data Quality Issues
+                              </h5>
+                              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
+                                <ul className="text-sm text-yellow-200 space-y-1">
+                                  {validationErrors.map((err, idx) => (
+                                    <li key={idx}>• {err}</li>
+                                  ))}
+                                </ul>
+                                <div className="mt-3 text-xs text-yellow-500/70">
+                                  Quality Score:{' '}
+                                  {(parseFloat(qualityScore) * 100).toFixed(0)}%
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Price History */}
+                          {hasPriceChange && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                💰 Price History
+                              </h5>
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">
+                                      Original Price:
+                                    </span>
+                                    <span className="text-white font-bold">
+                                      €
+                                      {parseInt(
+                                        String(prop.previous_price),
+                                        10
+                                      ).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">
+                                      Current Price:
+                                    </span>
+                                    <span className="text-[#00ff00] font-bold">
+                                      €
+                                      {parseInt(
+                                        prop.price || '0',
+                                        10
+                                      ).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {priceDrop > 0 && (
+                                    <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                                      <span className="text-gray-400">
+                                        Price Reduction:
+                                      </span>
+                                      <span className="text-[#00ff00] font-bold flex items-center gap-1">
+                                        ↓ €{priceDrop.toLocaleString()} (
+                                        {(
+                                          (priceDrop /
+                                            (prop.previous_price || 1)) *
+                                          100
+                                        ).toFixed(1)}
+                                        %)
+                                      </span>
+                                    </div>
+                                  )}
+                                  {prop.price_changed_at && (
+                                    <div className="text-xs text-gray-500 pt-2">
+                                      Changed on:{' '}
+                                      {new Date(
+                                        prop.price_changed_at
+                                      ).toLocaleDateString('en-GB', {
+                                        day: 'numeric',
+                                        month: 'long',
+                                        year: 'numeric',
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Listing Metadata */}
+                          <div className="border-t border-white/10 pt-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-500">
+                              {prop.reference && (
+                                <div>
+                                  <div className="text-[#00ffff] font-bold mb-1">
+                                    Reference
+                                  </div>
+                                  {prop.reference}
+                                </div>
+                              )}
+                              {prop.scraped_at && (
+                                <div>
+                                  <div className="text-[#00ffff] font-bold mb-1">
+                                    First Seen
+                                  </div>
+                                  {new Date(prop.scraped_at).toLocaleDateString()}
+                                </div>
+                              )}
+                              {prop.last_seen_at && (
+                                <div>
+                                  <div className="text-[#00ffff] font-bold mb-1">
+                                    Last Updated
+                                  </div>
+                                  {new Date(prop.last_seen_at).toLocaleDateString()}
+                                </div>
+                              )}
+                              <div>
+                                <div className="text-[#00ffff] font-bold mb-1">
+                                  Match Score
+                                </div>
+                                {match.match_score}%
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* DISCARDED PROPERTIES SECTION */}
+            {activeTab === 'shortlist' && rejectedMatches.length > 0 && (
+              <details className="bg-[#020222] border border-red-500/30 rounded-lg p-4">
+                <summary className="cursor-pointer text-red-500 font-bold uppercase text-sm flex items-center gap-2">
+                  <XCircle size={16} />
+                  Discarded Properties ({rejectedMatches.length})
+                </summary>
+                <div className="mt-4 space-y-3">
+                  {rejectedMatches.map(match => {
+                    if (!match.properties) return null;
+                    const prop = match.properties;
+                    return (
+                      <div
+                        key={match.id}
+                        className="flex justify-between items-center p-3 bg-red-500/5 border border-red-500/20 rounded"
+                      >
+                        <div>
+                          <div className="text-white font-bold text-sm">
+                            {prop.title}
+                          </div>
+                          <div className="text-gray-400 text-xs">
+                            {prop.location_city} • €
+                            {parseInt(prop.price || '0', 10).toLocaleString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => updateMatchStatus(match.id, 'new')}
+                          className="px-3 py-1 border border-[#00ffff] text-[#00ffff] hover:bg-[#00ffff]/10 rounded uppercase text-xs font-bold"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
