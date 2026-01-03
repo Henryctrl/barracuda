@@ -1,3 +1,5 @@
+// src/app/gatherer/clients/[id]/page.tsx
+
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -21,7 +23,12 @@ import {
   Maximize2,
   Bed,
   AlertTriangle,
-  Database
+  Database,
+  Droplets,
+  Flame,
+  Wrench,
+  Calendar,
+  Bath
 } from 'lucide-react';
 import MainHeader from '../../../../components/MainHeader';
 
@@ -41,11 +48,24 @@ interface ClientDetails {
     min_budget: number | null;
     max_budget: number | null;
     locations: string | null;
+    selected_places: any;
+    radius_searches: any;
     min_surface: number | null;
     min_bedrooms: number | null;
+    max_bedrooms: number | null;
     property_types: string[] | null;
     notes: string | null;
     min_rooms: number | null;
+    max_rooms: number | null;
+    min_land_surface: number | null;
+    max_land_surface: number | null;
+    pool_preference: string | null;
+    heating_system: string | null;
+    drainage_system: string | null;
+    property_condition: string | null;
+    min_year_built: number | null;
+    max_year_built: number | null;
+    min_bathrooms: number | null;
   }[];
 }
 
@@ -54,6 +74,7 @@ interface PropertyMatch {
   match_score: number;
   status: string;
   matched_at: string;
+  updated_at: string;
   property_id: string;
   properties: {
     id: string;
@@ -70,6 +91,14 @@ interface PropertyMatch {
     images: string[];
     data_quality_score: string;
     validation_errors: string[];
+    land_surface: number | null;
+    pool: boolean | null;
+    heating_system: string | null;
+    drainage_system: string | null;
+    property_condition: string | null;
+    year_built: number | null;
+    bathrooms: number | null;
+    energy_consumption: number | null;
   } | null;
 }
 
@@ -86,6 +115,8 @@ export default function ClientDetailPage() {
   const [isScraping, setIsScraping] = useState(false);
   const [updatingMatchId, setUpdatingMatchId] = useState<string | null>(null);
   const [scrapeStatus, setScrapeStatus] = useState<string>('');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [hasAutoMatched, setHasAutoMatched] = useState(false);
 
   useEffect(() => {
     fetchClientData();
@@ -96,39 +127,39 @@ export default function ClientDetailPage() {
     
     console.log('🔍 Fetching data for client:', clientId);
     
-    // Fetch client details
-    const { data: clientData } = await supabase
+    // Fetch client details - FIXED: use 'data' not 'clientData'
+    const { data, error: clientError } = await supabase
       .from('clients')
       .select(`*, client_search_criteria (*)`)
       .eq('id', clientId)
       .single();
     
-    if (clientData) {
-      console.log('✅ Client loaded:', clientData.first_name, clientData.last_name);
-      setClient(clientData as unknown as ClientDetails);
+    if (data && !clientError) {
+      console.log('✅ Client loaded:', data.first_name, data.last_name);
+      setClient(data as unknown as ClientDetails);
     }
 
-    // Fetch matches first
-    const { data: matchesData, error: matchError } = await supabase
+    // Fetch matches - FIXED: renamed 'data' to 'matchesResult'
+    const { data: matchesResult, error: matchError } = await supabase
       .from('property_matches')
       .select('*')
       .eq('client_id', clientId)
       .order('match_score', { ascending: false });
 
-    console.log('📊 Matches found:', matchesData?.length || 0);
+    console.log('📊 Matches found:', matchesResult?.length || 0);
 
-    if (matchesData && matchesData.length > 0) {
+    if (matchesResult && matchesResult.length > 0 && !matchError) {
       // Get all property IDs
-      const propertyIds = matchesData.map(m => m.property_id);
+      const propertyIds = matchesResult.map((m: any) => m.property_id);
       
-      // Fetch properties separately
-      const { data: propertiesData } = await supabase
+      // Fetch properties - FIXED: renamed 'data' to 'propertiesResult'
+      const { data: propertiesResult, error: propertiesError } = await supabase
         .from('properties')
         .select('*')
         .in('id', propertyIds);
 
       // ✅ Parse JSON fields safely
-      const parsedProperties = propertiesData?.map(p => {
+      const parsedProperties = propertiesResult?.map((p: any) => {
         let images: string[] = [];
         let validation_errors: string[] = [];
         
@@ -168,21 +199,52 @@ export default function ClientDetailPage() {
       });
 
       // Merge the data manually
-      const mergedMatches = matchesData.map(match => {
-        const matchedProperty = parsedProperties?.find(p => p.id === match.property_id);
+      const mergedMatches = matchesResult.map((match: any) => {
+        const matchedProperty = parsedProperties?.find((p: any) => p.id === match.property_id);
         return {
           ...match,
           properties: matchedProperty || null,
         };
-      }).filter(m => m.properties !== null);
+      }).filter((m: any) => m.properties !== null);
 
       setMatches(mergedMatches as unknown as PropertyMatch[]);
+
+      // Calculate last updated
+      if (mergedMatches.length > 0) {
+        const dates = mergedMatches.map((m: any) => 
+          new Date(m.updated_at || m.matched_at)
+        );
+        const mostRecent = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
+        setLastUpdated(mostRecent);
+      }
     } else {
       setMatches([]);
+      setLastUpdated(null);
     }
 
     setLoading(false);
   };
+
+  // AUTO-MATCH on first load if no matches exist
+  useEffect(() => {
+    if (!loading && !hasAutoMatched && client && matches.length === 0) {
+      const criteria = client.client_search_criteria?.[0];
+      
+      // Check if criteria exists and has at least location OR budget
+      const hasLocation = !!(
+        criteria?.locations || 
+        criteria?.selected_places || 
+        criteria?.radius_searches
+      );
+      const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
+
+      if (hasLocation || hasBudget) {
+        console.log('🤖 Auto-running initial match...');
+        setHasAutoMatched(true);
+        handleRunScan();
+      }
+    }
+  }, [loading, hasAutoMatched, client, matches.length]);
 
   // NEW: Trigger scraper + matching
   const handleRunFullScan = async () => {
@@ -241,7 +303,7 @@ export default function ClientDetailPage() {
     setIsScanning(false);
   };
 
-  const updateMatchStatus = async (matchId: string, newStatus: 'shortlisted' | 'rejected') => {
+  const updateMatchStatus = async (matchId: string, newStatus: 'shortlisted' | 'rejected' | 'new') => {
     setUpdatingMatchId(matchId);
     
     const { error } = await supabase
@@ -281,6 +343,21 @@ export default function ClientDetailPage() {
     );
   };
 
+  const getTimeSince = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-[#0d0d21] flex items-center justify-center">
       <Loader2 className="animate-spin text-[#00ffff]" size={40} />
@@ -296,7 +373,17 @@ export default function ClientDetailPage() {
   const criteria = client.client_search_criteria?.[0];
   const newMatches = matches.filter(m => m.status === 'new');
   const shortlistedMatches = matches.filter(m => m.status === 'shortlisted');
+  const rejectedMatches = matches.filter(m => m.status === 'rejected');
   const displayedMatches = activeTab === 'shortlist' ? shortlistedMatches : newMatches;
+
+  // Check if matching is disabled
+  const hasLocation = !!(
+    criteria?.locations || 
+    criteria?.selected_places || 
+    criteria?.radius_searches
+  );
+  const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
+  const matchingDisabled = !hasLocation && !hasBudget;
 
   return (
     <div className="min-h-screen bg-[#0d0d21] text-[#00ffff] font-[Orbitron]">
@@ -338,6 +425,25 @@ export default function ClientDetailPage() {
              </button>
           </div>
         </div>
+
+        {/* WARNING BANNER - Missing Criteria */}
+        {matchingDisabled && (
+          <div className="mb-6 p-4 bg-red-500/10 border-2 border-red-500 rounded-lg flex items-start gap-3">
+            <AlertTriangle size={24} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="text-red-500 font-bold text-sm uppercase mb-1">
+                ⚠️ Matching Disabled
+              </div>
+              <div className="text-white text-sm">
+                This client has <span className="font-bold">no location criteria AND no budget criteria</span> set. 
+                The matching system requires at least one of these to find relevant properties.
+              </div>
+              <button className="mt-3 px-4 py-2 bg-red-500 text-white rounded text-xs font-bold uppercase hover:bg-red-600">
+                Configure Search Criteria
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* --- TABS --- */}
         <div className="flex gap-6 mb-6 overflow-x-auto">
@@ -404,7 +510,11 @@ export default function ClientDetailPage() {
                                       Budget Range
                                     </label>
                                     <div className="text-xl text-white font-bold">
-                                      €{criteria.min_budget?.toLocaleString() || '0'} - €{criteria.max_budget?.toLocaleString() || '∞'}
+                                      {hasBudget ? (
+                                        `€${criteria.min_budget?.toLocaleString() || '0'} - €${criteria.max_budget?.toLocaleString() || '∞'}`
+                                      ) : (
+                                        <span className="text-red-500 text-sm">Not Set</span>
+                                      )}
                                     </div>
                                 </div>
                                 <div>
@@ -412,7 +522,11 @@ export default function ClientDetailPage() {
                                       Target Sector
                                     </label>
                                     <div className="text-lg text-white">
-                                      {criteria.locations || 'Entire Region'}
+                                      {hasLocation ? (
+                                        criteria.locations || 'Custom area'
+                                      ) : (
+                                        <span className="text-red-500 text-sm">Not Set</span>
+                                      )}
                                     </div>
                                 </div>
                                 <div>
@@ -492,16 +606,18 @@ export default function ClientDetailPage() {
                                 </div>
                                 <button 
                                     onClick={handleRunFullScan}
-                                    className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2"
+                                    disabled={matchingDisabled}
+                                    className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <Database size={16} />
                                     Scrape & Match
                                 </button>
                                 <button 
                                     onClick={handleRunScan}
-                                    className="w-full mt-2 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold"
+                                    disabled={matchingDisabled}
+                                    className="w-full mt-2 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
-                                    Match Existing Only
+                                    Refresh Matches
                                 </button>
                             </div>
                         )}
@@ -510,9 +626,12 @@ export default function ClientDetailPage() {
                             {scrapeStatus}
                           </div>
                         )}
-                        <div className="text-[0.65rem] text-[#a0a0ff] mt-4">
-                          {matches.length} total matches in database
-                        </div>
+                        {lastUpdated && (
+                          <div className="mt-3 text-[0.65rem] text-[#a0a0ff] flex items-center justify-center gap-1">
+                            <Calendar size={10} />
+                            Last updated: {getTimeSince(lastUpdated)}
+                          </div>
+                        )}
                     </div>
 
                     {/* Quick Stats */}
@@ -526,6 +645,10 @@ export default function ClientDetailPage() {
                         <div className="flex justify-between">
                           <span className="text-gray-400">Shortlisted:</span>
                           <span className="text-[#00ff00] font-bold">{shortlistedMatches.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Discarded:</span>
+                          <span className="text-red-500 font-bold">{rejectedMatches.length}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Total Matches:</span>
@@ -546,10 +669,15 @@ export default function ClientDetailPage() {
                           ? `Showing ${displayedMatches.length} new matches` 
                           : `${displayedMatches.length} shortlisted properties`
                         }
+                        {lastUpdated && (
+                          <span className="ml-3 text-[#a0a0ff]">
+                            • Last updated: {getTimeSince(lastUpdated)}
+                          </span>
+                        )}
                     </div>
                     <button 
                       onClick={handleRunFullScan}
-                      disabled={isScraping}
+                      disabled={isScraping || matchingDisabled}
                       className="text-xs text-[#ff00ff] border border-[#ff00ff] px-3 py-1 rounded uppercase hover:bg-[#ff00ff]/10 disabled:opacity-50"
                     >
                       {isScraping ? 'Scanning...' : 'Refresh Matches'}
@@ -564,7 +692,7 @@ export default function ClientDetailPage() {
                         : 'No properties shortlisted yet.'
                       }
                     </p>
-                    {activeTab === 'market_scan' && (
+                    {activeTab === 'market_scan' && !matchingDisabled && (
                       <button 
                         onClick={handleRunFullScan}
                         className="px-6 py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded hover:bg-[#ff00ff]/80"
@@ -590,7 +718,7 @@ export default function ClientDetailPage() {
                             className="bg-[#020222] border border-[#333] hover:border-[#ff00ff] transition-colors rounded-lg p-4 flex flex-col md:flex-row gap-4 items-start md:items-center"
                           >
                               {/* Image */}
-                              <div className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative">
+                              <div className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0">
                                 {firstImage ? (
                                   <img src={firstImage} alt={prop.title} className="w-full h-full object-cover" />
                                 ) : (
@@ -608,13 +736,18 @@ export default function ClientDetailPage() {
                               </div>
                               
                               <div className="flex-1">
-                                  <div className="flex gap-2 mb-2">
+                                  <div className="flex gap-2 mb-2 flex-wrap">
                                       <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
                                         {prop.source}
                                       </span>
                                       <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
                                         {prop.property_type || 'Property'}
                                       </span>
+                                      {prop.pool && (
+                                        <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                          <Droplets size={10} /> Pool
+                                        </span>
+                                      )}
                                   </div>
                                   <h4 className="text-lg font-bold text-white mb-1">
                                     {prop.title}
@@ -628,6 +761,11 @@ export default function ClientDetailPage() {
                                         <Maximize2 size={12} /> {prop.surface} m²
                                       </span>
                                     )}
+                                    {prop.land_surface && (
+                                      <span className="flex items-center gap-1">
+                                        <Home size={12} /> {prop.land_surface} m² land
+                                      </span>
+                                    )}
                                     {prop.rooms && (
                                       <span className="flex items-center gap-1">
                                         <Home size={12} /> {prop.rooms} rooms
@@ -636,6 +774,28 @@ export default function ClientDetailPage() {
                                     {prop.bedrooms && (
                                       <span className="flex items-center gap-1">
                                         <Bed size={12} /> {prop.bedrooms} bed
+                                      </span>
+                                    )}
+                                    {prop.bathrooms && (
+                                      <span className="flex items-center gap-1">
+                                        <Bath size={12} /> {prop.bathrooms} bath
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
+                                    {prop.heating_system && (
+                                      <span className="flex items-center gap-1">
+                                        <Flame size={10} /> {prop.heating_system}
+                                      </span>
+                                    )}
+                                    {prop.drainage_system && (
+                                      <span className="flex items-center gap-1">
+                                        <Wrench size={10} /> {prop.drainage_system}
+                                      </span>
+                                    )}
+                                    {prop.year_built && (
+                                      <span className="flex items-center gap-1">
+                                        <Calendar size={10} /> Built {prop.year_built}
                                       </span>
                                     )}
                                   </div>
@@ -694,6 +854,37 @@ export default function ClientDetailPage() {
                         ); 
                       })}
                   </div>
+                )}
+
+                {/* DISCARDED PROPERTIES SECTION */}
+                {activeTab === 'shortlist' && rejectedMatches.length > 0 && (
+                  <details className="bg-[#020222] border border-red-500/30 rounded-lg p-4">
+                    <summary className="cursor-pointer text-red-500 font-bold uppercase text-sm flex items-center gap-2">
+                      <XCircle size={16} />
+                      Discarded Properties ({rejectedMatches.length})
+                    </summary>
+                    <div className="mt-4 space-y-3">
+                      {rejectedMatches.map((match) => {
+                        if (!match.properties) return null;
+                        const prop = match.properties;
+                        
+                        return (
+                          <div key={match.id} className="flex justify-between items-center p-3 bg-red-500/5 border border-red-500/20 rounded">
+                            <div>
+                              <div className="text-white font-bold text-sm">{prop.title}</div>
+                              <div className="text-gray-400 text-xs">{prop.location_city} • €{parseInt(prop.price || '0').toLocaleString()}</div>
+                            </div>
+                            <button 
+                              onClick={() => updateMatchStatus(match.id, 'new')}
+                              className="px-3 py-1 border border-[#00ffff] text-[#00ffff] hover:bg-[#00ffff]/10 rounded uppercase text-xs font-bold"
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
                 )}
             </div>
         )}
