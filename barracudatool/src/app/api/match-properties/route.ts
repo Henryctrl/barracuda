@@ -434,7 +434,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // ✅ UPDATE: Set last_matched_at for this client after processing
+      // ✅ ONLY NEW ADDITION: Update last_matched_at for this client
       await supabase
         .from('clients')
         .update({ last_matched_at: new Date().toISOString() })
@@ -453,7 +453,6 @@ export async function POST(request: NextRequest) {
       newMatches,
       updatedMatches,
       results,
-      timestamp: new Date().toISOString(), // ✅ ADD: Return timestamp
       message: `Matched ${newMatches} new properties, updated ${updatedMatches} existing matches across ${clients.length} client(s)`,
     });
   } catch (error) {

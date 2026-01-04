@@ -43,7 +43,7 @@ interface ClientDetails {
   email: string;
   mobile: string;
   created_at: string;
-  last_matched_at?: string; // ✅ ADD THIS
+  last_matched_at?: string; // ✅ ADD THIS LINE
   client_search_criteria: {
     min_budget: number | null;
     max_budget: number | null;
@@ -148,7 +148,7 @@ export default function ClientDetailPage() {
     if (!clientError && data) {
       setClient(data as unknown as ClientDetails);
       
-      // ✅ SET lastUpdated from last_matched_at field
+      // ✅ ADD THIS: Set lastUpdated from last_matched_at field
       if (data.last_matched_at) {
         setLastUpdated(new Date(data.last_matched_at));
       }
@@ -224,6 +224,15 @@ export default function ClientDetailPage() {
         .filter((m: any) => m.properties !== null);
   
       setMatches(mergedMatches as PropertyMatch[]);
+      
+      // ✅ REMOVE THIS BLOCK - No longer needed since we use last_matched_at
+      // if (mergedMatches.length > 0) {
+      //   const dates = mergedMatches.map((m: any) => new Date(m.updated_at || m.matched_at));
+      //   const mostRecent = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
+      //   setLastUpdated(mostRecent);
+      // } else {
+      //   setLastUpdated(null);
+      // }
     } else {
       setMatches([]);
     }
@@ -259,7 +268,7 @@ export default function ClientDetailPage() {
       body: JSON.stringify({ clientId }),
     });
 
-    // ✅ UPDATE: Fetch fresh data which will include updated last_matched_at
+    // ✅ CHANGE THIS: Remove the force timestamp, just refetch
     await fetchClientData();
     
     setIsScanning(false);
@@ -910,8 +919,253 @@ export default function ClientDetailPage() {
                         </div>
                       </div>
 
-                      {/* EXPANDED VIEW - Keep your existing expanded view code here */}
-                      {/* I'm truncating this for brevity, but keep all your existing accordion content */}
+                      {/* EXPANDED VIEW */}
+                      {isExpanded && (
+                        <div className="border-t border-[#333] p-6 bg-[#0d0d21] space-y-6 animate-in fade-in duration-300">
+                          {/* Image Gallery */}
+                          {allImages.length > 1 && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                📸 Photo Gallery ({allImages.length})
+                              </h5>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {allImages.map((img, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={img}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="relative h-40 bg-white/5 rounded overflow-hidden hover:ring-2 ring-[#ff00ff] transition-all group"
+                                  >
+                                    <img
+                                      src={img}
+                                      alt={`${prop.title} - Photo ${idx + 1}`}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <ExternalLink
+                                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                        size={24}
+                                      />
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Description */}
+                          {prop.description && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                📝 Description
+                              </h5>
+                              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-line">
+                                {prop.description}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Technical Details */}
+                          <div>
+                            <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                              🔧 Technical Details
+                            </h5>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Surface Details */}
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                  Surface & Layout
+                                </div>
+                                <div className="space-y-1 text-sm text-white/80">
+                                  {prop.surface && (
+                                    <div>Living space: {prop.surface} m²</div>
+                                  )}
+                                  {prop.building_surface && (
+                                    <div>Building: {prop.building_surface} m²</div>
+                                  )}
+                                  {prop.land_surface && (
+                                    <div>Land: {prop.land_surface} m²</div>
+                                  )}
+                                  {prop.floors && <div>Floors: {prop.floors}</div>}
+                                  {prop.rooms && <div>Rooms: {prop.rooms}</div>}
+                                  {prop.bedrooms && <div>Bedrooms: {prop.bedrooms}</div>}
+                                  {prop.bathrooms && <div>Bathrooms: {prop.bathrooms}</div>}
+                                  {prop.wc_count && <div>WC: {prop.wc_count}</div>}
+                                </div>
+                              </div>
+
+                              {/* Systems & Condition */}
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                  Systems & Condition
+                                </div>
+                                <div className="space-y-1 text-sm text-white/80">
+                                  {prop.heating_system && (
+                                    <div className="flex items-center gap-2">
+                                      <Flame size={12} className="text-orange-400" />
+                                      Heating: {prop.heating_system}
+                                    </div>
+                                  )}
+                                  {prop.drainage_system && (
+                                    <div className="flex items-center gap-2">
+                                      <Wrench size={12} className="text-blue-400" />
+                                      Drainage: {prop.drainage_system}
+                                    </div>
+                                  )}
+                                  {prop.pool !== null && (
+                                    <div className="flex items-center gap-2">
+                                      <Droplets size={12} className="text-blue-400" />
+                                      Pool: {prop.pool ? 'Yes' : 'No'}
+                                    </div>
+                                  )}
+                                  {prop.property_condition && (
+                                    <div>Condition: {prop.property_condition}</div>
+                                  )}
+                                  {prop.year_built && (
+                                    <div>Built: {prop.year_built}</div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Energy Performance */}
+                              {(prop.energy_consumption || prop.co2_emissions) && (
+                                <div className="bg-white/5 rounded p-4">
+                                  <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                    Energy Performance
+                                  </div>
+                                  <div className="space-y-1 text-sm text-white/80">
+                                    {prop.energy_consumption && (
+                                      <div>Consumption: {prop.energy_consumption} kWh/m²/year</div>
+                                    )}
+                                    {prop.co2_emissions && (
+                                      <div>CO₂ Emissions: {prop.co2_emissions} kg/m²/year</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Location Details */}
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="text-xs text-[#00ffff] uppercase mb-2">
+                                  Location
+                                </div>
+                                <div className="space-y-1 text-sm text-white/80">
+                                  {prop.location_city && <div>City: {prop.location_city}</div>}
+                                  {prop.location_postal_code && (
+                                    <div>Postal: {prop.location_postal_code}</div>
+                                  )}
+                                  {prop.location_department && (
+                                    <div>Department: {prop.location_department}</div>
+                                  )}
+                                  {prop.location_lat && prop.location_lng && (
+                                    <div>
+                                      Coords: {prop.location_lat.toFixed(4)},{' '}
+                                      {prop.location_lng.toFixed(4)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Data Quality Issues */}
+                          {validationErrors.length > 0 && (
+                            <div>
+                              <h5 className="text-sm font-bold text-yellow-500 uppercase mb-3 flex items-center gap-2">
+                                <AlertTriangle size={16} /> Data Quality Issues
+                              </h5>
+                              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
+                                <ul className="text-sm text-yellow-200 space-y-1">
+                                  {validationErrors.map((err, idx) => (
+                                    <li key={idx}>• {err}</li>
+                                  ))}
+                                </ul>
+                                <div className="mt-3 text-xs text-yellow-500/70">
+                                  Quality Score: {(parseFloat(qualityScore) * 100).toFixed(0)}%
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Price History */}
+                          {hasPriceChange && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                💰 Price History
+                              </h5>
+                              <div className="bg-white/5 rounded p-4">
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Original Price:</span>
+                                    <span className="text-white font-bold">
+                                      €
+                                      {parseInt(
+                                        String(prop.previous_price),
+                                        10
+                                      ).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-400">Current Price:</span>
+                                    <span className="text-[#00ff00] font-bold">
+                                      €{parseInt(prop.price || '0', 10).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {priceDrop > 0 && (
+                                    <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                                      <span className="text-gray-400">Price Reduction:</span>
+                                      <span className="text-[#00ff00] font-bold flex items-center gap-1">
+                                        €{priceDrop.toLocaleString()} (-
+                                        {((priceDrop / (prop.previous_price || 1)) * 100).toFixed(1)}
+                                        %)
+                                      </span>
+                                    </div>
+                                  )}
+                                  {prop.price_changed_at && (
+                                    <div className="text-xs text-gray-500 pt-2">
+                                      Changed on{' '}
+                                      {new Date(prop.price_changed_at).toLocaleDateString('en-GB', {
+                                        day: 'numeric',
+                                        month: 'long',
+                                        year: 'numeric',
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Listing Metadata */}
+                          <div className="border-t border-white/10 pt-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-500">
+                              {prop.reference && (
+                                <div>
+                                  <div className="text-[#00ffff] font-bold mb-1">Reference</div>
+                                  {prop.reference}
+                                </div>
+                              )}
+                              {prop.scraped_at && (
+                                <div>
+                                  <div className="text-[#00ffff] font-bold mb-1">First Seen</div>
+                                  {new Date(prop.scraped_at).toLocaleDateString()}
+                                </div>
+                              )}
+                              {prop.last_seen_at && (
+                                <div>
+                                  <div className="text-[#00ffff] font-bold mb-1">Last Updated</div>
+                                  {new Date(prop.last_seen_at).toLocaleDateString()}
+                                </div>
+                              )}
+                              <div>
+                                <div className="text-[#00ffff] font-bold mb-1">Match Score</div>
+                                {match.match_score}%
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
