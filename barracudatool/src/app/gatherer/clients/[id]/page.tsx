@@ -367,14 +367,32 @@ export default function ClientDetailPage() {
     setGeneratingPdfId(property.id);
   
     try {
-      const blob = await pdf(
-        <PropertyBrochurePDF property={property} branding={userBranding} />
-      ).toBlob();
+      // Generate the PDF
+      const doc = <PropertyBrochurePDF property={property} branding={userBranding} />;
+      const blob = await pdf(doc).toBlob();
       
+      console.log('✅ PDF blob created, size:', (blob.size / 1024).toFixed(2), 'KB');
+      
+      // Create URL for the blob
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
       
-      setTimeout(() => URL.revokeObjectURL(url), 100);
+      // Open in new tab (for viewing - Chrome will show download button)
+      const newWindow = window.open(url, '_blank');
+      if (newWindow) {
+        newWindow.focus();
+      } else {
+        // If popup blocked, download directly
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${property.title.replace(/\s+/g, '-')}-brochure.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      // Clean up after 10 seconds
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      
       console.log('✅ PDF generated successfully');
     } catch (error) {
       console.error('❌ Error generating PDF:', error);
