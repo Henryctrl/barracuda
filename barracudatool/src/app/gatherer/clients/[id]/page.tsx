@@ -30,6 +30,7 @@ import {
   Bath
 } from 'lucide-react';
 import MainHeader from '../../../../components/MainHeader';
+import EditClientPopup from '../../../../components/popups/EditClientPopup';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -43,7 +44,7 @@ interface ClientDetails {
   email: string;
   mobile: string;
   created_at: string;
-  last_matched_at?: string; // ✅ ADD THIS LINE
+  last_matched_at?: string;
   client_search_criteria: {
     min_budget: number | null;
     max_budget: number | null;
@@ -51,6 +52,7 @@ interface ClientDetails {
     selected_places: any;
     radius_searches: any;
     min_surface: number | null;
+    max_surface: number | null;
     min_bedrooms: number | null;
     max_bedrooms: number | null;
     property_types: string[] | null;
@@ -66,6 +68,8 @@ interface ClientDetails {
     min_year_built: number | null;
     max_year_built: number | null;
     min_bathrooms: number | null;
+    desired_dpe: string | null;
+    features: string[];
   }[];
 }
 
@@ -116,6 +120,28 @@ interface PropertyMatch {
   } | null;
 }
 
+interface MatchAnalysis {
+  matches: {
+    budget: boolean;
+    location: boolean;
+    propertyType: boolean;
+    surface: boolean;
+    rooms: boolean;
+    bedrooms: boolean;
+    landSurface: boolean;
+    pool: boolean;
+    heating: boolean;
+    drainage: boolean;
+    condition: boolean;
+    yearBuilt: boolean;
+    bathrooms: boolean;
+  };
+  uncertainties: {
+    field: string;
+    reason: string;
+  }[];
+}
+
 export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -130,6 +156,7 @@ export default function ClientDetailPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [hasAutoMatched, setHasAutoMatched] = useState(false);
   const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
+  const [isEditPopupOpen, setIsEditPopupOpen] = useState(false);
 
   useEffect(() => {
     fetchClientData();
@@ -138,7 +165,6 @@ export default function ClientDetailPage() {
   const fetchClientData = async () => {
     setLoading(true);
   
-    // 1) Fetch client + criteria
     const { data, error: clientError } = await supabase
       .from('clients')
       .select('*, client_search_criteria (*)')
@@ -148,7 +174,6 @@ export default function ClientDetailPage() {
     if (!clientError && data) {
       setClient(data as unknown as ClientDetails);
       
-      // ✅ ADD THIS: Set lastUpdated from last_matched_at field
       if (data.last_matched_at) {
         setLastUpdated(new Date(data.last_matched_at));
       }
@@ -156,7 +181,6 @@ export default function ClientDetailPage() {
       setClient(null);
     }
   
-    // 2) Fetch matches for this client
     const matchesResponse = await supabase
       .from('property_matches')
       .select('*')
@@ -166,7 +190,6 @@ export default function ClientDetailPage() {
     if (!matchesResponse.error && matchesResponse.data && matchesResponse.data.length > 0) {
       const propertyIds = matchesResponse.data.map((m: any) => m.property_id);
   
-      // 3) Fetch properties for those matches
       const propertiesResponse = await supabase
         .from('properties')
         .select('*')
@@ -224,15 +247,6 @@ export default function ClientDetailPage() {
         .filter((m: any) => m.properties !== null);
   
       setMatches(mergedMatches as PropertyMatch[]);
-      
-      // ✅ REMOVE THIS BLOCK - No longer needed since we use last_matched_at
-      // if (mergedMatches.length > 0) {
-      //   const dates = mergedMatches.map((m: any) => new Date(m.updated_at || m.matched_at));
-      //   const mostRecent = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
-      //   setLastUpdated(mostRecent);
-      // } else {
-      //   setLastUpdated(null);
-      // }
     } else {
       setMatches([]);
     }
@@ -240,7 +254,6 @@ export default function ClientDetailPage() {
     setLoading(false);
   };
 
-  // Auto-match once on first load if there are criteria
   useEffect(() => {
     if (!loading && !hasAutoMatched && client && matches.length === 0) {
       const criteria = client.client_search_criteria?.[0];
@@ -268,7 +281,6 @@ export default function ClientDetailPage() {
       body: JSON.stringify({ clientId }),
     });
 
-    // ✅ CHANGE THIS: Remove the force timestamp, just refetch
     await fetchClientData();
     
     setIsScanning(false);
@@ -296,6 +308,133 @@ export default function ClientDetailPage() {
 
     setUpdatingMatchId(null);
   };
+
+  const calculateMatchAnalysis = (
+    property: PropertyMatch['properties'],
+    criteria: ClientDetails['client_search_criteria'][0]
+  ): MatchAnalysis => {
+    if (!property || !criteria) return { matches: {} as any, uncertainties: [] };
+  
+    const price = parseInt(property.price || '0', 10);
+    
+    // Only check criteria that are actually specified by the client
+    const matches: Record<string, boolean> = {};
+    
+    // Budget - only if specified
+    if (criteria.min_budget || criteria.max_budget) {
+      matches.budget = !!(
+        (!criteria.min_budget || price >= criteria.min_budget) &&
+        (!criteria.max_budget || price <= criteria.max_budget)
+      );
+    }
+    
+    // Location - always included (since algo matched it)
+    matches.location = true;
+    
+    // Property Type - only if specified
+    if (criteria.property_types && criteria.property_types.length > 0) {
+      matches.propertyType = criteria.property_types.includes(property.property_type);
+    }
+    
+    // Surface - only if specified
+    if (criteria.min_surface || criteria.max_surface) {
+      matches.surface = !!(
+        (!criteria.min_surface || parseFloat(property.surface || '0') >= criteria.min_surface) &&
+        (!criteria.max_surface || parseFloat(property.surface || '0') <= criteria.max_surface)
+      );
+    }
+    
+    // Rooms - only if specified
+    if (criteria.min_rooms || criteria.max_rooms) {
+      matches.rooms = !!(
+        (!criteria.min_rooms || property.rooms >= criteria.min_rooms) &&
+        (!criteria.max_rooms || property.rooms <= criteria.max_rooms)
+      );
+    }
+    
+    // Bedrooms - only if specified
+    if (criteria.min_bedrooms || criteria.max_bedrooms) {
+      matches.bedrooms = !!(
+        (!criteria.min_bedrooms || property.bedrooms >= criteria.min_bedrooms) &&
+        (!criteria.max_bedrooms || property.bedrooms <= criteria.max_bedrooms)
+      );
+    }
+    
+    // Land Surface - only if specified
+    if (criteria.min_land_surface || criteria.max_land_surface) {
+      matches.landSurface = !!(
+        (!criteria.min_land_surface || (property.land_surface && property.land_surface >= criteria.min_land_surface)) &&
+        (!criteria.max_land_surface || (property.land_surface && property.land_surface <= criteria.max_land_surface))
+      );
+    }
+    
+    // Pool - only if client specified a preference
+    if (criteria.pool_preference && criteria.pool_preference !== '') {
+      matches.pool = !!(
+        (criteria.pool_preference === 'required' && property.pool === true) ||
+        (criteria.pool_preference === 'preferred' && property.pool === true) ||
+        (criteria.pool_preference === 'no' && property.pool === false) ||
+        (criteria.pool_preference === 'preferred' && property.pool === null) // Preferred is flexible
+      );
+    }
+    
+    // Heating - only if specified
+    if (criteria.heating_system && criteria.heating_system !== '') {
+      matches.heating = property.heating_system === criteria.heating_system;
+    }
+    
+    // Drainage - only if specified
+    if (criteria.drainage_system && criteria.drainage_system !== '') {
+      matches.drainage = property.drainage_system === criteria.drainage_system;
+    }
+    
+    // Condition - only if specified
+    if (criteria.property_condition && criteria.property_condition !== '') {
+      matches.condition = property.property_condition === criteria.property_condition;
+    }
+    
+    // Year Built - only if specified
+    if (criteria.min_year_built || criteria.max_year_built) {
+      matches.yearBuilt = !!(
+        (!criteria.min_year_built || (property.year_built && property.year_built >= criteria.min_year_built)) &&
+        (!criteria.max_year_built || (property.year_built && property.year_built <= criteria.max_year_built))
+      );
+    }
+    
+    // Bathrooms - only if specified
+    if (criteria.min_bathrooms) {
+      matches.bathrooms = !!(property.bathrooms && property.bathrooms >= criteria.min_bathrooms);
+    }
+  
+    const uncertainties = [];
+  
+    // Only add uncertainties for criteria the client actually specified
+    if (criteria.pool_preference && criteria.pool_preference !== '' && property.pool === null) {
+      uncertainties.push({ field: 'Pool', reason: 'Property listing does not specify pool availability' });
+    }
+    if (criteria.heating_system && criteria.heating_system !== '' && !property.heating_system) {
+      uncertainties.push({ field: 'Heating System', reason: 'Heating system not specified in listing' });
+    }
+    if (criteria.drainage_system && criteria.drainage_system !== '' && !property.drainage_system) {
+      uncertainties.push({ field: 'Drainage', reason: 'Drainage system not specified' });
+    }
+    if (criteria.min_bathrooms && !property.bathrooms) {
+      uncertainties.push({ field: 'Bathrooms', reason: 'Number of bathrooms not provided' });
+    }
+    if ((criteria.min_land_surface || criteria.max_land_surface) && !property.land_surface) {
+      uncertainties.push({ field: 'Land Surface', reason: 'Land surface area not specified' });
+    }
+    if (criteria.property_condition && criteria.property_condition !== '' && !property.property_condition) {
+      uncertainties.push({ field: 'Property Condition', reason: 'Condition not specified in listing' });
+    }
+    if ((criteria.min_year_built || criteria.max_year_built) && !property.year_built) {
+      uncertainties.push({ field: 'Year Built', reason: 'Construction year not provided' });
+    }
+  
+    return { matches, uncertainties };
+  };
+  
+  
 
   const getMatchScoreColor = (score: number) => {
     if (score >= 80) return 'text-[#00ff00] border-[#00ff00] bg-[#00ff00]/10';
@@ -400,7 +539,10 @@ export default function ClientDetailPage() {
             <button className="px-4 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold flex items-center gap-2">
               <BellRing size={14} /> Alerts On
             </button>
-            <button className="px-4 py-2 bg-[#00ffff] text-black hover:bg-[#00ffff]/80 rounded uppercase text-xs font-bold flex items-center gap-2">
+            <button 
+              onClick={() => setIsEditPopupOpen(true)}
+              className="px-4 py-2 bg-[#00ffff] text-black hover:bg-[#00ffff]/80 rounded uppercase text-xs font-bold flex items-center gap-2"
+            >
               <User size={14} /> Edit File
             </button>
           </div>
@@ -425,7 +567,10 @@ export default function ClientDetailPage() {
                 set. The matching system requires at least one of these to find
                 relevant properties.
               </div>
-              <button className="mt-3 px-4 py-2 bg-red-500 text-white rounded text-xs font-bold uppercase hover:bg-red-600">
+              <button 
+                onClick={() => setIsEditPopupOpen(true)}
+                className="mt-3 px-4 py-2 bg-red-500 text-white rounded text-xs font-bold uppercase hover:bg-red-600"
+              >
                 Configure Search Criteria
               </button>
             </div>
@@ -486,9 +631,6 @@ export default function ClientDetailPage() {
                   <h3 className="text-lg text-white font-bold uppercase flex items-center gap-2">
                     <Radar className="text-[#00ffff]" /> Search Configuration
                   </h3>
-                  <button className="text-xs text-[#00ffff] underline hover:text-white">
-                    Modify Inputs
-                  </button>
                 </div>
 
                 {!criteria ? (
@@ -720,7 +862,6 @@ export default function ClientDetailPage() {
                   const validationErrors = prop.validation_errors || [];
                   const isExpanded = expandedPropertyId === match.id;
 
-                  // Price change indicator
                   const hasPriceChange = prop.previous_price && prop.price_changed_at;
                   const priceDrop = prop.price_drop_amount || 0;
 
@@ -731,7 +872,6 @@ export default function ClientDetailPage() {
                     >
                       {/* COLLAPSED VIEW */}
                       <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
-                        {/* Image */}
                         <div
                           className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
                           onClick={() =>
@@ -748,7 +888,6 @@ export default function ClientDetailPage() {
                             <Home size={40} className="text-gray-600" />
                           )}
 
-                          {/* Match Score Badge */}
                           <div
                             className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
                               match.match_score
@@ -758,10 +897,8 @@ export default function ClientDetailPage() {
                             {match.match_score}%
                           </div>
 
-                          {/* Quality Badge */}
                           {getQualityBadge(qualityScore, validationErrors)}
 
-                          {/* Expand indicator */}
                           <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
                             {isExpanded
                               ? '▲ Less'
@@ -872,7 +1009,6 @@ export default function ClientDetailPage() {
                           </div>
                         </div>
 
-                        {/* Action Buttons */}
                         <div className="flex md:flex-col gap-2 w-full md:w-auto">
                           {match.status !== 'shortlisted' && (
                             <button
@@ -922,6 +1058,82 @@ export default function ClientDetailPage() {
                       {/* EXPANDED VIEW */}
                       {isExpanded && (
                         <div className="border-t border-[#333] p-6 bg-[#0d0d21] space-y-6 animate-in fade-in duration-300">
+                          {/* Match Analysis - Pros/Cons */}
+                          {criteria && (
+                            <div>
+                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
+                                ✓ Match Analysis
+                              </h5>
+                              
+                              {(() => {
+                                const analysis = calculateMatchAnalysis(prop, criteria);
+                                const pros = Object.entries(analysis.matches)
+                                  .filter(([_, matches]) => matches)
+                                  .map(([key]) => key);
+                                const cons = Object.entries(analysis.matches)
+                                  .filter(([key, matches]) => !matches && key !== 'location')  // FIXED: added 'key' parameter
+                                  .map(([key]) => key);
+                                
+                                return (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-green-500/10 border border-green-500/30 rounded p-4">
+                                      <div className="text-xs text-green-400 font-bold uppercase mb-2 flex items-center gap-2">
+                                        <CheckCircle2 size={14} /> Matches Client Criteria ({pros.length})
+                                      </div>
+                                      <ul className="space-y-1 text-sm text-green-200">
+                                        {pros.map(key => (
+                                          <li key={key} className="flex items-center gap-2">
+                                            <span className="text-green-400">✓</span>
+                                            {key.replace(/([A-Z])/g, ' $1').trim().charAt(0).toUpperCase() + key.replace(/([A-Z])/g, ' $1').trim().slice(1)}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+
+                                    {(cons.length > 0 || analysis.uncertainties.length > 0) && (
+                                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
+                                        <div className="text-xs text-yellow-400 font-bold uppercase mb-2 flex items-center gap-2">
+                                          <AlertTriangle size={14} /> Uncertain / Missing Data
+                                        </div>
+                                        
+                                        {cons.length > 0 && (
+                                          <div className="mb-3">
+                                            <div className="text-xs text-red-400 mb-1">Does not match:</div>
+                                            <ul className="space-y-1 text-sm text-red-200">
+                                              {cons.map(key => (
+                                                <li key={key} className="flex items-center gap-2">
+                                                  <span className="text-red-400">✗</span>
+                                                  {key.replace(/([A-Z])/g, ' $1').trim().charAt(0).toUpperCase() + key.replace(/([A-Z])/g, ' $1').trim().slice(1)}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                        
+                                        {analysis.uncertainties.length > 0 && (
+                                          <div>
+                                            <div className="text-xs text-yellow-400 mb-1">Uncertain:</div>
+                                            <ul className="space-y-1 text-sm text-yellow-200">
+                                              {analysis.uncertainties.map((unc, idx) => (
+                                                <li key={idx} className="flex items-start gap-2">
+                                                  <span className="text-yellow-400">?</span>
+                                                  <div>
+                                                    <div className="font-bold">{unc.field}</div>
+                                                    <div className="text-xs text-yellow-200/70">{unc.reason}</div>
+                                                  </div>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
                           {/* Image Gallery */}
                           {allImages.length > 1 && (
                             <div>
@@ -972,7 +1184,6 @@ export default function ClientDetailPage() {
                               🔧 Technical Details
                             </h5>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {/* Surface Details */}
                               <div className="bg-white/5 rounded p-4">
                                 <div className="text-xs text-[#00ffff] uppercase mb-2">
                                   Surface & Layout
@@ -995,7 +1206,6 @@ export default function ClientDetailPage() {
                                 </div>
                               </div>
 
-                              {/* Systems & Condition */}
                               <div className="bg-white/5 rounded p-4">
                                 <div className="text-xs text-[#00ffff] uppercase mb-2">
                                   Systems & Condition
@@ -1028,7 +1238,6 @@ export default function ClientDetailPage() {
                                 </div>
                               </div>
 
-                              {/* Energy Performance */}
                               {(prop.energy_consumption || prop.co2_emissions) && (
                                 <div className="bg-white/5 rounded p-4">
                                   <div className="text-xs text-[#00ffff] uppercase mb-2">
@@ -1045,7 +1254,6 @@ export default function ClientDetailPage() {
                                 </div>
                               )}
 
-                              {/* Location Details */}
                               <div className="bg-white/5 rounded p-4">
                                 <div className="text-xs text-[#00ffff] uppercase mb-2">
                                   Location
@@ -1069,7 +1277,6 @@ export default function ClientDetailPage() {
                             </div>
                           </div>
 
-                          {/* Data Quality Issues */}
                           {validationErrors.length > 0 && (
                             <div>
                               <h5 className="text-sm font-bold text-yellow-500 uppercase mb-3 flex items-center gap-2">
@@ -1088,7 +1295,6 @@ export default function ClientDetailPage() {
                             </div>
                           )}
 
-                          {/* Price History */}
                           {hasPriceChange && (
                             <div>
                               <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
@@ -1137,7 +1343,6 @@ export default function ClientDetailPage() {
                             </div>
                           )}
 
-                          {/* Listing Metadata */}
                           <div className="border-t border-white/10 pt-4">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-500">
                               {prop.reference && (
@@ -1172,7 +1377,6 @@ export default function ClientDetailPage() {
               </div>
             )}
 
-            {/* DISCARDED PROPERTIES SECTION */}
             {activeTab === 'shortlist' && rejectedMatches.length > 0 && (
               <details className="bg-[#020222] border border-red-500/30 rounded-lg p-4">
                 <summary className="cursor-pointer text-red-500 font-bold uppercase text-sm flex items-center gap-2">
@@ -1213,6 +1417,16 @@ export default function ClientDetailPage() {
           </div>
         )}
       </main>
+
+      {/* Edit Client Popup */}
+      <EditClientPopup 
+        isOpen={isEditPopupOpen}
+        onClose={() => {
+          setIsEditPopupOpen(false);
+          fetchClientData();
+        }}
+        clientId={clientId}
+      />
     </div>
   );
 }
