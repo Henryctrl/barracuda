@@ -41,103 +41,203 @@ interface PropertyData {
 const createStyles = (brandColor: string) => StyleSheet.create({
   page: {
     backgroundColor: '#ffffff',
-    padding: 30,
     fontFamily: 'Helvetica',
   },
-  header: {
-    backgroundColor: brandColor,
-    padding: 20,
-    marginBottom: 20,
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  
+  // COVER PAGE STYLES
+  coverPage: {
+    backgroundColor: '#000000',
+    position: 'relative',
   },
-  companyName: {
-    fontSize: 24,
+  coverImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    opacity: 0.6,
+  },
+  coverOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  coverContent: {
+    position: 'absolute',
+    bottom: 60,
+    left: 50,
+    right: 50,
+  },
+  coverTitle: {
+    fontSize: 42,
     color: '#ffffff',
     fontWeight: 'bold',
+    marginBottom: 10,
+    letterSpacing: 1,
   },
-  title: {
-    fontSize: 22,
-    color: '#1a1a1a',
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  propertyType: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 15,
-    textTransform: 'uppercase',
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  coverLocation: {
+    fontSize: 16,
+    color: '#ffffff',
+    opacity: 0.9,
     marginBottom: 20,
+    letterSpacing: 0.5,
   },
-  price: {
-    fontSize: 32,
+  coverPrice: {
+    fontSize: 48,
     color: brandColor,
     fontWeight: 'bold',
+    letterSpacing: 1,
   },
+  coverBranding: {
+    position: 'absolute',
+    top: 40,
+    right: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    padding: 15,
+    borderRadius: 4,
+  },
+  coverBrandName: {
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+  
+  // CONTENT PAGE STYLES
+  contentPage: {
+    padding: 50,
+  },
+  
+  // HEADER STYLES (for content pages)
+  pageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 20,
+    marginBottom: 30,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  pageHeaderBrand: {
+    fontSize: 10,
+    color: '#000000',
+    fontWeight: 'bold',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  pageHeaderNumber: {
+    fontSize: 9,
+    color: '#666666',
+  },
+  
+  // SECTION STYLES
   section: {
-    marginBottom: 15,
+    marginBottom: 30,
   },
   sectionTitle: {
-    fontSize: 12,
-    color: brandColor,
-    textTransform: 'uppercase',
+    fontSize: 20,
+    color: '#000000',
     fontWeight: 'bold',
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: brandColor,
-    paddingBottom: 3,
-  },
-  detailsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginVertical: 15,
-    padding: 15,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-  },
-  detailItem: {
-    width: '23%',
-    marginBottom: 10,
-    alignItems: 'center',
-  },
-  detailLabel: {
-    fontSize: 8,
-    color: '#666666',
-    marginBottom: 5,
+    marginBottom: 15,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+  divider: {
+    width: 60,
+    height: 3,
+    backgroundColor: brandColor,
+    marginBottom: 20,
   },
-  detailValueLarge: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: brandColor,
-  },
+  
+  // DESCRIPTION
   description: {
-    fontSize: 10,
-    lineHeight: 1.6,
+    fontSize: 11,
+    lineHeight: 1.8,
     color: '#333333',
-    marginVertical: 10,
     textAlign: 'justify',
   },
+  
+  // KEY FEATURES GRID
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 15,
+    marginTop: 20,
+  },
+  featureBox: {
+    width: '30%',
+    padding: 15,
+    backgroundColor: '#f8f8f8',
+    borderLeftWidth: 3,
+    borderLeftColor: brandColor,
+  },
+  featureLabel: {
+    fontSize: 8,
+    color: '#666666',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+  featureValue: {
+    fontSize: 18,
+    color: '#000000',
+    fontWeight: 'bold',
+  },
+  featureUnit: {
+    fontSize: 10,
+    color: '#666666',
+    marginTop: 2,
+  },
+  
+  // DETAILS TABLE
+  detailsTable: {
+    marginTop: 20,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    paddingVertical: 12,
+  },
+  detailLabel: {
+    fontSize: 10,
+    color: '#666666',
+    width: '40%',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  detailValue: {
+    fontSize: 11,
+    color: '#000000',
+    width: '60%',
+    fontWeight: 'bold',
+  },
+  
+  // GALLERY STYLES
+galleryGrid: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'space-between',
+  marginTop: 20,
+},
+galleryImage: {
+  width: '48%',
+  height: 250,
+  objectFit: 'cover',
+  marginBottom: 20,
+},
+
+  
+  // FOOTER
   footer: {
     position: 'absolute',
-    bottom: 20,
-    left: 30,
-    right: 30,
-    backgroundColor: brandColor,
-    padding: 15,
-    borderRadius: 8,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#000000',
+    padding: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -145,90 +245,65 @@ const createStyles = (brandColor: string) => StyleSheet.create({
   footerText: {
     color: '#ffffff',
     fontSize: 9,
-    marginBottom: 2,
+    marginBottom: 3,
   },
-  mainImage: {
-    width: '100%',
-    height: 300,
-    objectFit: 'cover',
-    marginVertical: 15,
-    borderRadius: 8,
-  },
-  locationBadge: {
-    backgroundColor: '#f0f0f0',
-    padding: 8,
-    borderRadius: 5,
-    marginBottom: 15,
-  },
-  locationText: {
+  footerBrand: {
+    color: '#ffffff',
     fontSize: 11,
-    color: '#333333',
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
-  featureRow: {
+  
+  // AMENITIES BADGES
+  amenitiesBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 15,
+  },
+  amenityBadge: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+  },
+  amenityText: {
+    fontSize: 9,
+    color: '#333333',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  
+  // ENERGY PERFORMANCE
+  energyContainer: {
+    backgroundColor: '#f8f8f8',
+    padding: 20,
+    borderRadius: 4,
+    marginTop: 20,
+  },
+  energyTitle: {
+    fontSize: 12,
+    color: '#000000',
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textTransform: 'uppercase',
+  },
+  energyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 10,
   },
-  featureLabel: {
+  energyLabel: {
     fontSize: 10,
     color: '#666666',
-    width: '40%',
   },
-  featureValue: {
-    fontSize: 10,
-    color: '#1a1a1a',
+  energyValue: {
+    fontSize: 11,
+    color: '#000000',
     fontWeight: 'bold',
-    width: '60%',
-  },
-  badge: {
-    backgroundColor: brandColor,
-    color: '#ffffff',
-    fontSize: 8,
-    padding: 5,
-    borderRadius: 3,
-    marginRight: 5,
-    textTransform: 'uppercase',
-  },
-  badgeContainer: {
-    flexDirection: 'row',
-    marginBottom: 15,
-    flexWrap: 'wrap',
-  },
-  pageNumber: {
-    position: 'absolute',
-    fontSize: 10,
-    bottom: 10,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    color: '#666666',
-  },
-  noImageContainer: {
-    width: '100%',
-    height: 300,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 15,
-  },
-  noImageText: {
-    fontSize: 14,
-    color: '#999999',
-  },
-  // Gallery styles - 4 images per page
-  galleryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginTop: 15,
-  },
-  galleryImage: {
-    width: '48%',
-    height: 200,
-    objectFit: 'cover',
-    borderRadius: 5,
   },
 });
 
@@ -247,285 +322,301 @@ export const PropertyBrochurePDF = ({ property, branding }: { property: Property
     .filter(img => img && img.trim() !== '')
     .map(img => getProxiedImageUrl(img));
 
-  console.log('📸 Total images for PDF:', validImages.length);
-
-  // Chunk images for gallery (4 per page, skipping first image)
+  // Chunk remaining images for gallery (4 per page)
   const galleryImages = validImages.slice(1);
   const imageChunks: string[][] = [];
   for (let i = 0; i < galleryImages.length; i += 4) {
     imageChunks.push(galleryImages.slice(i, i + 4));
   }
 
+  // Collect amenities
+  const amenities = [];
+  if (property.pool) amenities.push('Swimming Pool');
+  if (property.heating_system) amenities.push(property.heating_system);
+  if (property.property_condition) amenities.push(property.property_condition);
+  if (property.year_built) amenities.push(`Built ${property.year_built}`);
+  if (property.bathrooms) amenities.push(`${property.bathrooms} Bath${property.bathrooms > 1 ? 's' : ''}`);
+  if (property.land_surface) amenities.push(`${property.land_surface}m² Land`);
+
   return (
     <Document>
-      {/* PAGE 1: Main Property Details */}
-      <Page size="A4" style={styles.page}>
-        {/* Header with Branding */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.companyName}>{branding.company_name || 'Real Estate Agency'}</Text>
-          </View>
-        </View>
-
-        {/* Property Title & Type */}
-        <Text style={styles.title}>{property.title}</Text>
-        <Text style={styles.propertyType}>{property.property_type}</Text>
-
-        {/* Badges */}
-        <View style={styles.badgeContainer}>
-          {property.pool && <Text style={styles.badge}>Pool</Text>}
-          {property.property_condition && <Text style={styles.badge}>{property.property_condition}</Text>}
-          {property.year_built && <Text style={styles.badge}>Built {property.year_built}</Text>}
-        </View>
-
-        {/* Main Image (Large) */}
-        {validImages[0] ? (
-          <Image src={validImages[0]} style={styles.mainImage} />
-        ) : (
-          <View style={styles.noImageContainer}>
-            <Text style={styles.noImageText}>No image available</Text>
-          </View>
+      {/* COVER PAGE */}
+      <Page size="A4" style={styles.coverPage}>
+        {validImages[0] && (
+          <Image src={validImages[0]} style={styles.coverImage} />
         )}
-
-        {/* Price */}
-        <View style={styles.priceContainer}>
-          <Text style={styles.price}>€{parseInt(property.price, 10).toLocaleString()}</Text>
+        <View style={styles.coverOverlay} />
+        
+        {/* Branding badge */}
+        <View style={styles.coverBranding}>
+          <Text style={styles.coverBrandName}>{branding.company_name}</Text>
         </View>
-
-        {/* Location */}
-        <View style={styles.locationBadge}>
-          <Text style={styles.locationText}>
-            📍 {property.location_city}, {property.location_department} ({property.location_postal_code})
+        
+        {/* Property info overlay */}
+        <View style={styles.coverContent}>
+          <Text style={styles.coverTitle}>{property.title}</Text>
+          <Text style={styles.coverLocation}>
+            {property.location_city}, {property.location_department}
+          </Text>
+          <Text style={styles.coverPrice}>
+            €{parseInt(property.price, 10).toLocaleString()}
           </Text>
         </View>
+      </Page>
 
-        {/* Key Details Grid */}
-        <View style={styles.detailsGrid}>
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Living Surface</Text>
-            <Text style={styles.detailValueLarge}>{property.surface}m²</Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Rooms</Text>
-            <Text style={styles.detailValueLarge}>{property.rooms}</Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Text style={styles.detailLabel}>Bedrooms</Text>
-            <Text style={styles.detailValueLarge}>{property.bedrooms}</Text>
-          </View>
-          {property.bathrooms && (
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Bathrooms</Text>
-              <Text style={styles.detailValueLarge}>{property.bathrooms}</Text>
-            </View>
-          )}
+      {/* PAGE 2: OVERVIEW & DESCRIPTION */}
+      <Page size="A4" style={styles.contentPage}>
+        {/* Header */}
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageHeaderBrand}>{branding.company_name}</Text>
+          <Text style={styles.pageHeaderNumber}>Property Details</Text>
         </View>
+
+        {/* Overview Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Overview</Text>
+          <View style={styles.divider} />
+          
+          <View style={styles.featuresGrid}>
+            <View style={styles.featureBox}>
+              <Text style={styles.featureLabel}>Living Space</Text>
+              <Text style={styles.featureValue}>{property.surface}</Text>
+              <Text style={styles.featureUnit}>square meters</Text>
+            </View>
+            
+            <View style={styles.featureBox}>
+              <Text style={styles.featureLabel}>Bedrooms</Text>
+              <Text style={styles.featureValue}>{property.bedrooms}</Text>
+              <Text style={styles.featureUnit}>rooms</Text>
+            </View>
+            
+            <View style={styles.featureBox}>
+              <Text style={styles.featureLabel}>Total Rooms</Text>
+              <Text style={styles.featureValue}>{property.rooms}</Text>
+              <Text style={styles.featureUnit}>rooms</Text>
+            </View>
+            
+            {property.land_surface && (
+              <View style={styles.featureBox}>
+                <Text style={styles.featureLabel}>Land Surface</Text>
+                <Text style={styles.featureValue}>{property.land_surface}</Text>
+                <Text style={styles.featureUnit}>square meters</Text>
+              </View>
+            )}
+            
+            {property.building_surface && (
+              <View style={styles.featureBox}>
+                <Text style={styles.featureLabel}>Building</Text>
+                <Text style={styles.featureValue}>{property.building_surface}</Text>
+                <Text style={styles.featureUnit}>square meters</Text>
+              </View>
+            )}
+            
+            <View style={styles.featureBox}>
+              <Text style={styles.featureLabel}>Property Type</Text>
+              <Text style={styles.featureValue}>{property.property_type}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Amenities */}
+        {amenities.length > 0 && (
+          <View style={styles.amenitiesBadges}>
+            {amenities.map((amenity, idx) => (
+              <View key={idx} style={styles.amenityBadge}>
+                <Text style={styles.amenityText}>{amenity}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Description */}
         {property.description && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Property Description</Text>
+            <Text style={styles.sectionTitle}>About This Property</Text>
+            <View style={styles.divider} />
             <Text style={styles.description}>{property.description}</Text>
           </View>
         )}
 
-        {/* Contact Footer */}
+        {/* Footer */}
         <View style={styles.footer}>
           <View>
-            <Text style={styles.footerText}>📧 {branding.contact_email}</Text>
-            <Text style={styles.footerText}>📞 {branding.contact_phone}</Text>
+            <Text style={styles.footerText}>{branding.contact_email}</Text>
+            <Text style={styles.footerText}>{branding.contact_phone}</Text>
           </View>
-          <View>
-            <Text style={styles.footerText}>{branding.company_name}</Text>
-          </View>
+          <Text style={styles.footerBrand}>{branding.company_name}</Text>
         </View>
-
-        <Text style={styles.pageNumber} render={({ pageNumber, totalPages }) => (
-          `Page ${pageNumber} of ${totalPages}`
-        )} fixed />
       </Page>
 
-      {/* PAGE 2: Additional Details */}
-      <Page size="A4" style={styles.page}>
+      {/* PAGE 3: DETAILED SPECIFICATIONS */}
+      <Page size="A4" style={styles.contentPage}>
         {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.companyName}>{branding.company_name}</Text>
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageHeaderBrand}>{branding.company_name}</Text>
+          <Text style={styles.pageHeaderNumber}>Specifications</Text>
         </View>
 
-        <Text style={styles.title}>Property Features & Specifications</Text>
-
-        {/* Technical Details */}
+        {/* Property Details */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Technical Information</Text>
+          <Text style={styles.sectionTitle}>Property Details</Text>
+          <View style={styles.divider} />
           
-          {property.heating_system && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Heating System:</Text>
-              <Text style={styles.featureValue}>{property.heating_system}</Text>
+          <View style={styles.detailsTable}>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Property Type</Text>
+              <Text style={styles.detailValue}>{property.property_type}</Text>
             </View>
-          )}
-          
-          {property.drainage_system && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Drainage:</Text>
-              <Text style={styles.featureValue}>{property.drainage_system}</Text>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Living Surface</Text>
+              <Text style={styles.detailValue}>{property.surface} m²</Text>
             </View>
-          )}
-          
-          {property.floors && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Number of Floors:</Text>
-              <Text style={styles.featureValue}>{property.floors}</Text>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Total Rooms</Text>
+              <Text style={styles.detailValue}>{property.rooms}</Text>
             </View>
-          )}
-          
-          {property.wc_count && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>WC Count:</Text>
-              <Text style={styles.featureValue}>{property.wc_count}</Text>
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Bedrooms</Text>
+              <Text style={styles.detailValue}>{property.bedrooms}</Text>
             </View>
-          )}
-          
-          {property.year_built && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Year Built:</Text>
-              <Text style={styles.featureValue}>{property.year_built}</Text>
+            
+            {property.bathrooms && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Bathrooms</Text>
+                <Text style={styles.detailValue}>{property.bathrooms}</Text>
+              </View>
+            )}
+            
+            {property.wc_count && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>WC Count</Text>
+                <Text style={styles.detailValue}>{property.wc_count}</Text>
+              </View>
+            )}
+            
+            {property.land_surface && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Land Surface</Text>
+                <Text style={styles.detailValue}>{property.land_surface} m²</Text>
+              </View>
+            )}
+            
+            {property.building_surface && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Building Surface</Text>
+                <Text style={styles.detailValue}>{property.building_surface} m²</Text>
+              </View>
+            )}
+            
+            {property.floors && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Floors</Text>
+                <Text style={styles.detailValue}>{property.floors}</Text>
+              </View>
+            )}
+            
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Swimming Pool</Text>
+              <Text style={styles.detailValue}>{property.pool ? 'Yes' : 'No'}</Text>
             </View>
-          )}
+            
+            {property.property_condition && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Condition</Text>
+                <Text style={styles.detailValue}>{property.property_condition}</Text>
+              </View>
+            )}
+            
+            {property.year_built && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Year Built</Text>
+                <Text style={styles.detailValue}>{property.year_built}</Text>
+              </View>
+            )}
+            
+            {property.heating_system && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Heating</Text>
+                <Text style={styles.detailValue}>{property.heating_system}</Text>
+              </View>
+            )}
+            
+            {property.drainage_system && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Drainage</Text>
+                <Text style={styles.detailValue}>{property.drainage_system}</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Energy Performance */}
         {(property.energy_consumption || property.co2_emissions) && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Energy Performance</Text>
+          <View style={styles.energyContainer}>
+            <Text style={styles.energyTitle}>Energy Performance</Text>
             
             {property.energy_consumption && (
-              <View style={styles.featureRow}>
-                <Text style={styles.featureLabel}>Energy Consumption:</Text>
-                <Text style={styles.featureValue}>{property.energy_consumption} kWh/m²/year</Text>
+              <View style={styles.energyRow}>
+                <Text style={styles.energyLabel}>Energy Consumption</Text>
+                <Text style={styles.energyValue}>{property.energy_consumption} kWh/m²/year</Text>
               </View>
             )}
             
             {property.co2_emissions && (
-              <View style={styles.featureRow}>
-                <Text style={styles.featureLabel}>CO2 Emissions:</Text>
-                <Text style={styles.featureValue}>{property.co2_emissions} kg CO2/m²/year</Text>
+              <View style={styles.energyRow}>
+                <Text style={styles.energyLabel}>CO2 Emissions</Text>
+                <Text style={styles.energyValue}>{property.co2_emissions} kg CO2/m²/year</Text>
               </View>
             )}
           </View>
         )}
 
-        {/* Property Overview */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Property Overview</Text>
-          
-          <View style={styles.featureRow}>
-            <Text style={styles.featureLabel}>Property Type:</Text>
-            <Text style={styles.featureValue}>{property.property_type}</Text>
-          </View>
-          
-          {property.property_condition && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Condition:</Text>
-              <Text style={styles.featureValue}>{property.property_condition}</Text>
-            </View>
-          )}
-          
-          <View style={styles.featureRow}>
-            <Text style={styles.featureLabel}>Total Rooms:</Text>
-            <Text style={styles.featureValue}>{property.rooms}</Text>
-          </View>
-          
-          <View style={styles.featureRow}>
-            <Text style={styles.featureLabel}>Bedrooms:</Text>
-            <Text style={styles.featureValue}>{property.bedrooms}</Text>
-          </View>
-          
-          {property.bathrooms && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Bathrooms:</Text>
-              <Text style={styles.featureValue}>{property.bathrooms}</Text>
-            </View>
-          )}
-          
-          <View style={styles.featureRow}>
-            <Text style={styles.featureLabel}>Swimming Pool:</Text>
-            <Text style={styles.featureValue}>{property.pool ? 'Yes' : 'No'}</Text>
-          </View>
-          
-          <View style={styles.featureRow}>
-            <Text style={styles.featureLabel}>Living Surface:</Text>
-            <Text style={styles.featureValue}>{property.surface} m²</Text>
-          </View>
-          
-          {property.land_surface && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Land Surface:</Text>
-              <Text style={styles.featureValue}>{property.land_surface} m²</Text>
-            </View>
-          )}
-          
-          {property.building_surface && (
-            <View style={styles.featureRow}>
-              <Text style={styles.featureLabel}>Building Surface:</Text>
-              <Text style={styles.featureValue}>{property.building_surface} m²</Text>
-            </View>
-          )}
-        </View>
-
         {/* Footer */}
         <View style={styles.footer}>
           <View>
-            <Text style={styles.footerText}>📧 {branding.contact_email}</Text>
-            <Text style={styles.footerText}>📞 {branding.contact_phone}</Text>
+            <Text style={styles.footerText}>{branding.contact_email}</Text>
+            <Text style={styles.footerText}>{branding.contact_phone}</Text>
           </View>
-          <View>
-            <Text style={styles.footerText}>{branding.company_name}</Text>
-          </View>
+          <Text style={styles.footerBrand}>{branding.company_name}</Text>
         </View>
-
-        <Text style={styles.pageNumber} render={({ pageNumber, totalPages }) => (
-          `Page ${pageNumber} of ${totalPages}`
-        )} fixed />
       </Page>
 
-      {/* PAGE 3+: Photo Gallery (4 images per page) */}
-      {imageChunks.map((chunk, pageIndex) => (
-        <Page key={`gallery-${pageIndex}`} size="A4" style={styles.page}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.companyName}>{branding.company_name}</Text>
-          </View>
+      {/* GALLERY PAGES (4 images per page - 2x2 grid) */}
+{imageChunks.map((chunk, pageIndex) => (
+  <Page key={`gallery-${pageIndex}`} size="A4" style={styles.contentPage}>
+    {/* Header */}
+    <View style={styles.pageHeader}>
+      <Text style={styles.pageHeaderBrand}>{branding.company_name}</Text>
+      <Text style={styles.pageHeaderNumber}>Gallery</Text>
+    </View>
 
-          <Text style={styles.title}>Photo Gallery - Page {pageIndex + 1}</Text>
+    {/* Gallery Grid - 2x2 */}
+    <View style={styles.section}>
+      <View style={styles.galleryGrid}>
+        {chunk.map((img, imgIndex) => (
+          <Image 
+            key={`img-${pageIndex}-${imgIndex}`}
+            src={img} 
+            style={styles.galleryImage} 
+          />
+        ))}
+      </View>
+    </View>
 
-          {/* 4 Images in grid (2x2) */}
-          <View style={styles.galleryGrid}>
-            {chunk.map((img, imgIndex) => (
-              <Image 
-                key={`img-${pageIndex}-${imgIndex}`}
-                src={img} 
-                style={styles.galleryImage} 
-              />
-            ))}
-          </View>
+    {/* Footer */}
+    <View style={styles.footer}>
+      <View>
+        <Text style={styles.footerText}>{branding.contact_email}</Text>
+        <Text style={styles.footerText}>{branding.contact_phone}</Text>
+      </View>
+      <Text style={styles.footerBrand}>{branding.company_name}</Text>
+    </View>
+  </Page>
+))}
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <View>
-              <Text style={styles.footerText}>📧 {branding.contact_email}</Text>
-              <Text style={styles.footerText}>📞 {branding.contact_phone}</Text>
-            </View>
-            <View>
-              <Text style={styles.footerText}>{branding.company_name}</Text>
-            </View>
-          </View>
-
-          <Text style={styles.pageNumber} render={({ pageNumber, totalPages }) => (
-            `Page ${pageNumber} of ${totalPages}`
-          )} fixed />
-        </Page>
-      ))}
     </Document>
   );
 };
