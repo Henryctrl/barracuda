@@ -121,21 +121,7 @@ interface PropertyMatch {
 }
 
 interface MatchAnalysis {
-  matches: {
-    budget: boolean;
-    location: boolean;
-    propertyType: boolean;
-    surface: boolean;
-    rooms: boolean;
-    bedrooms: boolean;
-    landSurface: boolean;
-    pool: boolean;
-    heating: boolean;
-    drainage: boolean;
-    condition: boolean;
-    yearBuilt: boolean;
-    bathrooms: boolean;
-  };
+  matches: Record<string, boolean>;
   uncertainties: {
     field: string;
     reason: string;
@@ -313,8 +299,8 @@ export default function ClientDetailPage() {
     property: PropertyMatch['properties'],
     criteria: ClientDetails['client_search_criteria'][0]
   ): MatchAnalysis => {
-    if (!property || !criteria) return { matches: {} as any, uncertainties: [] };
-  
+    if (!property || !criteria) return { matches: {}, uncertainties: [] };
+
     const price = parseInt(property.price || '0', 10);
     
     // Only check criteria that are actually specified by the client
@@ -405,9 +391,9 @@ export default function ClientDetailPage() {
     if (criteria.min_bathrooms) {
       matches.bathrooms = !!(property.bathrooms && property.bathrooms >= criteria.min_bathrooms);
     }
-  
+
     const uncertainties = [];
-  
+
     // Only add uncertainties for criteria the client actually specified
     if (criteria.pool_preference && criteria.pool_preference !== '' && property.pool === null) {
       uncertainties.push({ field: 'Pool', reason: 'Property listing does not specify pool availability' });
@@ -430,11 +416,9 @@ export default function ClientDetailPage() {
     if ((criteria.min_year_built || criteria.max_year_built) && !property.year_built) {
       uncertainties.push({ field: 'Year Built', reason: 'Construction year not provided' });
     }
-  
+
     return { matches, uncertainties };
   };
-  
-  
 
   const getMatchScoreColor = (score: number) => {
     if (score >= 80) return 'text-[#00ff00] border-[#00ff00] bg-[#00ff00]/10';
@@ -871,189 +855,218 @@ export default function ClientDetailPage() {
                       className="bg-[#020222] border border-[#333] hover:border-[#ff00ff] transition-colors rounded-lg overflow-hidden"
                     >
                       {/* COLLAPSED VIEW */}
-                      <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
-                        <div
-                          className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
-                          onClick={() =>
-                            setExpandedPropertyId(isExpanded ? null : match.id)
-                          }
-                        >
-                          {firstImage ? (
-                            <img
-                              src={firstImage}
-                              alt={prop.title}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <Home size={40} className="text-gray-600" />
-                          )}
+<div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
+  {/* Image */}
+  <div
+    className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
+    onClick={() =>
+      setExpandedPropertyId(isExpanded ? null : match.id)
+    }
+  >
+    {firstImage ? (
+      <img
+        src={firstImage}
+        alt={prop.title}
+        className="w-full h-full object-cover"
+      />
+    ) : (
+      <Home size={40} className="text-gray-600" />
+    )}
 
-                          <div
-                            className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
-                              match.match_score
-                            )}`}
-                          >
-                            <TrendingUp size={10} className="inline mr-1" />
-                            {match.match_score}%
-                          </div>
+    {/* Match Score Badge */}
+    <div
+      className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
+        match.match_score
+      )}`}
+    >
+      <TrendingUp size={10} className="inline mr-1" />
+      {match.match_score}%
+    </div>
 
-                          {getQualityBadge(qualityScore, validationErrors)}
+    {/* Quality Badge */}
+    {getQualityBadge(qualityScore, validationErrors)}
 
-                          <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-                            {isExpanded
-                              ? '▲ Less'
-                              : `▼ More (${allImages.length} photos)`}
-                          </div>
-                        </div>
+    {/* Expand indicator */}
+    <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+      {isExpanded
+        ? '▲ Less'
+        : `▼ More (${allImages.length} photos)`}
+    </div>
+  </div>
 
-                        <div className="flex-1">
-                          <div className="flex gap-2 mb-2 flex-wrap">
-                            <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
-                              {prop.source}
-                            </span>
-                            <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
-                              {prop.property_type || 'Property'}
-                            </span>
-                            {prop.pool && (
-                              <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                                <Droplets size={10} /> Pool
-                              </span>
-                            )}
-                            {hasPriceChange && priceDrop > 0 && (
-                              <span className="bg-green-500/20 text-green-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                                💰 €{priceDrop.toLocaleString()} drop
-                              </span>
-                            )}
-                          </div>
+  <div className="flex-1">
+    <div className="flex gap-2 mb-2 flex-wrap">
+      <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
+        {prop.source}
+      </span>
+      <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
+        {prop.property_type || 'Property'}
+      </span>
+      {prop.pool && (
+        <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+          <Droplets size={10} /> Pool
+        </span>
+      )}
+      {hasPriceChange && priceDrop > 0 && (
+        <span className="bg-green-500/20 text-green-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+          💰 €{priceDrop.toLocaleString()} drop
+        </span>
+      )}
+    </div>
 
-                          <h4
-                            className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
-                            onClick={() =>
-                              setExpandedPropertyId(isExpanded ? null : match.id)
-                            }
-                          >
-                            {prop.title}
-                          </h4>
+    <h4
+      className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
+      onClick={() =>
+        setExpandedPropertyId(isExpanded ? null : match.id)
+      }
+    >
+      {prop.title}
+    </h4>
 
-                          <div className="flex flex-wrap gap-3 text-[#a0a0ff] text-sm mb-2">
-                            <span className="flex items-center gap-1">
-                              <MapPin size={12} /> {prop.location_city}
-                            </span>
-                            {prop.surface && (
-                              <span className="flex items-center gap-1">
-                                <Maximize2 size={12} /> {prop.surface} m²
-                              </span>
-                            )}
-                            {prop.land_surface && (
-                              <span className="flex items-center gap-1">
-                                <Home size={12} /> {prop.land_surface} m² land
-                              </span>
-                            )}
-                            {prop.rooms && (
-                              <span className="flex items-center gap-1">
-                                <Home size={12} /> {prop.rooms} rooms
-                              </span>
-                            )}
-                            {prop.bedrooms && (
-                              <span className="flex items-center gap-1">
-                                <Bed size={12} /> {prop.bedrooms} bed
-                              </span>
-                            )}
-                            {prop.bathrooms && (
-                              <span className="flex items-center gap-1">
-                                <Bath size={12} /> {prop.bathrooms} bath
-                              </span>
-                            )}
-                          </div>
+    <div className="flex flex-wrap gap-3 text-[#a0a0ff] text-sm mb-2">
+      <span className="flex items-center gap-1">
+        <MapPin size={12} /> {prop.location_city}
+      </span>
+      {prop.surface && (
+        <span className="flex items-center gap-1">
+          <Maximize2 size={12} /> {prop.surface} m²
+        </span>
+      )}
+      {prop.land_surface && (
+        <span className="flex items-center gap-1">
+          <Home size={12} /> {prop.land_surface} m² land
+        </span>
+      )}
+      {prop.rooms && (
+        <span className="flex items-center gap-1">
+          <Home size={12} /> {prop.rooms} rooms
+        </span>
+      )}
+      {prop.bedrooms && (
+        <span className="flex items-center gap-1">
+          <Bed size={12} /> {prop.bedrooms} bed
+        </span>
+      )}
+      {prop.bathrooms && (
+        <span className="flex items-center gap-1">
+          <Bath size={12} /> {prop.bathrooms} bath
+        </span>
+      )}
+    </div>
 
-                          <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
-                            {prop.heating_system && (
-                              <span className="flex items-center gap-1">
-                                <Flame size={10} /> {prop.heating_system}
-                              </span>
-                            )}
-                            {prop.drainage_system && (
-                              <span className="flex items-center gap-1">
-                                <Wrench size={10} /> {prop.drainage_system}
-                              </span>
-                            )}
-                            {prop.year_built && (
-                              <span className="flex items-center gap-1">
-                                <Calendar size={10} /> Built {prop.year_built}
-                              </span>
-                            )}
-                          </div>
+    <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
+      {prop.heating_system && (
+        <span className="flex items-center gap-1">
+          <Flame size={10} /> {prop.heating_system}
+        </span>
+      )}
+      {prop.drainage_system && (
+        <span className="flex items-center gap-1">
+          <Wrench size={10} /> {prop.drainage_system}
+        </span>
+      )}
+      {prop.year_built && (
+        <span className="flex items-center gap-1">
+          <Calendar size={10} /> Built {prop.year_built}
+        </span>
+      )}
+    </div>
 
-                          {validationErrors.length > 0 && (
-                            <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
-                              <AlertTriangle size={12} />
-                              {Array.isArray(validationErrors)
-                                ? validationErrors.join(', ')
-                                : 'Data quality issues'}
-                            </div>
-                          )}
+    {validationErrors.length > 0 && (
+      <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
+        <AlertTriangle size={12} />
+        {Array.isArray(validationErrors)
+          ? validationErrors.join(', ')
+          : 'Data quality issues'}
+      </div>
+    )}
 
-                          <div className="flex items-center gap-3">
-                            <div className="text-xl font-bold text-[#00ffff]">
-                              €{parseInt(prop.price || '0', 10).toLocaleString()}
-                            </div>
-                            {hasPriceChange && (
-                              <div className="text-xs text-gray-500 line-through">
-                                €
-                                {parseInt(
-                                  String(prop.previous_price),
-                                  10
-                                ).toLocaleString()}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+    {/* Price and Match Analysis Badges */}
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="text-xl font-bold text-[#00ffff]">
+        €{parseInt(prop.price || '0', 10).toLocaleString()}
+      </div>
+      {hasPriceChange && (
+        <div className="text-xs text-gray-500 line-through">
+          €
+          {parseInt(
+            String(prop.previous_price),
+            10
+          ).toLocaleString()}
+        </div>
+      )}
+      
+      {/* Match Analysis Badges - NEW LOCATION */}
+      {criteria && (() => {
+        const analysis = calculateMatchAnalysis(prop, criteria);
+        const matchCount = Object.values(analysis.matches).filter(v => v === true).length;
+        const mismatchCount = Object.values(analysis.matches).filter(v => v === false).length;
+        const uncertainCount = analysis.uncertainties.length;
+        
+        return (
+          <div className="flex gap-2">
+            {matchCount > 0 && (
+              <div className="bg-green-500/20 border border-green-500 text-green-400 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                <CheckCircle2 size={12} /> {matchCount} matches
+              </div>
+            )}
+            {(mismatchCount > 0 || uncertainCount > 0) && (
+              <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-400 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                <AlertTriangle size={12} /> {mismatchCount + uncertainCount} queries
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  </div>
 
-                        <div className="flex md:flex-col gap-2 w-full md:w-auto">
-                          {match.status !== 'shortlisted' && (
-                            <button
-                              onClick={() =>
-                                updateMatchStatus(match.id, 'shortlisted')
-                              }
-                              disabled={updatingMatchId === match.id}
-                              className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                              {updatingMatchId === match.id ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <>
-                                  <CheckCircle2 size={14} /> Select
-                                </>
-                              )}
-                            </button>
-                          )}
-                          {match.status !== 'rejected' && (
-                            <button
-                              onClick={() =>
-                                updateMatchStatus(match.id, 'rejected')
-                              }
-                              disabled={updatingMatchId === match.id}
-                              className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                              {updatingMatchId === match.id ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <>
-                                  <XCircle size={14} /> Discard
-                                </>
-                              )}
-                            </button>
-                          )}
-                          <a
-                            href={prop.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 md:w-40 py-2 bg-[#ff00ff]/10 text-[#ff00ff] hover:bg-[#ff00ff]/20 rounded uppercase text-xs font-bold flex items-center justify-center gap-2"
-                          >
-                            <ExternalLink size={14} /> Source
-                          </a>
-                        </div>
-                      </div>
+  <div className="flex md:flex-col gap-2 w-full md:w-auto">
+    {match.status !== 'shortlisted' && (
+      <button
+        onClick={() =>
+          updateMatchStatus(match.id, 'shortlisted')
+        }
+        disabled={updatingMatchId === match.id}
+        className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {updatingMatchId === match.id ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <>
+            <CheckCircle2 size={14} /> Select
+          </>
+        )}
+      </button>
+    )}
+    {match.status !== 'rejected' && (
+      <button
+        onClick={() =>
+          updateMatchStatus(match.id, 'rejected')
+        }
+        disabled={updatingMatchId === match.id}
+        className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {updatingMatchId === match.id ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <>
+            <XCircle size={14} /> Discard
+          </>
+        )}
+      </button>
+    )}
+    <a
+      href={prop.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex-1 md:w-40 py-2 bg-[#ff00ff]/10 text-[#ff00ff] hover:bg-[#ff00ff]/20 rounded uppercase text-xs font-bold flex items-center justify-center gap-2"
+    >
+      <ExternalLink size={14} /> Source
+    </a>
+  </div>
+</div>
+
 
                       {/* EXPANDED VIEW */}
                       {isExpanded && (
@@ -1071,7 +1084,7 @@ export default function ClientDetailPage() {
                                   .filter(([_, matches]) => matches)
                                   .map(([key]) => key);
                                 const cons = Object.entries(analysis.matches)
-                                  .filter(([key, matches]) => !matches && key !== 'location')  // FIXED: added 'key' parameter
+                                  .filter(([key, matches]) => !matches && key !== 'location')
                                   .map(([key]) => key);
                                 
                                 return (
