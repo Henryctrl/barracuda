@@ -1,3 +1,5 @@
+//src/app/admin/dashboard/page.tsx
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -42,14 +44,14 @@ type GeocodeResult = {
 };
 
 type ErrorLog = {
-    id: string;
-    timestamp: string;
-    level: 'error' | 'warning' | 'info';
-    source: string;
-    message: string;
-    details?: string | Record<string, any> | null;
-    created_at: string;
-  };
+  id: string;
+  timestamp: string;
+  level: 'error' | 'warning' | 'info';
+  source: string;
+  message: string;
+  details?: string | Record<string, unknown> | null;
+  created_at: string;
+};
   
 
 export default function AdminDashboard() {
@@ -181,20 +183,20 @@ export default function AdminDashboard() {
   };
 
   // Helper function to safely render log details
-    // Helper function to safely render log details
-    const renderLogDetails = (details: unknown) => {
-        if (typeof details === 'string') {
-          return details as string;
-        }
-        if (details === null || details === undefined) {
-          return 'null';
-        }
-        try {
-          return JSON.stringify(details, null, 2);
-        } catch {
-          return String(details);
-        }
-      };
+    const renderLogDetails = (details: string | Record<string, unknown> | null | undefined): string => {
+      if (typeof details === 'string') {
+        return details;
+      }
+      if (details === null || details === undefined) {
+        return 'null';
+      }
+      try {
+        return JSON.stringify(details, null, 2);
+      } catch {
+        return String(details);
+      }
+    };
+    
     
 
   return (

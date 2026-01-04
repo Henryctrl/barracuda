@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🖼️ Proxying image:', imageUrl);
 
-    // Fetch the image from the external source
     const response = await fetch(imageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -27,18 +26,15 @@ export async function GET(request: NextRequest) {
       throw new Error(`Failed to fetch image: ${response.status}`);
     }
 
-    // Get the image data
     const imageBuffer = await response.arrayBuffer();
     const contentType = response.headers.get('content-type') || 'image/jpeg';
 
     console.log('✅ Image fetched successfully, type:', contentType, 'size:', (imageBuffer.byteLength / 1024).toFixed(2), 'KB');
 
-    // Convert all images to JPEG for better PDF compatibility
     let finalBuffer;
-    let finalContentType = 'image/jpeg';
+    const finalContentType = 'image/jpeg';
 
     try {
-      // Convert any image format to JPEG using Sharp
       finalBuffer = await sharp(Buffer.from(imageBuffer))
         .resize(2000, 2000, {
           fit: 'inside',
@@ -53,12 +49,9 @@ export async function GET(request: NextRequest) {
       console.log('✅ Image converted to JPEG, new size:', (finalBuffer.byteLength / 1024).toFixed(2), 'KB');
     } catch (conversionError) {
       console.error('❌ Image conversion failed:', conversionError);
-      // If conversion fails, use original
       finalBuffer = Buffer.from(imageBuffer);
-      finalContentType = contentType;
     }
 
-    // Return the image with proper headers
     return new NextResponse(finalBuffer, {
       status: 200,
       headers: {
@@ -72,7 +65,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('❌ Image proxy error:', error);
     
-    // Return a placeholder 1x1 gray pixel instead of failing
     const placeholderPixel = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
       'base64'
@@ -88,7 +80,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
     headers: {

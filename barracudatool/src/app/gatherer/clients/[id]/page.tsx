@@ -225,10 +225,11 @@ export default function ClientDetailPage() {
     }
 
     const matchesResponse = await supabase
-      .from("property_matches")
-      .select("*")
-      .eq("client_id", clientId)
-      .order("match_score", { ascending: false });
+  .from('property_matches')
+  .select('*')
+  .eq('client_id', clientId)
+  .order('match_score', { ascending: false });
+
 
     if (
       !matchesResponse.error &&
