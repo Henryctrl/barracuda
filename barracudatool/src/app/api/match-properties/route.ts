@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import * as turf from '@turf/turf'; // ✅ ADD THIS IMPORT
+import * as turf from '@turf/turf';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -166,7 +166,7 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
     }
   }
 
-  // ✅ NEW: Custom sectors matching (point-in-polygon)
+  // Custom sectors matching (point-in-polygon)
   if (criteria.custom_sectors && property.location_lat && property.location_lng) {
     try {
       const sectors = typeof criteria.custom_sectors === 'string'
@@ -383,6 +383,19 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // ✅ OPTION 1: Delete all existing matches before re-matching
+      console.log(`\n🗑️  Clearing existing matches for this client...`);
+      const { error: deleteError } = await supabase
+        .from('property_matches')
+        .delete()
+        .eq('client_id', client.id);
+
+      if (deleteError) {
+        console.error(`❌ Error clearing matches:`, deleteError);
+      } else {
+        console.log(`✅ Cleared all previous matches`);
+      }
+
       let propertiesQuery = supabase
         .from('properties')
         .select('*')
@@ -436,43 +449,22 @@ export async function POST(request: NextRequest) {
 
         console.log(`\n✅ MATCH FOUND: ${(property as any).location_city} - Score: ${matchScore}`);
 
-        const { data: existingMatch } = await supabase
+        // Since we deleted all matches, we only INSERT (no need to check for existing)
+        const { error: insertError } = await supabase
           .from('property_matches')
-          .select('id, status')
-          .eq('client_id', client.id)
-          .eq('property_id', property.id)
-          .single();
+          .insert({
+            client_id: client.id,
+            property_id: property.id,
+            match_score: matchScore,
+            status: 'new',
+            matched_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
 
-        if (existingMatch) {
-          const { error: updateError } = await supabase
-            .from('property_matches')
-            .update({
-              match_score: matchScore,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existingMatch.id);
-
-          if (!updateError) {
-            updatedMatches++;
-            clientMatches++;
-          }
-        } else {
-          const { error: insertError } = await supabase
-            .from('property_matches')
-            .insert({
-              client_id: client.id,
-              property_id: property.id,
-              match_score: matchScore,
-              status: 'new',
-              matched_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            });
-
-          if (!insertError) {
-            totalMatches++;
-            newMatches++;
-            clientMatches++;
-          }
+        if (!insertError) {
+          totalMatches++;
+          newMatches++;
+          clientMatches++;
         }
       }
 
