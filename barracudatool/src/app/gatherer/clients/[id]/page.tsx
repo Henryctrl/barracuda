@@ -23,7 +23,6 @@ import {
   Maximize2,
   Bed,
   AlertTriangle,
-  Database,
   Droplets,
   Flame,
   Wrench,
@@ -126,9 +125,7 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'market_scan' | 'shortlist'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
-  const [isScraping, setIsScraping] = useState(false);
   const [updatingMatchId, setUpdatingMatchId] = useState<string | null>(null);
-  const [scrapeStatus, setScrapeStatus] = useState<string>('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [hasAutoMatched, setHasAutoMatched] = useState(false);
   const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
@@ -236,7 +233,6 @@ export default function ClientDetailPage() {
   
     setLoading(false);
   };
-  
 
   // Auto-match once on first load if there are criteria
   useEffect(() => {
@@ -257,41 +253,6 @@ export default function ClientDetailPage() {
     }
   }, [loading, hasAutoMatched, client, matches.length]);
 
-  const handleRunFullScan = async () => {
-    setIsScraping(true);
-    setScrapeStatus('Starting scraper...');
-
-    try {
-      setScrapeStatus('🔄 Scraping CAD-IMMO...');
-      const scrapeResponse = await fetch('/api/trigger-scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrl: 'https://cad-immo.com/fr/ventes' }),
-      });
-
-      const scrapeResult = await scrapeResponse.json();
-
-      if (!scrapeResponse.ok) {
-        throw new Error(scrapeResult.error || 'Scraping failed');
-      }
-
-      setScrapeStatus(`✅ Scraped ${scrapeResult.stats.total} properties`);
-
-      setScrapeStatus('🎯 Running property matching...');
-      await handleRunScan();
-
-      setScrapeStatus('✨ Complete!');
-      setTimeout(() => setScrapeStatus(''), 3000);
-    } catch (error) {
-      setScrapeStatus(
-        `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-      setTimeout(() => setScrapeStatus(''), 5000);
-    } finally {
-      setIsScraping(false);
-    }
-  };
-
   const handleRunScan = async () => {
     setIsScanning(true);
 
@@ -302,6 +263,10 @@ export default function ClientDetailPage() {
     });
 
     await fetchClientData();
+    
+    // ✅ Force update timestamp to show "just now"
+    setLastUpdated(new Date());
+    
     setIsScanning(false);
   };
 
@@ -635,14 +600,14 @@ export default function ClientDetailPage() {
                   Market Scanner Status
                 </h3>
 
-                {isScraping || isScanning ? (
+                {isScanning ? (
                   <div className="flex flex-col items-center py-4">
                     <Loader2
                       size={40}
                       className="animate-spin text-[#ff00ff] mb-2"
                     />
                     <span className="text-white text-sm animate-pulse">
-                      {scrapeStatus || 'Processing...'}
+                      Refreshing matches...
                     </span>
                   </div>
                 ) : (
@@ -654,28 +619,16 @@ export default function ClientDetailPage() {
                       New Matches Found
                     </div>
                     <button
-                      onClick={handleRunFullScan}
+                      onClick={handleRunScan}
                       disabled={matchingDisabled}
                       className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
                     >
-                      <Database size={16} />
-                      Scrape & Match
-                    </button>
-                    <button
-                      onClick={handleRunScan}
-                      disabled={matchingDisabled}
-                      className="w-full mt-2 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
+                      <Radar size={16} />
                       Refresh Matches
                     </button>
                   </div>
                 )}
 
-                {scrapeStatus && (
-                  <div className="mt-3 text-xs text-white/70">
-                    {scrapeStatus}
-                  </div>
-                )}
                 {lastUpdated && (
                   <div className="mt-3 text-[0.65rem] text-[#a0a0ff] flex items-center justify-center gap-1">
                     <Calendar size={10} />
@@ -733,13 +686,6 @@ export default function ClientDetailPage() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={handleRunFullScan}
-                disabled={isScraping || matchingDisabled}
-                className="text-xs text-[#ff00ff] border border-[#ff00ff] px-3 py-1 rounded uppercase hover:bg-[#ff00ff]/10 disabled:opacity-50"
-              >
-                {isScraping ? 'Scanning...' : 'Refresh Matches'}
-              </button>
             </div>
 
             {displayedMatches.length === 0 ? (
@@ -751,7 +697,7 @@ export default function ClientDetailPage() {
                 </p>
                 {activeTab === 'market_scan' && !matchingDisabled && (
                   <button
-                    onClick={handleRunFullScan}
+                    onClick={handleRunScan}
                     className="px-6 py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded hover:bg-[#ff00ff]/80"
                   >
                     Run First Scan
@@ -1019,7 +965,7 @@ export default function ClientDetailPage() {
                           {/* Technical Details */}
                           <div>
                             <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
-                              🏗️ Technical Details
+                              🔧 Technical Details
                             </h5>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {/* Surface Details */}
@@ -1029,25 +975,19 @@ export default function ClientDetailPage() {
                                 </div>
                                 <div className="space-y-1 text-sm text-white/80">
                                   {prop.surface && (
-                                    <div>• Living space: {prop.surface} m²</div>
+                                    <div>Living space: {prop.surface} m²</div>
                                   )}
                                   {prop.building_surface && (
-                                    <div>
-                                      • Building: {prop.building_surface} m²
-                                    </div>
+                                    <div>Building: {prop.building_surface} m²</div>
                                   )}
                                   {prop.land_surface && (
-                                    <div>• Land: {prop.land_surface} m²</div>
+                                    <div>Land: {prop.land_surface} m²</div>
                                   )}
-                                  {prop.floors && <div>• Floors: {prop.floors}</div>}
-                                  {prop.rooms && <div>• Rooms: {prop.rooms}</div>}
-                                  {prop.bedrooms && (
-                                    <div>• Bedrooms: {prop.bedrooms}</div>
-                                  )}
-                                  {prop.bathrooms && (
-                                    <div>• Bathrooms: {prop.bathrooms}</div>
-                                  )}
-                                  {prop.wc_count && <div>• WC: {prop.wc_count}</div>}
+                                  {prop.floors && <div>Floors: {prop.floors}</div>}
+                                  {prop.rooms && <div>Rooms: {prop.rooms}</div>}
+                                  {prop.bedrooms && <div>Bedrooms: {prop.bedrooms}</div>}
+                                  {prop.bathrooms && <div>Bathrooms: {prop.bathrooms}</div>}
+                                  {prop.wc_count && <div>WC: {prop.wc_count}</div>}
                                 </div>
                               </div>
 
@@ -1059,10 +999,7 @@ export default function ClientDetailPage() {
                                 <div className="space-y-1 text-sm text-white/80">
                                   {prop.heating_system && (
                                     <div className="flex items-center gap-2">
-                                      <Flame
-                                        size={12}
-                                        className="text-orange-400"
-                                      />
+                                      <Flame size={12} className="text-orange-400" />
                                       Heating: {prop.heating_system}
                                     </div>
                                   )}
@@ -1074,18 +1011,15 @@ export default function ClientDetailPage() {
                                   )}
                                   {prop.pool !== null && (
                                     <div className="flex items-center gap-2">
-                                      <Droplets
-                                        size={12}
-                                        className="text-blue-400"
-                                      />
+                                      <Droplets size={12} className="text-blue-400" />
                                       Pool: {prop.pool ? 'Yes' : 'No'}
                                     </div>
                                   )}
                                   {prop.property_condition && (
-                                    <div>• Condition: {prop.property_condition}</div>
+                                    <div>Condition: {prop.property_condition}</div>
                                   )}
                                   {prop.year_built && (
-                                    <div>• Built: {prop.year_built}</div>
+                                    <div>Built: {prop.year_built}</div>
                                   )}
                                 </div>
                               </div>
@@ -1098,15 +1032,10 @@ export default function ClientDetailPage() {
                                   </div>
                                   <div className="space-y-1 text-sm text-white/80">
                                     {prop.energy_consumption && (
-                                      <div>
-                                        • Consumption: {prop.energy_consumption}{' '}
-                                        kWh/m²/year
-                                      </div>
+                                      <div>Consumption: {prop.energy_consumption} kWh/m²/year</div>
                                     )}
                                     {prop.co2_emissions && (
-                                      <div>
-                                        • CO₂ Emissions: {prop.co2_emissions} kg/m²/year
-                                      </div>
+                                      <div>CO₂ Emissions: {prop.co2_emissions} kg/m²/year</div>
                                     )}
                                   </div>
                                 </div>
@@ -1118,18 +1047,16 @@ export default function ClientDetailPage() {
                                   Location
                                 </div>
                                 <div className="space-y-1 text-sm text-white/80">
-                                  {prop.location_city && (
-                                    <div>• City: {prop.location_city}</div>
-                                  )}
+                                  {prop.location_city && <div>City: {prop.location_city}</div>}
                                   {prop.location_postal_code && (
-                                    <div>• Postal: {prop.location_postal_code}</div>
+                                    <div>Postal: {prop.location_postal_code}</div>
                                   )}
                                   {prop.location_department && (
-                                    <div>• Department: {prop.location_department}</div>
+                                    <div>Department: {prop.location_department}</div>
                                   )}
                                   {prop.location_lat && prop.location_lng && (
                                     <div>
-                                      • Coords: {prop.location_lat.toFixed(4)},{' '}
+                                      Coords: {prop.location_lat.toFixed(4)},{' '}
                                       {prop.location_lng.toFixed(4)}
                                     </div>
                                   )}
@@ -1142,8 +1069,7 @@ export default function ClientDetailPage() {
                           {validationErrors.length > 0 && (
                             <div>
                               <h5 className="text-sm font-bold text-yellow-500 uppercase mb-3 flex items-center gap-2">
-                                <AlertTriangle size={16} />
-                                Data Quality Issues
+                                <AlertTriangle size={16} /> Data Quality Issues
                               </h5>
                               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
                                 <ul className="text-sm text-yellow-200 space-y-1">
@@ -1152,8 +1078,7 @@ export default function ClientDetailPage() {
                                   ))}
                                 </ul>
                                 <div className="mt-3 text-xs text-yellow-500/70">
-                                  Quality Score:{' '}
-                                  {(parseFloat(qualityScore) * 100).toFixed(0)}%
+                                  Quality Score: {(parseFloat(qualityScore) * 100).toFixed(0)}%
                                 </div>
                               </div>
                             </div>
@@ -1168,9 +1093,7 @@ export default function ClientDetailPage() {
                               <div className="bg-white/5 rounded p-4">
                                 <div className="space-y-2 text-sm">
                                   <div className="flex justify-between items-center">
-                                    <span className="text-gray-400">
-                                      Original Price:
-                                    </span>
+                                    <span className="text-gray-400">Original Price:</span>
                                     <span className="text-white font-bold">
                                       €
                                       {parseInt(
@@ -1180,39 +1103,25 @@ export default function ClientDetailPage() {
                                     </span>
                                   </div>
                                   <div className="flex justify-between items-center">
-                                    <span className="text-gray-400">
-                                      Current Price:
-                                    </span>
+                                    <span className="text-gray-400">Current Price:</span>
                                     <span className="text-[#00ff00] font-bold">
-                                      €
-                                      {parseInt(
-                                        prop.price || '0',
-                                        10
-                                      ).toLocaleString()}
+                                      €{parseInt(prop.price || '0', 10).toLocaleString()}
                                     </span>
                                   </div>
                                   {priceDrop > 0 && (
                                     <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                                      <span className="text-gray-400">
-                                        Price Reduction:
-                                      </span>
+                                      <span className="text-gray-400">Price Reduction:</span>
                                       <span className="text-[#00ff00] font-bold flex items-center gap-1">
-                                        ↓ €{priceDrop.toLocaleString()} (
-                                        {(
-                                          (priceDrop /
-                                            (prop.previous_price || 1)) *
-                                          100
-                                        ).toFixed(1)}
+                                        €{priceDrop.toLocaleString()} (-
+                                        {((priceDrop / (prop.previous_price || 1)) * 100).toFixed(1)}
                                         %)
                                       </span>
                                     </div>
                                   )}
                                   {prop.price_changed_at && (
                                     <div className="text-xs text-gray-500 pt-2">
-                                      Changed on:{' '}
-                                      {new Date(
-                                        prop.price_changed_at
-                                      ).toLocaleDateString('en-GB', {
+                                      Changed on{' '}
+                                      {new Date(prop.price_changed_at).toLocaleDateString('en-GB', {
                                         day: 'numeric',
                                         month: 'long',
                                         year: 'numeric',
@@ -1229,32 +1138,24 @@ export default function ClientDetailPage() {
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-500">
                               {prop.reference && (
                                 <div>
-                                  <div className="text-[#00ffff] font-bold mb-1">
-                                    Reference
-                                  </div>
+                                  <div className="text-[#00ffff] font-bold mb-1">Reference</div>
                                   {prop.reference}
                                 </div>
                               )}
                               {prop.scraped_at && (
                                 <div>
-                                  <div className="text-[#00ffff] font-bold mb-1">
-                                    First Seen
-                                  </div>
+                                  <div className="text-[#00ffff] font-bold mb-1">First Seen</div>
                                   {new Date(prop.scraped_at).toLocaleDateString()}
                                 </div>
                               )}
                               {prop.last_seen_at && (
                                 <div>
-                                  <div className="text-[#00ffff] font-bold mb-1">
-                                    Last Updated
-                                  </div>
+                                  <div className="text-[#00ffff] font-bold mb-1">Last Updated</div>
                                   {new Date(prop.last_seen_at).toLocaleDateString()}
                                 </div>
                               )}
                               <div>
-                                <div className="text-[#00ffff] font-bold mb-1">
-                                  Match Score
-                                </div>
+                                <div className="text-[#00ffff] font-bold mb-1">Match Score</div>
                                 {match.match_score}%
                               </div>
                             </div>
@@ -1272,12 +1173,13 @@ export default function ClientDetailPage() {
               <details className="bg-[#020222] border border-red-500/30 rounded-lg p-4">
                 <summary className="cursor-pointer text-red-500 font-bold uppercase text-sm flex items-center gap-2">
                   <XCircle size={16} />
-                  Discarded Properties ({rejectedMatches.length})
+                  ▼ Discarded Properties ({rejectedMatches.length})
                 </summary>
                 <div className="mt-4 space-y-3">
                   {rejectedMatches.map(match => {
                     if (!match.properties) return null;
                     const prop = match.properties;
+
                     return (
                       <div
                         key={match.id}
