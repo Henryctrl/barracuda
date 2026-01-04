@@ -224,7 +224,7 @@ galleryGrid: {
 },
 galleryImage: {
   width: '48%',
-  height: 250,
+  height: 220,
   objectFit: 'cover',
   marginBottom: 20,
 },
@@ -596,13 +596,20 @@ export const PropertyBrochurePDF = ({ property, branding }: { property: Property
     {/* Gallery Grid - 2x2 */}
     <View style={styles.section}>
       <View style={styles.galleryGrid}>
-        {chunk.map((img, imgIndex) => (
-          <Image 
-            key={`img-${pageIndex}-${imgIndex}`}
-            src={img} 
-            style={styles.galleryImage} 
-          />
-        ))}
+        {chunk.map((img, imgIndex) => {
+          try {
+            return (
+              <Image 
+                key={`img-${pageIndex}-${imgIndex}`}
+                src={img} 
+                style={styles.galleryImage} 
+              />
+            );
+          } catch (error) {
+            console.warn('Failed to render image:', img);
+            return null;
+          }
+        })}
       </View>
     </View>
 
