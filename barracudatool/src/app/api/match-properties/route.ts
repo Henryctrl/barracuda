@@ -434,6 +434,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // ✅ UPDATE: Set last_matched_at for this client after processing
+      await supabase
+        .from('clients')
+        .update({ last_matched_at: new Date().toISOString() })
+        .eq('id', client.id);
+
       results.push({
         clientName: `${client.first_name} ${client.last_name}`,
         matchesFound: clientMatches,
@@ -447,6 +453,7 @@ export async function POST(request: NextRequest) {
       newMatches,
       updatedMatches,
       results,
+      timestamp: new Date().toISOString(), // ✅ ADD: Return timestamp
       message: `Matched ${newMatches} new properties, updated ${updatedMatches} existing matches across ${clients.length} client(s)`,
     });
   } catch (error) {
