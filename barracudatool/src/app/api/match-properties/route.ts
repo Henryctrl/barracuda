@@ -66,27 +66,24 @@ interface Property {
   energy_consumption?: number;
 }
 
-// Helper: Remove accents for location matching
 function removeAccents(str: string): string {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Helper: Calculate distance between two coordinates (Haversine formula)
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+// ✅ Haversine formula: expects (lng1, lat1, lng2, lat2)
+function calculateDistance(lng1: number, lat1: number, lng2: number, lat2: number): number {
   const R = 6371; // Earth's radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = 
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
-// Helper: Check if property is in location criteria
 function matchesLocation(property: Property, criteria: SearchCriteria): boolean {
-  // If no location criteria set, match all
   if (!criteria.locations && !criteria.selected_places && !criteria.radius_searches && !criteria.custom_sectors) {
     return true;
   }
@@ -107,7 +104,7 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
     if (textMatch) return true;
   }
 
-  // Radius search matching
+  // ✅ FIXED: Radius search matching with CORRECT coordinate order
   if (criteria.radius_searches && property.location_lat && property.location_lng) {
     try {
       const radiusSearches = typeof criteria.radius_searches === 'string' 
@@ -116,14 +113,22 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
 
       if (Array.isArray(radiusSearches)) {
         for (const search of radiusSearches) {
-          if (search.center && search.radius) {
+          if (search.center && Array.isArray(search.center) && search.radius_km) {
+            const [searchLng, searchLat] = search.center; // [lng, lat] from GeoJSON
+            
+            // ✅ CORRECT ORDER: (searchLng, searchLat, propertyLng, propertyLat)
             const distance = calculateDistance(
-              property.location_lat,
-              property.location_lng,
-              search.center[1],
-              search.center[0]
+              searchLng,              // Search point longitude
+              searchLat,              // Search point latitude
+              property.location_lng,  // Property longitude
+              property.location_lat   // Property latitude
             );
-            if (distance <= search.radius) return true;
+            
+            console.log(`📍 Distance from ${property.location_city} [${property.location_lng}, ${property.location_lat}] to ${search.place_name} [${searchLng}, ${searchLat}]: ${distance.toFixed(2)} km (radius: ${search.radius_km} km)`);
+            
+            if (distance <= search.radius_km) {
+              return true;
+            }
           }
         }
       }
@@ -132,7 +137,7 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
     }
   }
 
-  // Places matching
+  // ✅ FIXED: Places matching with CORRECT coordinate order
   if (criteria.selected_places && property.location_lat && property.location_lng) {
     try {
       const places = typeof criteria.selected_places === 'string'
@@ -141,15 +146,21 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
 
       if (Array.isArray(places)) {
         for (const place of places) {
-          if (place.coordinates) {
+          if (place.center && Array.isArray(place.center)) {
+            const [placeLng, placeLat] = place.center; // [lng, lat] from GeoJSON
+            
+            // ✅ CORRECT ORDER: (placeLng, placeLat, propertyLng, propertyLat)
             const distance = calculateDistance(
-              property.location_lat,
+              placeLng,
+              placeLat,
               property.location_lng,
-              place.coordinates[1],
-              place.coordinates[0]
+              property.location_lat
             );
-            // Default 5km radius for places
-            if (distance <= 5) return true;
+            
+            // Default 10km radius for selected places
+            if (distance <= 10) {
+              return true;
+            }
           }
         }
       }
@@ -161,7 +172,6 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
   return false;
 }
 
-// Calculate match score with new weights
 function calculateMatchScore(property: Property, criteria: SearchCriteria): number {
   let score = 0;
   const weights = {
@@ -175,7 +185,7 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
     dpe: 2,
   };
 
-  // Bedrooms (20 points)
+  // Bedrooms
   if (criteria.min_bedrooms || criteria.max_bedrooms) {
     if (property.bedrooms) {
       const min = criteria.min_bedrooms || 0;
@@ -186,7 +196,7 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
     }
   }
 
-  // Surface (20 points)
+  // Surface
   if (criteria.min_surface || criteria.max_surface) {
     if (property.surface) {
       const min = criteria.min_surface || 0;
@@ -197,7 +207,7 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
     }
   }
 
-  // Land surface (15 points)
+  // Land surface
   if (criteria.min_land_surface || criteria.max_land_surface) {
     if (property.land_surface) {
       const min = criteria.min_land_surface || 0;
@@ -208,7 +218,7 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
     }
   }
 
-  // Rooms (15 points)
+  // Rooms
   if (criteria.min_rooms || criteria.max_rooms) {
     if (property.rooms) {
       const min = criteria.min_rooms || 0;
@@ -219,50 +229,45 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
     }
   }
 
-  // Pool (15 points)
+  // Pool
   if (criteria.pool_preference) {
     if (criteria.pool_preference === 'required' && property.pool === true) {
       score += weights.pool;
     } else if (criteria.pool_preference === 'preferred' && property.pool === true) {
       score += weights.pool;
     } else if (criteria.pool_preference === 'no_preference') {
-      score += weights.pool / 2; // Give some points for being flexible
+      score += weights.pool / 2;
     }
   }
 
-  // Features (10 points max, 2 points per matching feature)
+  // Features
   if (criteria.features && criteria.features.length > 0) {
     let matchingFeatures = 0;
     
-    // Check heating system
     if (criteria.heating_system && property.heating_system) {
       if (property.heating_system.toLowerCase().includes(criteria.heating_system.toLowerCase())) {
         matchingFeatures++;
       }
     }
 
-    // Check drainage system
     if (criteria.drainage_system && property.drainage_system) {
       if (property.drainage_system.toLowerCase().includes(criteria.drainage_system.toLowerCase())) {
         matchingFeatures++;
       }
     }
 
-    // Check property condition
     if (criteria.property_condition && property.property_condition) {
       if (property.property_condition.toLowerCase().includes(criteria.property_condition.toLowerCase())) {
         matchingFeatures++;
       }
     }
 
-    // Check year built
     if (criteria.min_year_built && property.year_built) {
       if (property.year_built >= criteria.min_year_built) {
         matchingFeatures++;
       }
     }
 
-    // Check bathrooms
     if (criteria.min_bathrooms && property.bathrooms) {
       if (property.bathrooms >= criteria.min_bathrooms) {
         matchingFeatures++;
@@ -273,16 +278,15 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
     score += featureScore;
   }
 
-  // Property type (3 points)
+  // Property type
   if (criteria.property_types && criteria.property_types.length > 0) {
     if (property.property_type && criteria.property_types.includes(property.property_type)) {
       score += weights.property_type;
     }
   }
 
-  // DPE/Energy (2 points)
+  // DPE
   if (criteria.desired_dpe && property.energy_consumption) {
-    // Simple DPE matching - you can expand this
     score += weights.dpe;
   }
 
@@ -291,7 +295,6 @@ function calculateMatchScore(property: Property, criteria: SearchCriteria): numb
 
 export async function POST(request: NextRequest) {
   try {
-    // Allow cron jobs to call this
     const cronSecret = request.headers.get('x-cron-secret');
     if (cronSecret && cronSecret === process.env.CRON_SECRET) {
       console.log('✅ Authenticated cron request');
@@ -310,7 +313,6 @@ export async function POST(request: NextRequest) {
 
     const { clientId } = body;
 
-    // Fetch clients
     let clientsQuery = supabase.from('clients').select('id, first_name, last_name');
     
     if (clientId) {
@@ -329,7 +331,8 @@ export async function POST(request: NextRequest) {
     const results: Array<{ clientName: string; matchesFound: number }> = [];
 
     for (const client of clients) {
-      // Get client search criteria
+      console.log(`\n🔍 Processing client: ${client.first_name} ${client.last_name}`);
+      
       const { data: criteriaData, error: criteriaError } = await supabase
         .from('client_search_criteria')
         .select('*')
@@ -337,61 +340,87 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (criteriaError || !criteriaData) {
-        console.log(`No criteria found for client ${client.first_name} ${client.last_name}`);
+        console.log(`❌ No criteria found for client ${client.first_name} ${client.last_name}`);
         continue;
       }
 
       const criteria: SearchCriteria = criteriaData;
+      
+      console.log('📋 Criteria:', JSON.stringify({
+        min_budget: criteria.min_budget,
+        max_budget: criteria.max_budget,
+        min_land_surface: criteria.min_land_surface,
+        radius_searches: criteria.radius_searches,
+      }, null, 2));
 
-      // Check if BOTH location AND price are missing - skip if true
       const hasLocation = !!(criteria.locations || criteria.selected_places || criteria.radius_searches || criteria.custom_sectors);
       const hasPrice = !!(criteria.min_budget || criteria.max_budget);
 
+      console.log(`   Has location: ${hasLocation}, Has price: ${hasPrice}`);
+
       if (!hasLocation && !hasPrice) {
-        console.log(`⚠️ Skipping client ${client.first_name} ${client.last_name} - no location AND no price criteria`);
+        console.log(`⚠️ Skipping - no location AND no price criteria`);
         continue;
       }
 
-      // Build property query
       let propertiesQuery = supabase
         .from('properties')
         .select('*')
         .eq('is_active', true);
 
-      // Apply price filter if set
       if (criteria.min_budget) {
+        console.log(`   Adding filter: price >= ${criteria.min_budget}`);
         propertiesQuery = propertiesQuery.gte('price', criteria.min_budget);
       }
       if (criteria.max_budget) {
+        console.log(`   Adding filter: price <= ${criteria.max_budget}`);
         propertiesQuery = propertiesQuery.lte('price', criteria.max_budget);
       }
 
       const { data: properties, error: propertiesError } = await propertiesQuery;
 
-      if (propertiesError || !properties) {
-        console.log(`No properties found for client ${client.first_name} ${client.last_name}`);
+      console.log(`\n📦 Properties fetched from DB: ${properties?.length || 0}`);
+      
+      if (propertiesError) {
+        console.log(`❌ Error fetching properties:`, propertiesError);
         continue;
       }
 
+      if (!properties || properties.length === 0) {
+        console.log(`⚠️ No properties match price filter!`);
+        console.log(`   This means no properties in DB have price between ${criteria.min_budget} and ${criteria.max_budget}`);
+        continue;
+      }
+
+      // Log first few properties for debugging
+      console.log(`\n🏠 Sample properties (first 5):`);
+      properties.slice(0, 5).forEach((p: any, idx: number) => {
+        console.log(`   ${idx + 1}. ${p.location_city} - €${p.price} - Land: ${p.land_surface}m² - Coords: [lng: ${p.location_lng}, lat: ${p.location_lat}]`);
+      });
+
       let clientMatches = 0;
+      let locationFiltered = 0;
+      let scoreFiltered = 0;
 
       for (const property of properties) {
-        // Check primary criteria: location
+        // Location check
         if (hasLocation && !matchesLocation(property as Property, criteria)) {
-          continue; // Skip if doesn't match location
-        }
-
-        // Calculate secondary match score
-        const matchScore = calculateMatchScore(property as Property, criteria);
-
-        // Apply minimum score filter when only ONE primary criteria is set
-        const minimumScore = (hasLocation && !hasPrice) || (!hasLocation && hasPrice) ? 30 : 0;
-
-        if (matchScore < minimumScore) {
+          locationFiltered++;
           continue;
         }
 
-        // Upsert match (insert or update)
+        // Score check
+        const matchScore = calculateMatchScore(property as Property, criteria);
+        const minimumScore = (hasLocation && !hasPrice) || (!hasLocation && hasPrice) ? 30 : 0;
+
+        if (matchScore < minimumScore) {
+          scoreFiltered++;
+          continue;
+        }
+
+        console.log(`\n✅ MATCH FOUND: ${(property as any).location_city} - Score: ${matchScore}`);
+
+        // Upsert match
         const { data: existingMatch } = await supabase
           .from('property_matches')
           .select('id, status')
@@ -400,7 +429,6 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (existingMatch) {
-          // Update existing match, preserve user status
           const { error: updateError } = await supabase
             .from('property_matches')
             .update({
@@ -414,7 +442,6 @@ export async function POST(request: NextRequest) {
             clientMatches++;
           }
         } else {
-          // Insert new match
           const { error: insertError } = await supabase
             .from('property_matches')
             .insert({
@@ -434,7 +461,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // ✅ ONLY NEW ADDITION: Update last_matched_at for this client
+      console.log(`\n📊 Filtering Stats for ${client.first_name}:`);
+      console.log(`   Total properties from DB: ${properties.length}`);
+      console.log(`   Filtered by location: ${locationFiltered}`);
+      console.log(`   Filtered by score: ${scoreFiltered}`);
+      console.log(`   Final matches: ${clientMatches}`);
+
+      // Update last_matched_at
       await supabase
         .from('clients')
         .update({ last_matched_at: new Date().toISOString() })
