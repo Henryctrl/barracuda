@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, CSSProperties } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Search, Edit, Trash2, Loader2, User, MapPin, TrendingUp, ExternalLink } from 'lucide-react';
+import { Search, Edit, Trash2, Loader2, User, MapPin, TrendingUp, ExternalLink, UserPlus } from 'lucide-react';
 import MainHeader from '../../../components/MainHeader';
 import EditClientPopup from '../../../components/popups/EditClientPopup';
-import Link from 'next/link'; // Import Link
+import CreateClientPopup from '../../../components/popups/CreateClientPopup'; // ✅ ADD THIS
+import Link from 'next/link';
 
 // Initialize Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -30,6 +31,7 @@ export default function ClientsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [showCreatePopup, setShowCreatePopup] = useState(false); // ✅ ADD THIS
 
   const fetchClients = async () => {
     setIsLoading(true);
@@ -76,24 +78,151 @@ export default function ClientsPage() {
       backgroundImage: `linear-gradient(rgba(13, 13, 33, 0.97), rgba(13, 13, 33, 0.97)), repeating-linear-gradient(45deg, rgba(255, 0, 255, 0.05), rgba(255, 0, 255, 0.05) 1px, transparent 1px, transparent 10px)`,
     },
     mainContent: { padding: '30px 20px' },
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '2px solid #ff00ff', paddingBottom: '15px' },
-    title: { fontSize: '1.8rem', color: '#ff00ff', textTransform: 'uppercase', textShadow: '0 0 8px rgba(255, 0, 255, 0.7)' },
+    header: { 
+      display: 'flex', 
+      justifyContent: 'space-between', 
+      alignItems: 'center', 
+      marginBottom: '30px', 
+      borderBottom: '2px solid #ff00ff', 
+      paddingBottom: '15px',
+      flexWrap: 'wrap', // ✅ ADD for responsive
+      gap: '15px' // ✅ ADD for spacing
+    },
+    title: { 
+      fontSize: '1.8rem', 
+      color: '#ff00ff', 
+      textTransform: 'uppercase', 
+      textShadow: '0 0 8px rgba(255, 0, 255, 0.7)' 
+    },
+    headerActions: { // ✅ ADD THIS
+      display: 'flex',
+      alignItems: 'center',
+      gap: '15px'
+    },
     searchContainer: { position: 'relative', width: '300px' },
-    searchInput: { width: '100%', padding: '10px 10px 10px 40px', backgroundColor: 'rgba(0, 255, 255, 0.1)', border: '1px solid #00ffff', borderRadius: '5px', color: '#fff', outline: 'none' },
-    searchIcon: { position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#00ffff' },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' },
-    card: { backgroundColor: 'rgba(0, 255, 255, 0.05)', border: '1px solid #00ffff', borderRadius: '8px', padding: '20px', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-    cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' },
-    clientName: { fontSize: '1.2rem', fontWeight: 'bold', color: '#fff', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(255,255,255,0.3)' },
-    clientEmail: { fontSize: '0.85rem', color: '#00ffff', opacity: 0.8 },
-    cardBody: { display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem', flex: 1 },
-    infoRow: { display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc' },
-    budget: { color: '#ff00ff', fontWeight: 'bold' },
-    actions: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px', paddingTop: '15px', borderTop: '1px dashed rgba(0, 255, 255, 0.3)' },
-    actionBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px', borderRadius: '4px', cursor: 'pointer', border: 'none', fontWeight: 'bold', fontSize: '0.8rem' },
-    editBtn: { backgroundColor: 'rgba(0, 255, 255, 0.2)', color: '#00ffff', border: '1px solid #00ffff' },
-    deleteBtn: { backgroundColor: 'rgba(255, 0, 80, 0.2)', color: '#ff4545', border: '1px solid #ff4545' },
-    dashboardBtn: { gridColumn: '1 / -1', backgroundColor: '#ff00ff', color: '#fff', border: 'none', textTransform: 'uppercase', marginBottom: '5px' }
+    searchInput: { 
+      width: '100%', 
+      padding: '10px 10px 10px 40px', 
+      backgroundColor: 'rgba(0, 255, 255, 0.1)', 
+      border: '1px solid #00ffff', 
+      borderRadius: '5px', 
+      color: '#fff', 
+      outline: 'none' 
+    },
+    searchIcon: { 
+      position: 'absolute', 
+      left: '10px', 
+      top: '50%', 
+      transform: 'translateY(-50%)', 
+      color: '#00ffff' 
+    },
+    addClientBtn: { // ✅ ADD THIS
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '10px 20px',
+      backgroundColor: '#ff00ff',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '5px',
+      cursor: 'pointer',
+      fontWeight: 'bold',
+      fontSize: '0.9rem',
+      textTransform: 'uppercase',
+      boxShadow: '0 0 10px rgba(255, 0, 255, 0.5)',
+      transition: 'all 0.3s ease',
+      whiteSpace: 'nowrap'
+    },
+    grid: { 
+      display: 'grid', 
+      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
+      gap: '20px' 
+    },
+    card: { 
+      backgroundColor: 'rgba(0, 255, 255, 0.05)', 
+      border: '1px solid #00ffff', 
+      borderRadius: '8px', 
+      padding: '20px', 
+      transition: 'all 0.3s ease', 
+      position: 'relative', 
+      overflow: 'hidden', 
+      display: 'flex', 
+      flexDirection: 'column' 
+    },
+    cardHeader: { 
+      display: 'flex', 
+      justifyContent: 'space-between', 
+      alignItems: 'flex-start', 
+      marginBottom: '15px' 
+    },
+    clientName: { 
+      fontSize: '1.2rem', 
+      fontWeight: 'bold', 
+      color: '#fff', 
+      cursor: 'pointer', 
+      textDecoration: 'underline', 
+      textDecorationColor: 'rgba(255,255,255,0.3)' 
+    },
+    clientEmail: { 
+      fontSize: '0.85rem', 
+      color: '#00ffff', 
+      opacity: 0.8 
+    },
+    cardBody: { 
+      display: 'flex', 
+      flexDirection: 'column', 
+      gap: '10px', 
+      fontSize: '0.9rem', 
+      flex: 1 
+    },
+    infoRow: { 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '8px', 
+      color: '#ccc' 
+    },
+    budget: { 
+      color: '#ff00ff', 
+      fontWeight: 'bold' 
+    },
+    actions: { 
+      display: 'grid', 
+      gridTemplateColumns: '1fr 1fr', 
+      gap: '10px', 
+      marginTop: '20px', 
+      paddingTop: '15px', 
+      borderTop: '1px dashed rgba(0, 255, 255, 0.3)' 
+    },
+    actionBtn: { 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      gap: '5px', 
+      padding: '8px', 
+      borderRadius: '4px', 
+      cursor: 'pointer', 
+      border: 'none', 
+      fontWeight: 'bold', 
+      fontSize: '0.8rem' 
+    },
+    editBtn: { 
+      backgroundColor: 'rgba(0, 255, 255, 0.2)', 
+      color: '#00ffff', 
+      border: '1px solid #00ffff' 
+    },
+    deleteBtn: { 
+      backgroundColor: 'rgba(255, 0, 80, 0.2)', 
+      color: '#ff4545', 
+      border: '1px solid #ff4545' 
+    },
+    dashboardBtn: { 
+      gridColumn: '1 / -1', 
+      backgroundColor: '#ff00ff', 
+      color: '#fff', 
+      border: 'none', 
+      textTransform: 'uppercase', 
+      marginBottom: '5px' 
+    }
   };
 
   return (
@@ -102,14 +231,37 @@ export default function ClientsPage() {
       <main style={styles.mainContent}>
         <div style={styles.header}>
           <h1 style={styles.title}>{'// CLIENT DATABASE'}</h1>
-          <div style={styles.searchContainer}>
-            <Search size={18} style={styles.searchIcon} />
-            <input 
-              style={styles.searchInput} 
-              placeholder="Search clients..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          
+          {/* ✅ NEW: Header Actions Container */}
+          <div style={styles.headerActions}>
+            <div style={styles.searchContainer}>
+              <Search size={18} style={styles.searchIcon} />
+              <input 
+                style={styles.searchInput} 
+                placeholder="Search clients..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            
+            {/* ✅ ADD NEW CLIENT BUTTON */}
+            <button 
+              style={styles.addClientBtn}
+              onClick={() => setShowCreatePopup(true)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#cc00cc';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 0 20px rgba(255, 0, 255, 0.8)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#ff00ff';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(255, 0, 255, 0.5)';
+              }}
+            >
+              <UserPlus size={16} />
+              <span>Add New Client</span>
+            </button>
           </div>
         </div>
 
@@ -172,6 +324,18 @@ export default function ClientsPage() {
         )}
       </main>
 
+      {/* ✅ CREATE CLIENT POPUP */}
+      {showCreatePopup && (
+        <CreateClientPopup 
+          isOpen={showCreatePopup} 
+          onClose={() => {
+            setShowCreatePopup(false);
+            fetchClients(); // Refresh list after creation
+          }} 
+        />
+      )}
+
+      {/* EDIT CLIENT POPUP */}
       {editingClientId && (
         <EditClientPopup 
           isOpen={!!editingClientId} 
