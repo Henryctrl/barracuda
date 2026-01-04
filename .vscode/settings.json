@@ -97,6 +97,7 @@
         "generateur",
         "geofilter",
         "Haussmannian",
+        "heatingsystem",
         "honoraires",
         "Hôtel",
         "housenumber",
@@ -117,6 +118,7 @@
         "KHTML",
         "kqnpiud",
         "laddr",
+        "landsurface",
         "landuse",
         "Leboncoin",
         "libappindicator",
@@ -175,6 +177,7 @@
         "Prestations",
         "principales",
         "privée",
+        "propertytype",
         "propriete",
         "récent",
         "recentering",
@@ -228,6 +231,7 @@
         "xauto",
         "xthx",
         "XVCJ",
+        "yearbuilt",
         "Yuki"
     ],
     "findUnusedExports.detectCircularImports": true

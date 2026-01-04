@@ -15,6 +15,7 @@ import {
   Mail,
   Calendar
 } from 'lucide-react';
+import BrandingSettings from '@/components/BrandingSettings';
 
 interface UserProfile {
   id: string;
@@ -262,6 +263,10 @@ export default function AccountPage() {
             </div>
           )}
         </div>
+
+{/* PDF Branding Settings - NEW */}
+{user && <BrandingSettings userId={user.id} />}
+
 
         {/* Actions */}
         <div className="flex gap-4">

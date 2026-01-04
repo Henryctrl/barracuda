@@ -32,10 +32,13 @@ import {
   AlertCircle,
   Info,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  FileText
 } from 'lucide-react';
 import MainHeader from '../../../../components/MainHeader';
 import EditClientPopup from '../../../../components/popups/EditClientPopup';
+import { pdf } from '@react-pdf/renderer';
+import { PropertyBrochurePDF } from '../../../../components/PropertyBrochurePDF';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -158,6 +161,39 @@ export default function ClientDetailPage() {
   const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
   const [isEditPopupOpen, setIsEditPopupOpen] = useState(false);
   const [isCompletenessExpanded, setIsCompletenessExpanded] = useState(false);
+  const [userBranding, setUserBranding] = useState<any>(null);
+  const [generatingPdfId, setGeneratingPdfId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchBranding = async () => {
+      console.log('🔍 Starting to fetch branding...');
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('👤 Current user:', user);
+      
+      if (!user) {
+        console.log('❌ No user found');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('company_name, contact_phone, contact_email, brand_color, logo_url')
+        .eq('id', user.id)
+        .single();
+
+      console.log('📊 Branding query result:', { data, error });
+
+      if (data) {
+        console.log('✅ Branding data set:', data);
+        setUserBranding(data);
+      } else {
+        console.log('❌ No branding data found');
+      }
+    };
+    
+    fetchBranding();
+  }, []);
 
   useEffect(() => {
     fetchClientData();
@@ -311,6 +347,46 @@ export default function ClientDetailPage() {
     setUpdatingMatchId(null);
   };
 
+  const handleCreateBrochure = async (property: any) => {
+    console.log('🎨 handleCreateBrochure called');
+    console.log('📦 userBranding state:', userBranding);
+    console.log('🏢 Company name:', userBranding?.company_name);
+    console.log('🎯 Property:', property);
+    
+    if (!userBranding) {
+      console.log('❌ No branding data at all');
+      alert('⚠️ Please set up your branding in Account Settings first!\n\nGo to Account → PDF Branding Settings to configure your company details.');
+      return;
+    }
+    
+    if (!userBranding.company_name) {
+      console.log('❌ Company name is empty:', userBranding.company_name);
+      alert('⚠️ Please set up your branding in Account Settings first!\n\nGo to Account → PDF Branding Settings to configure your company details.');
+      return;
+    }
+  
+    console.log('✅ All checks passed, generating PDF...');
+    setGeneratingPdfId(property.id);
+  
+    try {
+      const blob = await pdf(
+        <PropertyBrochurePDF property={property} branding={userBranding} />
+      ).toBlob();
+      
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      console.log('✅ PDF generated successfully');
+    } catch (error) {
+      console.error('❌ Error generating PDF:', error);
+      alert('Failed to generate brochure. Please try again.');
+    } finally {
+      setGeneratingPdfId(null);
+    }
+  };
+  
+
   const calculateMatchAnalysis = (
     property: PropertyMatch['properties'],
     criteria: ClientDetails['client_search_criteria'][0]
@@ -319,10 +395,8 @@ export default function ClientDetailPage() {
 
     const price = parseInt(property.price || '0', 10);
     
-    // Only check criteria that are actually specified by the client
     const matches: Record<string, boolean> = {};
     
-    // Budget - only if specified
     if (criteria.min_budget || criteria.max_budget) {
       matches.budget = !!(
         (!criteria.min_budget || price >= criteria.min_budget) &&
@@ -330,15 +404,12 @@ export default function ClientDetailPage() {
       );
     }
     
-    // Location - always included (since algo matched it)
     matches.location = true;
     
-    // Property Type - only if specified
     if (criteria.property_types && criteria.property_types.length > 0) {
       matches.propertyType = criteria.property_types.includes(property.property_type);
     }
     
-    // Surface - only if specified
     if (criteria.min_surface || criteria.max_surface) {
       matches.surface = !!(
         (!criteria.min_surface || parseFloat(property.surface || '0') >= criteria.min_surface) &&
@@ -346,7 +417,6 @@ export default function ClientDetailPage() {
       );
     }
     
-    // Rooms - only if specified
     if (criteria.min_rooms || criteria.max_rooms) {
       matches.rooms = !!(
         (!criteria.min_rooms || property.rooms >= criteria.min_rooms) &&
@@ -354,7 +424,6 @@ export default function ClientDetailPage() {
       );
     }
     
-    // Bedrooms - only if specified
     if (criteria.min_bedrooms || criteria.max_bedrooms) {
       matches.bedrooms = !!(
         (!criteria.min_bedrooms || property.bedrooms >= criteria.min_bedrooms) &&
@@ -362,7 +431,6 @@ export default function ClientDetailPage() {
       );
     }
     
-    // Land Surface - only if specified
     if (criteria.min_land_surface || criteria.max_land_surface) {
       matches.landSurface = !!(
         (!criteria.min_land_surface || (property.land_surface && property.land_surface >= criteria.min_land_surface)) &&
@@ -370,32 +438,27 @@ export default function ClientDetailPage() {
       );
     }
     
-    // Pool - only if client specified a preference
     if (criteria.pool_preference && criteria.pool_preference !== '') {
       matches.pool = !!(
         (criteria.pool_preference === 'required' && property.pool === true) ||
         (criteria.pool_preference === 'preferred' && property.pool === true) ||
         (criteria.pool_preference === 'no' && property.pool === false) ||
-        (criteria.pool_preference === 'preferred' && property.pool === null) // Preferred is flexible
+        (criteria.pool_preference === 'preferred' && property.pool === null)
       );
     }
     
-    // Heating - only if specified
     if (criteria.heating_system && criteria.heating_system !== '') {
       matches.heating = property.heating_system === criteria.heating_system;
     }
     
-    // Drainage - only if specified
     if (criteria.drainage_system && criteria.drainage_system !== '') {
       matches.drainage = property.drainage_system === criteria.drainage_system;
     }
     
-    // Condition - only if specified
     if (criteria.property_condition && criteria.property_condition !== '') {
       matches.condition = property.property_condition === criteria.property_condition;
     }
     
-    // Year Built - only if specified
     if (criteria.min_year_built || criteria.max_year_built) {
       matches.yearBuilt = !!(
         (!criteria.min_year_built || (property.year_built && property.year_built >= criteria.min_year_built)) &&
@@ -403,14 +466,12 @@ export default function ClientDetailPage() {
       );
     }
     
-    // Bathrooms - only if specified
     if (criteria.min_bathrooms) {
       matches.bathrooms = !!(property.bathrooms && property.bathrooms >= criteria.min_bathrooms);
     }
 
     const uncertainties = [];
 
-    // Only add uncertainties for criteria the client actually specified
     if (criteria.pool_preference && criteria.pool_preference !== '' && property.pool === null) {
       uncertainties.push({ field: 'Pool', reason: 'Property listing does not specify pool availability' });
     }
@@ -439,7 +500,6 @@ export default function ClientDetailPage() {
   const analyzeCriteriaCompleteness = (criteria: ClientDetails['client_search_criteria'][0] | undefined): CriteriaField[] => {
     if (!criteria) return [];
 
-    // Helper to check if location is set (including custom sectors and radius searches)
     const hasLocationSet = !!(
       criteria.locations ||
       (criteria.selected_places && criteria.selected_places.length > 0) ||
@@ -456,7 +516,6 @@ export default function ClientDetailPage() {
     };
 
     const fields: CriteriaField[] = [
-      // CRITICAL
       {
         name: 'Location',
         filled: hasLocationSet,
@@ -473,7 +532,6 @@ export default function ClientDetailPage() {
           ? `€${criteria.min_budget?.toLocaleString() || '0'} - €${criteria.max_budget?.toLocaleString() || '∞'}` 
           : undefined
       },
-      // HIGH PRIORITY
       {
         name: 'Property Types',
         filled: !!(criteria.property_types && criteria.property_types.length > 0),
@@ -508,7 +566,6 @@ export default function ClientDetailPage() {
           ? `${criteria.min_rooms || 'Any'} - ${criteria.max_rooms || 'Any'}` 
           : undefined
       },
-      // MEDIUM PRIORITY
       {
         name: 'Pool Preference',
         filled: !!(criteria.pool_preference && criteria.pool_preference !== ''),
@@ -548,7 +605,6 @@ export default function ClientDetailPage() {
           ? `${criteria.min_year_built || 'Any'} - ${criteria.max_year_built || 'Any'}` 
           : undefined
       },
-      // NICE TO HAVE
       {
         name: 'Bathrooms',
         filled: !!(criteria.min_bathrooms),
@@ -641,13 +697,11 @@ export default function ClientDetailPage() {
   const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
   const matchingDisabled = !hasLocation && !hasBudget;
 
-  // Analyze criteria completeness
   const criteriaAnalysis = analyzeCriteriaCompleteness(criteria);
   const filledFields = criteriaAnalysis.filter(f => f.filled);
   const missingFields = criteriaAnalysis.filter(f => !f.filled);
   const completionPercentage = Math.round((filledFields.length / criteriaAnalysis.length) * 100);
 
-  // Sort missing fields by priority
   const priorityOrder = { 'critical': 1, 'high': 2, 'medium': 3, 'nice-to-have': 4 };
   const sortedMissingFields = missingFields.sort((a, b) => 
     priorityOrder[a.priority] - priorityOrder[b.priority]
@@ -881,9 +935,8 @@ export default function ClientDetailPage() {
                 )}
               </section>
 
-              {/* NEW: COLLAPSIBLE CRITERIA COMPLETENESS */}
+              {/* COLLAPSIBLE CRITERIA COMPLETENESS */}
               <section className="bg-gradient-to-br from-[#00ffff]/5 to-[#ff00ff]/5 border border-[#00ffff]/50 rounded-lg overflow-hidden">
-                {/* Collapsed Header */}
                 <div 
                   className="p-4 cursor-pointer hover:bg-[#00ffff]/5 transition-colors flex items-center justify-between"
                   onClick={() => setIsCompletenessExpanded(!isCompletenessExpanded)}
@@ -925,10 +978,8 @@ export default function ClientDetailPage() {
                   </div>
                 </div>
 
-                {/* Expanded Content */}
                 {isCompletenessExpanded && (
                   <div className="p-6 pt-0 animate-in fade-in duration-300">
-                    {/* Algorithm Explanation */}
                     <div className="bg-[#020222] border border-[#00ffff]/30 rounded-lg p-4 mb-6">
                       <h4 className="text-xs text-[#00ffff] uppercase font-bold mb-2 flex items-center gap-2">
                         <Radar size={14} /> How Our Matching Algorithm Works
@@ -957,7 +1008,6 @@ export default function ClientDetailPage() {
                       </div>
                     </div>
 
-                    {/* Filled Criteria */}
                     {filledFields.length > 0 && (
                       <div className="mb-6">
                         <h4 className="text-sm text-[#00ff00] uppercase font-bold mb-3 flex items-center gap-2">
@@ -985,7 +1035,6 @@ export default function ClientDetailPage() {
                       </div>
                     )}
 
-                    {/* Missing Criteria - Prioritized */}
                     {sortedMissingFields.length > 0 && (
                       <div>
                         <h4 className="text-sm text-[#ff00ff] uppercase font-bold mb-3 flex items-center gap-2">
@@ -1022,9 +1071,7 @@ export default function ClientDetailPage() {
                     {sortedMissingFields.length === 0 && (
                       <div className="bg-[#00ff00]/10 border border-[#00ff00] rounded-lg p-6 text-center">
                         <CheckCircle2 size={40} className="text-[#00ff00] mx-auto mb-3" />
-                        <p className="text-[#00ff00] font-bold text-lg mb-2">
-                          🎉 Profile 100% Complete!
-                        </p>
+                        <p className="text-[#00ff00] font-bold text-lg mb-2">Profile 100% Complete!</p>
                         <p className="text-sm text-gray-300">
                           All criteria have been configured. Your search is fully optimized for the best matches.
                         </p>
@@ -1039,30 +1086,15 @@ export default function ClientDetailPage() {
                   <Globe size={16} /> Active Data Sources
                 </h3>
                 <div className="flex flex-wrap gap-3">
-                  {[
-                    'CAD-IMMO',
-                    'SeLoger (Soon)',
-                    'Leboncoin (Soon)',
-                    'Local Agencies (Coming)',
-                  ].map((source, idx) => (
-                    <div
-                      key={source}
-                      className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded border border-white/10 text-xs text-white"
-                    >
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          idx === 0
-                            ? 'bg-[#00ff00] shadow-[0_0_5px_#00ff00]'
-                            : 'bg-gray-500'
-                        }`}
-                      ></div>
+                  {['CAD-IMMO', 'SeLoger (Soon)', 'Leboncoin (Soon)', 'Local Agencies (Coming)'].map((source, idx) => (
+                    <div key={source} className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded border border-white/10 text-xs text-white">
+                      <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-[#00ff00] shadow-[0_0_5px_#00ff00]' : 'bg-gray-500'}`}></div>
                       {source}
                     </div>
                   ))}
                 </div>
                 <div className="mt-4 text-[0.7rem] text-gray-500">
-                  * System is currently monitoring active sources for new
-                  listings matching criteria.
+                  System is currently monitoring active sources for new listings matching criteria.
                 </div>
               </section>
             </div>
@@ -1073,16 +1105,10 @@ export default function ClientDetailPage() {
                 <h3 className="text-[#ff00ff] font-bold uppercase text-sm mb-4">
                   Market Scanner Status
                 </h3>
-
                 {isScanning ? (
                   <div className="flex flex-col items-center py-4">
-                    <Loader2
-                      size={40}
-                      className="animate-spin text-[#ff00ff] mb-2"
-                    />
-                    <span className="text-white text-sm animate-pulse">
-                      Refreshing matches...
-                    </span>
+                    <Loader2 size={40} className="animate-spin text-[#ff00ff] mb-2" />
+                    <span className="text-white text-sm animate-pulse">Refreshing matches...</span>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center py-2">
@@ -1097,57 +1123,41 @@ export default function ClientDetailPage() {
                       disabled={matchingDisabled}
                       className="w-full py-3 bg-[#ff00ff] text-white font-bold uppercase text-sm rounded shadow-[0_0_15px_#ff00ff] hover:bg-[#ff00ff]/80 transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
                     >
-                      <Radar size={16} />
-                      Refresh Matches
+                      <Radar size={16} /> Refresh Matches
                     </button>
                   </div>
                 )}
-
                 {lastUpdated && (
                   <div className="mt-3 text-[0.65rem] text-[#a0a0ff] flex items-center justify-center gap-1">
-                    <Calendar size={10} />
-                    Last updated: {getTimeSince(lastUpdated)}
+                    <Calendar size={10} /> Last updated {getTimeSince(lastUpdated)}
                   </div>
                 )}
               </div>
 
               <div className="bg-[#020222] border border-[#333] rounded-lg p-4">
-                <h4 className="text-xs text-gray-400 uppercase mb-3">
-                  Quick Stats
-                </h4>
+                <h4 className="text-xs text-gray-400 uppercase mb-3">Quick Stats</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">New Matches:</span>
-                    <span className="text-[#ff00ff] font-bold">
-                      {newMatches.length}
-                    </span>
+                    <span className="text-gray-400">New Matches</span>
+                    <span className="text-[#ff00ff] font-bold">{newMatches.length}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Shortlisted:</span>
-                    <span className="text-[#00ff00] font-bold">
-                      {shortlistedMatches.length}
-                    </span>
+                    <span className="text-gray-400">Shortlisted</span>
+                    <span className="text-[#00ff00] font-bold">{shortlistedMatches.length}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Discarded:</span>
-                    <span className="text-red-500 font-bold">
-                      {rejectedMatches.length}
-                    </span>
+                    <span className="text-gray-400">Discarded</span>
+                    <span className="text-red-500 font-bold">{rejectedMatches.length}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Total Matches:</span>
-                    <span className="text-white font-bold">
-                      {matches.length}
-                    </span>
+                    <span className="text-gray-400">Total Matches</span>
+                    <span className="text-white font-bold">{matches.length}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Profile Completion Widget */}
               <div className="bg-gradient-to-br from-[#00ffff]/10 to-[#ff00ff]/10 border border-[#00ffff] rounded-lg p-4">
-                <h4 className="text-xs text-[#00ffff] uppercase mb-3 font-bold">
-                  Profile Strength
-                </h4>
+                <h4 className="text-xs text-[#00ffff] uppercase mb-3 font-bold">Profile Strength</h4>
                 <div className="text-center">
                   <div className="text-4xl font-bold text-white mb-2">
                     {completionPercentage}%
@@ -1163,7 +1173,7 @@ export default function ClientDetailPage() {
                   </div>
                   {sortedMissingFields.length > 0 && (
                     <div className="mt-3 text-[0.65rem] text-orange-400">
-                      💡 Add {sortedMissingFields.filter(f => f.priority === 'critical' || f.priority === 'high').length} key criteria to improve matches
+                      Add {sortedMissingFields.filter(f => f.priority === 'critical' || f.priority === 'high').length} key criteria to improve matches
                     </div>
                   )}
                 </div>
@@ -1177,12 +1187,12 @@ export default function ClientDetailPage() {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-400 uppercase">
-                {activeTab === 'market_scan'
+                {activeTab === 'market_scan' 
                   ? `Showing ${displayedMatches.length} new matches`
                   : `${displayedMatches.length} shortlisted properties`}
                 {lastUpdated && (
                   <span className="ml-3 text-[#a0a0ff]">
-                    • Last updated: {getTimeSince(lastUpdated)}
+                    Last updated {getTimeSince(lastUpdated)}
                   </span>
                 )}
               </div>
@@ -1191,7 +1201,7 @@ export default function ClientDetailPage() {
             {displayedMatches.length === 0 ? (
               <div className="bg-[#020222] border border-[#333] rounded-lg p-12 text-center">
                 <p className="text-gray-500 text-lg mb-4">
-                  {activeTab === 'market_scan'
+                  {activeTab === 'market_scan' 
                     ? 'No new matches found yet.'
                     : 'No properties shortlisted yet.'}
                 </p>
@@ -1215,9 +1225,8 @@ export default function ClientDetailPage() {
                   const qualityScore = prop.data_quality_score || '1.0';
                   const validationErrors = prop.validation_errors || [];
                   const isExpanded = expandedPropertyId === match.id;
-
                   const hasPriceChange = prop.previous_price && prop.price_changed_at;
-                  const priceDrop = prop.price_drop_amount || 0;
+                  const priceDrop = (prop.price_drop_amount || 0) > 0;
 
                   return (
                     <div
@@ -1227,28 +1236,17 @@ export default function ClientDetailPage() {
                       {/* COLLAPSED VIEW */}
                       <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
                         {/* Image */}
-                        <div
-                          className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
-                          onClick={() =>
-                            setExpandedPropertyId(isExpanded ? null : match.id)
-                          }
+                        <div className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
+                          onClick={() => setExpandedPropertyId(isExpanded ? null : match.id)}
                         >
                           {firstImage ? (
-                            <img
-                              src={firstImage}
-                              alt={prop.title}
-                              className="w-full h-full object-cover"
-                            />
+                            <img src={firstImage} alt={prop.title} className="w-full h-full object-cover" />
                           ) : (
                             <Home size={40} className="text-gray-600" />
                           )}
-
+                          
                           {/* Match Score Badge */}
-                          <div
-                            className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
-                              match.match_score
-                            )}`}
-                          >
+                          <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(match.match_score)}`}>
                             <TrendingUp size={10} className="inline mr-1" />
                             {match.match_score}%
                           </div>
@@ -1258,12 +1256,11 @@ export default function ClientDetailPage() {
 
                           {/* Expand indicator */}
                           <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-                            {isExpanded
-                              ? '▲ Less'
-                              : `▼ More (${allImages.length} photos)`}
+                            {isExpanded ? 'Less' : 'More'} ({allImages.length} photos)
                           </div>
                         </div>
 
+                        {/* Details */}
                         <div className="flex-1">
                           <div className="flex gap-2 mb-2 flex-wrap">
                             <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
@@ -1277,18 +1274,15 @@ export default function ClientDetailPage() {
                                 <Droplets size={10} /> Pool
                               </span>
                             )}
-                            {hasPriceChange && priceDrop > 0 && (
+                            {hasPriceChange && priceDrop && (
                               <span className="bg-green-500/20 text-green-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                                💰 €{priceDrop.toLocaleString()} drop
+                                €{(prop.price_drop_amount || 0).toLocaleString()} drop
                               </span>
                             )}
                           </div>
 
-                          <h4
-                            className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
-                            onClick={() =>
-                              setExpandedPropertyId(isExpanded ? null : match.id)
-                            }
+                          <h4 className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
+                            onClick={() => setExpandedPropertyId(isExpanded ? null : match.id)}
                           >
                             {prop.title}
                           </h4>
@@ -1345,9 +1339,7 @@ export default function ClientDetailPage() {
                           {validationErrors.length > 0 && (
                             <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
                               <AlertTriangle size={12} />
-                              {Array.isArray(validationErrors)
-                                ? validationErrors.join(', ')
-                                : 'Data quality issues'}
+                              {Array.isArray(validationErrors) ? validationErrors.join(', ') : 'Data quality issues'}
                             </div>
                           )}
 
@@ -1358,21 +1350,17 @@ export default function ClientDetailPage() {
                             </div>
                             {hasPriceChange && (
                               <div className="text-xs text-gray-500 line-through">
-                                €
-                                {parseInt(
-                                  String(prop.previous_price),
-                                  10
-                                ).toLocaleString()}
+                                €{parseInt(String(prop.previous_price), 10).toLocaleString()}
                               </div>
                             )}
-                            
+
                             {/* Match Analysis Badges */}
                             {criteria && (() => {
                               const analysis = calculateMatchAnalysis(prop, criteria);
                               const matchCount = Object.values(analysis.matches).filter(v => v === true).length;
                               const mismatchCount = Object.values(analysis.matches).filter(v => v === false).length;
                               const uncertainCount = analysis.uncertainties.length;
-                              
+
                               return (
                                 <div className="flex gap-2">
                                   {matchCount > 0 && (
@@ -1391,12 +1379,29 @@ export default function ClientDetailPage() {
                           </div>
                         </div>
 
+                        {/* Action Buttons */}
                         <div className="flex md:flex-col gap-2 w-full md:w-auto">
+                          <button
+                            onClick={() => handleCreateBrochure(prop)}
+                            disabled={generatingPdfId === prop.id}
+                            className="flex-1 md:w-40 py-2 bg-[#ff00ff] text-white hover:bg-[#ff00ff]/80 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            {generatingPdfId === prop.id ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <FileText size={14} />
+                                Brochure
+                              </>
+                            )}
+                          </button>
+
                           {match.status !== 'shortlisted' && (
                             <button
-                              onClick={() =>
-                                updateMatchStatus(match.id, 'shortlisted')
-                              }
+                              onClick={() => updateMatchStatus(match.id, 'shortlisted')}
                               disabled={updatingMatchId === match.id}
                               className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                             >
@@ -1411,9 +1416,7 @@ export default function ClientDetailPage() {
                           )}
                           {match.status !== 'rejected' && (
                             <button
-                              onClick={() =>
-                                updateMatchStatus(match.id, 'rejected')
-                              }
+                              onClick={() => updateMatchStatus(match.id, 'rejected')}
                               disabled={updatingMatchId === match.id}
                               className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                             >
@@ -1443,12 +1446,8 @@ export default function ClientDetailPage() {
                           {/* Match Analysis - Pros/Cons */}
                           {criteria && (() => {
                             const analysis = calculateMatchAnalysis(prop, criteria);
-                            const matchedCriteria = Object.entries(analysis.matches).filter(
-                              ([_, isMatch]) => isMatch
-                            );
-                            const unmatchedCriteria = Object.entries(analysis.matches).filter(
-                              ([_, isMatch]) => !isMatch
-                            );
+                            const matchedCriteria = Object.entries(analysis.matches).filter(([, isMatch]) => isMatch);
+                            const unmatchedCriteria = Object.entries(analysis.matches).filter(([, isMatch]) => !isMatch);
 
                             return (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1459,12 +1458,10 @@ export default function ClientDetailPage() {
                                       <CheckCircle2 size={14} /> Criteria Met ({matchedCriteria.length})
                                     </h5>
                                     <ul className="space-y-2 text-xs text-gray-300">
-                                      {matchedCriteria.map(([key, _]) => (
+                                      {matchedCriteria.map(([key]) => (
                                         <li key={key} className="flex items-center gap-2">
                                           <Check size={12} className="text-green-500 flex-shrink-0" />
-                                          <span className="capitalize">
-                                            {key.replace(/([A-Z])/g, ' $1').trim()}
-                                          </span>
+                                          <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
                                         </li>
                                       ))}
                                     </ul>
@@ -1478,12 +1475,10 @@ export default function ClientDetailPage() {
                                       <AlertTriangle size={14} /> Questions ({unmatchedCriteria.length + analysis.uncertainties.length})
                                     </h5>
                                     <ul className="space-y-2 text-xs text-gray-300">
-                                      {unmatchedCriteria.map(([key, _]) => (
+                                      {unmatchedCriteria.map(([key]) => (
                                         <li key={key} className="flex items-center gap-2">
                                           <XCircle size={12} className="text-red-500 flex-shrink-0" />
-                                          <span className="capitalize">
-                                            {key.replace(/([A-Z])/g, ' $1').trim()} doesn't match
-                                          </span>
+                                          <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()} doesn't match</span>
                                         </li>
                                       ))}
                                       {analysis.uncertainties.map((unc, idx) => (
@@ -1509,13 +1504,10 @@ export default function ClientDetailPage() {
                               </h5>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                 {allImages.map((img, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="aspect-video bg-white/5 rounded overflow-hidden"
-                                  >
-                                    <img
-                                      src={img}
-                                      alt={`${prop.title} - ${idx + 1}`}
+                                  <div key={idx} className="aspect-video bg-white/5 rounded overflow-hidden">
+                                    <img 
+                                      src={img} 
+                                      alt={`${prop.title} - ${idx + 1}`} 
                                       className="w-full h-full object-cover hover:scale-110 transition-transform cursor-pointer"
                                     />
                                   </div>
@@ -1527,12 +1519,8 @@ export default function ClientDetailPage() {
                           {/* Description */}
                           {prop.description && (
                             <div>
-                              <h5 className="text-sm font-bold text-white uppercase mb-2">
-                                Description
-                              </h5>
-                              <p className="text-sm text-gray-300 leading-relaxed">
-                                {prop.description}
-                              </p>
+                              <h5 className="text-sm font-bold text-white uppercase mb-2">Description</h5>
+                              <p className="text-sm text-gray-300 leading-relaxed">{prop.description}</p>
                             </div>
                           )}
 
@@ -1579,7 +1567,7 @@ export default function ClientDetailPage() {
           clientId={clientId}
           onClose={() => {
             setIsEditPopupOpen(false);
-            fetchClientData(); // Refresh data after closing
+            fetchClientData();
           }}
         />
       )}
