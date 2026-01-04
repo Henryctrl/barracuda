@@ -27,7 +27,12 @@ import {
   Flame,
   Wrench,
   Calendar,
-  Bath
+  Bath,
+  Check,
+  AlertCircle,
+  Info,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import MainHeader from '../../../../components/MainHeader';
 import EditClientPopup from '../../../../components/popups/EditClientPopup';
@@ -51,6 +56,7 @@ interface ClientDetails {
     locations: string | null;
     selected_places: any;
     radius_searches: any;
+    custom_sectors: any;
     min_surface: number | null;
     max_surface: number | null;
     min_bedrooms: number | null;
@@ -128,6 +134,14 @@ interface MatchAnalysis {
   }[];
 }
 
+interface CriteriaField {
+  name: string;
+  filled: boolean;
+  priority: 'critical' | 'high' | 'medium' | 'nice-to-have';
+  description: string;
+  value?: string;
+}
+
 export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -143,6 +157,7 @@ export default function ClientDetailPage() {
   const [hasAutoMatched, setHasAutoMatched] = useState(false);
   const [expandedPropertyId, setExpandedPropertyId] = useState<string | null>(null);
   const [isEditPopupOpen, setIsEditPopupOpen] = useState(false);
+  const [isCompletenessExpanded, setIsCompletenessExpanded] = useState(false);
 
   useEffect(() => {
     fetchClientData();
@@ -247,7 +262,8 @@ export default function ClientDetailPage() {
       const hasLocation = !!(
         criteria?.locations ||
         criteria?.selected_places ||
-        criteria?.radius_searches
+        criteria?.radius_searches ||
+        (criteria?.custom_sectors && criteria.custom_sectors.features && criteria.custom_sectors.features.length > 0)
       );
       const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
 
@@ -420,6 +436,145 @@ export default function ClientDetailPage() {
     return { matches, uncertainties };
   };
 
+  const analyzeCriteriaCompleteness = (criteria: ClientDetails['client_search_criteria'][0] | undefined): CriteriaField[] => {
+    if (!criteria) return [];
+
+    // Helper to check if location is set (including custom sectors and radius searches)
+    const hasLocationSet = !!(
+      criteria.locations ||
+      (criteria.selected_places && criteria.selected_places.length > 0) ||
+      (criteria.radius_searches && criteria.radius_searches.length > 0) ||
+      (criteria.custom_sectors && criteria.custom_sectors.features && criteria.custom_sectors.features.length > 0)
+    );
+
+    const getLocationValue = () => {
+      if (criteria.locations) return criteria.locations;
+      if (criteria.selected_places && criteria.selected_places.length > 0) return 'Selected places';
+      if (criteria.radius_searches && criteria.radius_searches.length > 0) return 'Radius search areas';
+      if (criteria.custom_sectors && criteria.custom_sectors.features && criteria.custom_sectors.features.length > 0) return 'Custom sectors';
+      return undefined;
+    };
+
+    const fields: CriteriaField[] = [
+      // CRITICAL
+      {
+        name: 'Location',
+        filled: hasLocationSet,
+        priority: 'critical',
+        description: 'Essential for finding properties in your desired area',
+        value: getLocationValue()
+      },
+      {
+        name: 'Budget Range',
+        filled: !!(criteria.min_budget || criteria.max_budget),
+        priority: 'critical',
+        description: 'Required to filter properties within your price range',
+        value: criteria.min_budget || criteria.max_budget 
+          ? `€${criteria.min_budget?.toLocaleString() || '0'} - €${criteria.max_budget?.toLocaleString() || '∞'}` 
+          : undefined
+      },
+      // HIGH PRIORITY
+      {
+        name: 'Property Types',
+        filled: !!(criteria.property_types && criteria.property_types.length > 0),
+        priority: 'high',
+        description: 'Helps narrow down to houses, apartments, or specific property types',
+        value: criteria.property_types?.join(', ')
+      },
+      {
+        name: 'Surface Area',
+        filled: !!(criteria.min_surface || criteria.max_surface),
+        priority: 'high',
+        description: 'Important for finding properties with the right living space',
+        value: criteria.min_surface || criteria.max_surface 
+          ? `${criteria.min_surface || 'Any'} - ${criteria.max_surface || 'Any'} m²` 
+          : undefined
+      },
+      {
+        name: 'Bedrooms',
+        filled: !!(criteria.min_bedrooms || criteria.max_bedrooms),
+        priority: 'high',
+        description: 'Key criteria for family size and space requirements',
+        value: criteria.min_bedrooms || criteria.max_bedrooms 
+          ? `${criteria.min_bedrooms || 'Any'} - ${criteria.max_bedrooms || 'Any'}` 
+          : undefined
+      },
+      {
+        name: 'Total Rooms',
+        filled: !!(criteria.min_rooms || criteria.max_rooms),
+        priority: 'high',
+        description: 'Helps match overall property layout to your needs',
+        value: criteria.min_rooms || criteria.max_rooms 
+          ? `${criteria.min_rooms || 'Any'} - ${criteria.max_rooms || 'Any'}` 
+          : undefined
+      },
+      // MEDIUM PRIORITY
+      {
+        name: 'Pool Preference',
+        filled: !!(criteria.pool_preference && criteria.pool_preference !== ''),
+        priority: 'medium',
+        description: 'Filters properties based on pool availability',
+        value: criteria.pool_preference ?? undefined,
+      },
+      {
+        name: 'Land Surface',
+        filled: !!(criteria.min_land_surface || criteria.max_land_surface),
+        priority: 'medium',
+        description: 'Important if you need outdoor space or land',
+        value: criteria.min_land_surface || criteria.max_land_surface 
+          ? `${criteria.min_land_surface || 'Any'} - ${criteria.max_land_surface || 'Any'} m²` 
+          : undefined
+      },
+      {
+        name: 'Property Condition',
+        filled: !!(criteria.property_condition && criteria.property_condition !== ''),
+        priority: 'medium',
+        description: 'Matches properties based on renovation state',
+        value: criteria.property_condition ?? undefined,
+      },
+      {
+        name: 'Heating System',
+        filled: !!(criteria.heating_system && criteria.heating_system !== ''),
+        priority: 'medium',
+        description: 'Ensures comfort and running costs match your preferences',
+        value: criteria.heating_system ?? undefined,
+      },
+      {
+        name: 'Year Built',
+        filled: !!(criteria.min_year_built || criteria.max_year_built),
+        priority: 'medium',
+        description: 'Helps find modern or character properties',
+        value: criteria.min_year_built || criteria.max_year_built 
+          ? `${criteria.min_year_built || 'Any'} - ${criteria.max_year_built || 'Any'}` 
+          : undefined
+      },
+      // NICE TO HAVE
+      {
+        name: 'Bathrooms',
+        filled: !!(criteria.min_bathrooms),
+        priority: 'nice-to-have',
+        description: 'Additional comfort requirement',
+        value: criteria.min_bathrooms ? `${criteria.min_bathrooms}+` : undefined
+      },
+      {
+        name: 'Drainage System',
+        filled: !!(criteria.drainage_system && criteria.drainage_system !== ''),
+        priority: 'nice-to-have',
+        description: 'Technical specification for rural properties',
+        value: criteria.drainage_system ?? undefined,
+      },
+      {
+        name: 'Energy Rating (DPE)',
+        filled: !!(criteria.desired_dpe && criteria.desired_dpe !== ''),
+        priority: 'nice-to-have',
+        description: 'Environmental impact and running costs',
+        value: criteria.desired_dpe ?? undefined,
+      }
+    ];
+
+    return fields;
+  };
+
   const getMatchScoreColor = (score: number) => {
     if (score >= 80) return 'text-[#00ff00] border-[#00ff00] bg-[#00ff00]/10';
     if (score >= 60) return 'text-[#00ffff] border-[#00ffff] bg-[#00ffff]/10';
@@ -480,10 +635,43 @@ export default function ClientDetailPage() {
   const hasLocation = !!(
     criteria?.locations ||
     criteria?.selected_places ||
-    criteria?.radius_searches
+    criteria?.radius_searches ||
+    (criteria?.custom_sectors && criteria.custom_sectors.features && criteria.custom_sectors.features.length > 0)
   );
   const hasBudget = !!(criteria?.min_budget || criteria?.max_budget);
   const matchingDisabled = !hasLocation && !hasBudget;
+
+  // Analyze criteria completeness
+  const criteriaAnalysis = analyzeCriteriaCompleteness(criteria);
+  const filledFields = criteriaAnalysis.filter(f => f.filled);
+  const missingFields = criteriaAnalysis.filter(f => !f.filled);
+  const completionPercentage = Math.round((filledFields.length / criteriaAnalysis.length) * 100);
+
+  // Sort missing fields by priority
+  const priorityOrder = { 'critical': 1, 'high': 2, 'medium': 3, 'nice-to-have': 4 };
+  const sortedMissingFields = missingFields.sort((a, b) => 
+    priorityOrder[a.priority] - priorityOrder[b.priority]
+  );
+
+  const getPriorityColor = (priority: string) => {
+    switch(priority) {
+      case 'critical': return 'text-red-500 border-red-500 bg-red-500/10';
+      case 'high': return 'text-orange-500 border-orange-500 bg-orange-500/10';
+      case 'medium': return 'text-yellow-500 border-yellow-500 bg-yellow-500/10';
+      case 'nice-to-have': return 'text-blue-500 border-blue-500 bg-blue-500/10';
+      default: return 'text-gray-500 border-gray-500 bg-gray-500/10';
+    }
+  };
+
+  const getPriorityLabel = (priority: string) => {
+    switch(priority) {
+      case 'critical': return 'CRITICAL';
+      case 'high': return 'HIGH PRIORITY';
+      case 'medium': return 'MEDIUM';
+      case 'nice-to-have': return 'OPTIONAL';
+      default: return priority.toUpperCase();
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0d0d21] text-[#00ffff] font-[Orbitron]">
@@ -643,7 +831,10 @@ export default function ClientDetailPage() {
                       </label>
                       <div className="text-lg text-white">
                         {hasLocation ? (
-                          criteria.locations || 'Custom area'
+                          criteria.locations || 
+                          (criteria.radius_searches && criteria.radius_searches.length > 0 ? 'Radius search areas' : null) ||
+                          (criteria.custom_sectors && criteria.custom_sectors.features && criteria.custom_sectors.features.length > 0 ? 'Custom sectors' : null) ||
+                          'Custom area'
                         ) : (
                           <span className="text-red-500 text-sm">Not Set</span>
                         )}
@@ -686,6 +877,159 @@ export default function ClientDetailPage() {
                           </div>
                         </div>
                       )}
+                  </div>
+                )}
+              </section>
+
+              {/* NEW: COLLAPSIBLE CRITERIA COMPLETENESS */}
+              <section className="bg-gradient-to-br from-[#00ffff]/5 to-[#ff00ff]/5 border border-[#00ffff]/50 rounded-lg overflow-hidden">
+                {/* Collapsed Header */}
+                <div 
+                  className="p-4 cursor-pointer hover:bg-[#00ffff]/5 transition-colors flex items-center justify-between"
+                  onClick={() => setIsCompletenessExpanded(!isCompletenessExpanded)}
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <Info className="text-[#00ffff]" size={20} />
+                    <div className="flex-1">
+                      <h3 className="text-sm text-white font-bold uppercase">
+                        Search Profile Completeness
+                      </h3>
+                      <div className="flex items-center gap-3 mt-1">
+                        <div className="text-2xl font-bold text-[#00ffff]">
+                          {completionPercentage}%
+                        </div>
+                        <div className="flex-1 h-2 bg-[#020222] rounded-full overflow-hidden border border-[#00ffff]/30">
+                          <div 
+                            className="h-full bg-gradient-to-r from-[#00ffff] to-[#00ff00] transition-all duration-500"
+                            style={{ width: `${completionPercentage}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsEditPopupOpen(true);
+                      }}
+                      className="px-4 py-2 bg-[#00ffff] text-black hover:bg-[#00ffff]/80 rounded uppercase text-xs font-bold flex items-center gap-2"
+                    >
+                      <User size={14} /> Add Missing Data
+                    </button>
+                    {isCompletenessExpanded ? (
+                      <ChevronUp className="text-[#00ffff]" size={20} />
+                    ) : (
+                      <ChevronDown className="text-[#00ffff]" size={20} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Expanded Content */}
+                {isCompletenessExpanded && (
+                  <div className="p-6 pt-0 animate-in fade-in duration-300">
+                    {/* Algorithm Explanation */}
+                    <div className="bg-[#020222] border border-[#00ffff]/30 rounded-lg p-4 mb-6">
+                      <h4 className="text-xs text-[#00ffff] uppercase font-bold mb-2 flex items-center gap-2">
+                        <Radar size={14} /> How Our Matching Algorithm Works
+                      </h4>
+                      <p className="text-xs text-gray-300 leading-relaxed mb-3">
+                        Our system scans thousands of properties and ranks them based on how well they match your criteria. 
+                        The more details you provide, the more accurate the matches become.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                          <span className="text-gray-400"><span className="text-red-500 font-bold">Critical:</span> Required for matching</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                          <span className="text-gray-400"><span className="text-orange-500 font-bold">High:</span> Major impact on results</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                          <span className="text-gray-400"><span className="text-yellow-500 font-bold">Medium:</span> Refines matches</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          <span className="text-gray-400"><span className="text-blue-500 font-bold">Optional:</span> Nice to have</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filled Criteria */}
+                    {filledFields.length > 0 && (
+                      <div className="mb-6">
+                        <h4 className="text-sm text-[#00ff00] uppercase font-bold mb-3 flex items-center gap-2">
+                          <Check size={16} /> Configured Criteria ({filledFields.length})
+                        </h4>
+                        <div className="grid grid-cols-1 gap-2">
+                          {filledFields.map((field, idx) => (
+                            <div 
+                              key={idx}
+                              className="bg-[#00ff00]/10 border border-[#00ff00]/30 rounded p-3 flex items-start gap-3"
+                            >
+                              <Check size={16} className="text-[#00ff00] flex-shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-white font-bold text-sm">{field.name}</span>
+                                  {field.value && (
+                                    <span className="text-[#00ff00] text-xs">→ {field.value}</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-400">{field.description}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Missing Criteria - Prioritized */}
+                    {sortedMissingFields.length > 0 && (
+                      <div>
+                        <h4 className="text-sm text-[#ff00ff] uppercase font-bold mb-3 flex items-center gap-2">
+                          <AlertCircle size={16} /> Improve Your Matches ({sortedMissingFields.length} fields to add)
+                        </h4>
+                        <div className="grid grid-cols-1 gap-2">
+                          {sortedMissingFields.map((field, idx) => (
+                            <div 
+                              key={idx}
+                              className={`border rounded p-3 flex items-start gap-3 ${getPriorityColor(field.priority)}`}
+                            >
+                              <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="text-white font-bold text-sm">{field.name}</span>
+                                  <span className={`text-[0.6rem] px-2 py-0.5 rounded border font-bold ${getPriorityColor(field.priority)}`}>
+                                    {getPriorityLabel(field.priority)}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-300">{field.description}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={() => setIsEditPopupOpen(true)}
+                          className="mt-4 w-full py-3 bg-[#00ffff] text-black font-bold uppercase text-sm rounded hover:bg-[#00ffff]/80 transition-all flex items-center justify-center gap-2"
+                        >
+                          <User size={14} /> Add Missing Criteria
+                        </button>
+                      </div>
+                    )}
+
+                    {sortedMissingFields.length === 0 && (
+                      <div className="bg-[#00ff00]/10 border border-[#00ff00] rounded-lg p-6 text-center">
+                        <CheckCircle2 size={40} className="text-[#00ff00] mx-auto mb-3" />
+                        <p className="text-[#00ff00] font-bold text-lg mb-2">
+                          🎉 Profile 100% Complete!
+                        </p>
+                        <p className="text-sm text-gray-300">
+                          All criteria have been configured. Your search is fully optimized for the best matches.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -798,6 +1142,32 @@ export default function ClientDetailPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Profile Completion Widget */}
+              <div className="bg-gradient-to-br from-[#00ffff]/10 to-[#ff00ff]/10 border border-[#00ffff] rounded-lg p-4">
+                <h4 className="text-xs text-[#00ffff] uppercase mb-3 font-bold">
+                  Profile Strength
+                </h4>
+                <div className="text-center">
+                  <div className="text-4xl font-bold text-white mb-2">
+                    {completionPercentage}%
+                  </div>
+                  <div className="text-xs text-gray-400 mb-3">
+                    {filledFields.length} of {criteriaAnalysis.length} criteria set
+                  </div>
+                  <div className="w-full h-2 bg-[#020222] rounded-full overflow-hidden border border-[#00ffff]/30">
+                    <div 
+                      className="h-full bg-gradient-to-r from-[#00ffff] to-[#00ff00] transition-all duration-500"
+                      style={{ width: `${completionPercentage}%` }}
+                    ></div>
+                  </div>
+                  {sortedMissingFields.length > 0 && (
+                    <div className="mt-3 text-[0.65rem] text-orange-400">
+                      💡 Add {sortedMissingFields.filter(f => f.priority === 'critical' || f.priority === 'high').length} key criteria to improve matches
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -855,325 +1225,300 @@ export default function ClientDetailPage() {
                       className="bg-[#020222] border border-[#333] hover:border-[#ff00ff] transition-colors rounded-lg overflow-hidden"
                     >
                       {/* COLLAPSED VIEW */}
-<div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
-  {/* Image */}
-  <div
-    className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
-    onClick={() =>
-      setExpandedPropertyId(isExpanded ? null : match.id)
-    }
-  >
-    {firstImage ? (
-      <img
-        src={firstImage}
-        alt={prop.title}
-        className="w-full h-full object-cover"
-      />
-    ) : (
-      <Home size={40} className="text-gray-600" />
-    )}
+                      <div className="p-4 flex flex-col md:flex-row gap-4 items-start md:items-center">
+                        {/* Image */}
+                        <div
+                          className="w-full md:w-48 h-32 bg-white/5 rounded overflow-hidden flex items-center justify-center text-gray-600 relative flex-shrink-0 cursor-pointer"
+                          onClick={() =>
+                            setExpandedPropertyId(isExpanded ? null : match.id)
+                          }
+                        >
+                          {firstImage ? (
+                            <img
+                              src={firstImage}
+                              alt={prop.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Home size={40} className="text-gray-600" />
+                          )}
 
-    {/* Match Score Badge */}
-    <div
-      className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
-        match.match_score
-      )}`}
-    >
-      <TrendingUp size={10} className="inline mr-1" />
-      {match.match_score}%
-    </div>
+                          {/* Match Score Badge */}
+                          <div
+                            className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold border ${getMatchScoreColor(
+                              match.match_score
+                            )}`}
+                          >
+                            <TrendingUp size={10} className="inline mr-1" />
+                            {match.match_score}%
+                          </div>
 
-    {/* Quality Badge */}
-    {getQualityBadge(qualityScore, validationErrors)}
+                          {/* Quality Badge */}
+                          {getQualityBadge(qualityScore, validationErrors)}
 
-    {/* Expand indicator */}
-    <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-      {isExpanded
-        ? '▲ Less'
-        : `▼ More (${allImages.length} photos)`}
-    </div>
-  </div>
+                          {/* Expand indicator */}
+                          <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                            {isExpanded
+                              ? '▲ Less'
+                              : `▼ More (${allImages.length} photos)`}
+                          </div>
+                        </div>
 
-  <div className="flex-1">
-    <div className="flex gap-2 mb-2 flex-wrap">
-      <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
-        {prop.source}
-      </span>
-      <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
-        {prop.property_type || 'Property'}
-      </span>
-      {prop.pool && (
-        <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-          <Droplets size={10} /> Pool
-        </span>
-      )}
-      {hasPriceChange && priceDrop > 0 && (
-        <span className="bg-green-500/20 text-green-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-          💰 €{priceDrop.toLocaleString()} drop
-        </span>
-      )}
-    </div>
+                        <div className="flex-1">
+                          <div className="flex gap-2 mb-2 flex-wrap">
+                            <span className="bg-[#ff00ff] text-white text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
+                              {prop.source}
+                            </span>
+                            <span className="bg-white/10 text-gray-300 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase">
+                              {prop.property_type || 'Property'}
+                            </span>
+                            {prop.pool && (
+                              <span className="bg-blue-500/20 text-blue-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                <Droplets size={10} /> Pool
+                              </span>
+                            )}
+                            {hasPriceChange && priceDrop > 0 && (
+                              <span className="bg-green-500/20 text-green-400 text-[0.6rem] font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                💰 €{priceDrop.toLocaleString()} drop
+                              </span>
+                            )}
+                          </div>
 
-    <h4
-      className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
-      onClick={() =>
-        setExpandedPropertyId(isExpanded ? null : match.id)
-      }
-    >
-      {prop.title}
-    </h4>
+                          <h4
+                            className="text-lg font-bold text-white mb-1 cursor-pointer hover:text-[#00ffff]"
+                            onClick={() =>
+                              setExpandedPropertyId(isExpanded ? null : match.id)
+                            }
+                          >
+                            {prop.title}
+                          </h4>
 
-    <div className="flex flex-wrap gap-3 text-[#a0a0ff] text-sm mb-2">
-      <span className="flex items-center gap-1">
-        <MapPin size={12} /> {prop.location_city}
-      </span>
-      {prop.surface && (
-        <span className="flex items-center gap-1">
-          <Maximize2 size={12} /> {prop.surface} m²
-        </span>
-      )}
-      {prop.land_surface && (
-        <span className="flex items-center gap-1">
-          <Home size={12} /> {prop.land_surface} m² land
-        </span>
-      )}
-      {prop.rooms && (
-        <span className="flex items-center gap-1">
-          <Home size={12} /> {prop.rooms} rooms
-        </span>
-      )}
-      {prop.bedrooms && (
-        <span className="flex items-center gap-1">
-          <Bed size={12} /> {prop.bedrooms} bed
-        </span>
-      )}
-      {prop.bathrooms && (
-        <span className="flex items-center gap-1">
-          <Bath size={12} /> {prop.bathrooms} bath
-        </span>
-      )}
-    </div>
+                          <div className="flex flex-wrap gap-3 text-[#a0a0ff] text-sm mb-2">
+                            <span className="flex items-center gap-1">
+                              <MapPin size={12} /> {prop.location_city}
+                            </span>
+                            {prop.surface && (
+                              <span className="flex items-center gap-1">
+                                <Maximize2 size={12} /> {prop.surface} m²
+                              </span>
+                            )}
+                            {prop.land_surface && (
+                              <span className="flex items-center gap-1">
+                                <Home size={12} /> {prop.land_surface} m² land
+                              </span>
+                            )}
+                            {prop.rooms && (
+                              <span className="flex items-center gap-1">
+                                <Home size={12} /> {prop.rooms} rooms
+                              </span>
+                            )}
+                            {prop.bedrooms && (
+                              <span className="flex items-center gap-1">
+                                <Bed size={12} /> {prop.bedrooms} bed
+                              </span>
+                            )}
+                            {prop.bathrooms && (
+                              <span className="flex items-center gap-1">
+                                <Bath size={12} /> {prop.bathrooms} bath
+                              </span>
+                            )}
+                          </div>
 
-    <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
-      {prop.heating_system && (
-        <span className="flex items-center gap-1">
-          <Flame size={10} /> {prop.heating_system}
-        </span>
-      )}
-      {prop.drainage_system && (
-        <span className="flex items-center gap-1">
-          <Wrench size={10} /> {prop.drainage_system}
-        </span>
-      )}
-      {prop.year_built && (
-        <span className="flex items-center gap-1">
-          <Calendar size={10} /> Built {prop.year_built}
-        </span>
-      )}
-    </div>
+                          <div className="flex flex-wrap gap-2 text-xs text-gray-400 mb-2">
+                            {prop.heating_system && (
+                              <span className="flex items-center gap-1">
+                                <Flame size={10} /> {prop.heating_system}
+                              </span>
+                            )}
+                            {prop.drainage_system && (
+                              <span className="flex items-center gap-1">
+                                <Wrench size={10} /> {prop.drainage_system}
+                              </span>
+                            )}
+                            {prop.year_built && (
+                              <span className="flex items-center gap-1">
+                                <Calendar size={10} /> Built {prop.year_built}
+                              </span>
+                            )}
+                          </div>
 
-    {validationErrors.length > 0 && (
-      <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
-        <AlertTriangle size={12} />
-        {Array.isArray(validationErrors)
-          ? validationErrors.join(', ')
-          : 'Data quality issues'}
-      </div>
-    )}
+                          {validationErrors.length > 0 && (
+                            <div className="text-xs text-yellow-500 mb-2 flex items-center gap-1">
+                              <AlertTriangle size={12} />
+                              {Array.isArray(validationErrors)
+                                ? validationErrors.join(', ')
+                                : 'Data quality issues'}
+                            </div>
+                          )}
 
-    {/* Price and Match Analysis Badges */}
-    <div className="flex items-center gap-3 flex-wrap">
-      <div className="text-xl font-bold text-[#00ffff]">
-        €{parseInt(prop.price || '0', 10).toLocaleString()}
-      </div>
-      {hasPriceChange && (
-        <div className="text-xs text-gray-500 line-through">
-          €
-          {parseInt(
-            String(prop.previous_price),
-            10
-          ).toLocaleString()}
-        </div>
-      )}
-      
-      {/* Match Analysis Badges - NEW LOCATION */}
-      {criteria && (() => {
-        const analysis = calculateMatchAnalysis(prop, criteria);
-        const matchCount = Object.values(analysis.matches).filter(v => v === true).length;
-        const mismatchCount = Object.values(analysis.matches).filter(v => v === false).length;
-        const uncertainCount = analysis.uncertainties.length;
-        
-        return (
-          <div className="flex gap-2">
-            {matchCount > 0 && (
-              <div className="bg-green-500/20 border border-green-500 text-green-400 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
-                <CheckCircle2 size={12} /> {matchCount} matches
-              </div>
-            )}
-            {(mismatchCount > 0 || uncertainCount > 0) && (
-              <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-400 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
-                <AlertTriangle size={12} /> {mismatchCount + uncertainCount} queries
-              </div>
-            )}
-          </div>
-        );
-      })()}
-    </div>
-  </div>
+                          {/* Price and Match Analysis Badges */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="text-xl font-bold text-[#00ffff]">
+                              €{parseInt(prop.price || '0', 10).toLocaleString()}
+                            </div>
+                            {hasPriceChange && (
+                              <div className="text-xs text-gray-500 line-through">
+                                €
+                                {parseInt(
+                                  String(prop.previous_price),
+                                  10
+                                ).toLocaleString()}
+                              </div>
+                            )}
+                            
+                            {/* Match Analysis Badges */}
+                            {criteria && (() => {
+                              const analysis = calculateMatchAnalysis(prop, criteria);
+                              const matchCount = Object.values(analysis.matches).filter(v => v === true).length;
+                              const mismatchCount = Object.values(analysis.matches).filter(v => v === false).length;
+                              const uncertainCount = analysis.uncertainties.length;
+                              
+                              return (
+                                <div className="flex gap-2">
+                                  {matchCount > 0 && (
+                                    <div className="bg-green-500/20 border border-green-500 text-green-400 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                                      <CheckCircle2 size={12} /> {matchCount} matches
+                                    </div>
+                                  )}
+                                  {(mismatchCount > 0 || uncertainCount > 0) && (
+                                    <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-400 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                                      <AlertTriangle size={12} /> {mismatchCount + uncertainCount} queries
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
 
-  <div className="flex md:flex-col gap-2 w-full md:w-auto">
-    {match.status !== 'shortlisted' && (
-      <button
-        onClick={() =>
-          updateMatchStatus(match.id, 'shortlisted')
-        }
-        disabled={updatingMatchId === match.id}
-        className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-      >
-        {updatingMatchId === match.id ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <>
-            <CheckCircle2 size={14} /> Select
-          </>
-        )}
-      </button>
-    )}
-    {match.status !== 'rejected' && (
-      <button
-        onClick={() =>
-          updateMatchStatus(match.id, 'rejected')
-        }
-        disabled={updatingMatchId === match.id}
-        className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-      >
-        {updatingMatchId === match.id ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <>
-            <XCircle size={14} /> Discard
-          </>
-        )}
-      </button>
-    )}
-    <a
-      href={prop.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex-1 md:w-40 py-2 bg-[#ff00ff]/10 text-[#ff00ff] hover:bg-[#ff00ff]/20 rounded uppercase text-xs font-bold flex items-center justify-center gap-2"
-    >
-      <ExternalLink size={14} /> Source
-    </a>
-  </div>
-</div>
-
+                        <div className="flex md:flex-col gap-2 w-full md:w-auto">
+                          {match.status !== 'shortlisted' && (
+                            <button
+                              onClick={() =>
+                                updateMatchStatus(match.id, 'shortlisted')
+                              }
+                              disabled={updatingMatchId === match.id}
+                              className="flex-1 md:w-40 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {updatingMatchId === match.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <>
+                                  <CheckCircle2 size={14} /> Select
+                                </>
+                              )}
+                            </button>
+                          )}
+                          {match.status !== 'rejected' && (
+                            <button
+                              onClick={() =>
+                                updateMatchStatus(match.id, 'rejected')
+                              }
+                              disabled={updatingMatchId === match.id}
+                              className="flex-1 md:w-40 py-2 border border-red-500 text-red-500 hover:bg-red-500/10 rounded uppercase text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {updatingMatchId === match.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <>
+                                  <XCircle size={14} /> Discard
+                                </>
+                              )}
+                            </button>
+                          )}
+                          <a
+                            href={prop.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 md:w-40 py-2 bg-[#ff00ff]/10 text-[#ff00ff] hover:bg-[#ff00ff]/20 rounded uppercase text-xs font-bold flex items-center justify-center gap-2"
+                          >
+                            <ExternalLink size={14} /> Source
+                          </a>
+                        </div>
+                      </div>
 
                       {/* EXPANDED VIEW */}
                       {isExpanded && (
                         <div className="border-t border-[#333] p-6 bg-[#0d0d21] space-y-6 animate-in fade-in duration-300">
                           {/* Match Analysis - Pros/Cons */}
-                          {criteria && (
-                            <div>
-                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
-                                ✓ Match Analysis
-                              </h5>
-                              
-                              {(() => {
-                                const analysis = calculateMatchAnalysis(prop, criteria);
-                                const pros = Object.entries(analysis.matches)
-                                  .filter(([_, matches]) => matches)
-                                  .map(([key]) => key);
-                                const cons = Object.entries(analysis.matches)
-                                  .filter(([key, matches]) => !matches && key !== 'location')
-                                  .map(([key]) => key);
-                                
-                                return (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="bg-green-500/10 border border-green-500/30 rounded p-4">
-                                      <div className="text-xs text-green-400 font-bold uppercase mb-2 flex items-center gap-2">
-                                        <CheckCircle2 size={14} /> Matches Client Criteria ({pros.length})
-                                      </div>
-                                      <ul className="space-y-1 text-sm text-green-200">
-                                        {pros.map(key => (
-                                          <li key={key} className="flex items-center gap-2">
-                                            <span className="text-green-400">✓</span>
-                                            {key.replace(/([A-Z])/g, ' $1').trim().charAt(0).toUpperCase() + key.replace(/([A-Z])/g, ' $1').trim().slice(1)}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </div>
+                          {criteria && (() => {
+                            const analysis = calculateMatchAnalysis(prop, criteria);
+                            const matchedCriteria = Object.entries(analysis.matches).filter(
+                              ([_, isMatch]) => isMatch
+                            );
+                            const unmatchedCriteria = Object.entries(analysis.matches).filter(
+                              ([_, isMatch]) => !isMatch
+                            );
 
-                                    {(cons.length > 0 || analysis.uncertainties.length > 0) && (
-                                      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
-                                        <div className="text-xs text-yellow-400 font-bold uppercase mb-2 flex items-center gap-2">
-                                          <AlertTriangle size={14} /> Uncertain / Missing Data
-                                        </div>
-                                        
-                                        {cons.length > 0 && (
-                                          <div className="mb-3">
-                                            <div className="text-xs text-red-400 mb-1">Does not match:</div>
-                                            <ul className="space-y-1 text-sm text-red-200">
-                                              {cons.map(key => (
-                                                <li key={key} className="flex items-center gap-2">
-                                                  <span className="text-red-400">✗</span>
-                                                  {key.replace(/([A-Z])/g, ' $1').trim().charAt(0).toUpperCase() + key.replace(/([A-Z])/g, ' $1').trim().slice(1)}
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                        
-                                        {analysis.uncertainties.length > 0 && (
-                                          <div>
-                                            <div className="text-xs text-yellow-400 mb-1">Uncertain:</div>
-                                            <ul className="space-y-1 text-sm text-yellow-200">
-                                              {analysis.uncertainties.map((unc, idx) => (
-                                                <li key={idx} className="flex items-start gap-2">
-                                                  <span className="text-yellow-400">?</span>
-                                                  <div>
-                                                    <div className="font-bold">{unc.field}</div>
-                                                    <div className="text-xs text-yellow-200/70">{unc.reason}</div>
-                                                  </div>
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
+                            return (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Matches */}
+                                {matchedCriteria.length > 0 && (
+                                  <div className="bg-green-500/5 border border-green-500/30 rounded-lg p-4">
+                                    <h5 className="text-sm font-bold text-green-400 uppercase mb-3 flex items-center gap-2">
+                                      <CheckCircle2 size={14} /> Criteria Met ({matchedCriteria.length})
+                                    </h5>
+                                    <ul className="space-y-2 text-xs text-gray-300">
+                                      {matchedCriteria.map(([key, _]) => (
+                                        <li key={key} className="flex items-center gap-2">
+                                          <Check size={12} className="text-green-500 flex-shrink-0" />
+                                          <span className="capitalize">
+                                            {key.replace(/([A-Z])/g, ' $1').trim()}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
                                   </div>
-                                );
-                              })()}
-                            </div>
-                          )}
+                                )}
+
+                                {/* Mismatches and Uncertainties */}
+                                {(unmatchedCriteria.length > 0 || analysis.uncertainties.length > 0) && (
+                                  <div className="bg-yellow-500/5 border border-yellow-500/30 rounded-lg p-4">
+                                    <h5 className="text-sm font-bold text-yellow-400 uppercase mb-3 flex items-center gap-2">
+                                      <AlertTriangle size={14} /> Questions ({unmatchedCriteria.length + analysis.uncertainties.length})
+                                    </h5>
+                                    <ul className="space-y-2 text-xs text-gray-300">
+                                      {unmatchedCriteria.map(([key, _]) => (
+                                        <li key={key} className="flex items-center gap-2">
+                                          <XCircle size={12} className="text-red-500 flex-shrink-0" />
+                                          <span className="capitalize">
+                                            {key.replace(/([A-Z])/g, ' $1').trim()} doesn't match
+                                          </span>
+                                        </li>
+                                      ))}
+                                      {analysis.uncertainties.map((unc, idx) => (
+                                        <li key={idx} className="flex items-start gap-2">
+                                          <AlertCircle size={12} className="text-yellow-500 flex-shrink-0 mt-0.5" />
+                                          <div>
+                                            <span className="font-bold">{unc.field}:</span> {unc.reason}
+                                          </div>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Image Gallery */}
                           {allImages.length > 1 && (
                             <div>
-                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
-                                📸 Photo Gallery ({allImages.length})
+                              <h5 className="text-sm font-bold text-white uppercase mb-3">
+                                Photo Gallery ({allImages.length})
                               </h5>
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                 {allImages.map((img, idx) => (
-                                  <a
+                                  <div
                                     key={idx}
-                                    href={img}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="relative h-40 bg-white/5 rounded overflow-hidden hover:ring-2 ring-[#ff00ff] transition-all group"
+                                    className="aspect-video bg-white/5 rounded overflow-hidden"
                                   >
                                     <img
                                       src={img}
-                                      alt={`${prop.title} - Photo ${idx + 1}`}
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                      alt={`${prop.title} - ${idx + 1}`}
+                                      className="w-full h-full object-cover hover:scale-110 transition-transform cursor-pointer"
                                     />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                      <ExternalLink
-                                        className="text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                        size={24}
-                                      />
-                                    </div>
-                                  </a>
+                                  </div>
                                 ))}
                               </div>
                             </div>
@@ -1182,204 +1527,38 @@ export default function ClientDetailPage() {
                           {/* Description */}
                           {prop.description && (
                             <div>
-                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
-                                📝 Description
+                              <h5 className="text-sm font-bold text-white uppercase mb-2">
+                                Description
                               </h5>
-                              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-line">
+                              <p className="text-sm text-gray-300 leading-relaxed">
                                 {prop.description}
                               </p>
                             </div>
                           )}
 
-                          {/* Technical Details */}
-                          <div>
-                            <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
-                              🔧 Technical Details
-                            </h5>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="bg-white/5 rounded p-4">
-                                <div className="text-xs text-[#00ffff] uppercase mb-2">
-                                  Surface & Layout
-                                </div>
-                                <div className="space-y-1 text-sm text-white/80">
-                                  {prop.surface && (
-                                    <div>Living space: {prop.surface} m²</div>
-                                  )}
-                                  {prop.building_surface && (
-                                    <div>Building: {prop.building_surface} m²</div>
-                                  )}
-                                  {prop.land_surface && (
-                                    <div>Land: {prop.land_surface} m²</div>
-                                  )}
-                                  {prop.floors && <div>Floors: {prop.floors}</div>}
-                                  {prop.rooms && <div>Rooms: {prop.rooms}</div>}
-                                  {prop.bedrooms && <div>Bedrooms: {prop.bedrooms}</div>}
-                                  {prop.bathrooms && <div>Bathrooms: {prop.bathrooms}</div>}
-                                  {prop.wc_count && <div>WC: {prop.wc_count}</div>}
-                                </div>
-                              </div>
-
-                              <div className="bg-white/5 rounded p-4">
-                                <div className="text-xs text-[#00ffff] uppercase mb-2">
-                                  Systems & Condition
-                                </div>
-                                <div className="space-y-1 text-sm text-white/80">
-                                  {prop.heating_system && (
-                                    <div className="flex items-center gap-2">
-                                      <Flame size={12} className="text-orange-400" />
-                                      Heating: {prop.heating_system}
-                                    </div>
-                                  )}
-                                  {prop.drainage_system && (
-                                    <div className="flex items-center gap-2">
-                                      <Wrench size={12} className="text-blue-400" />
-                                      Drainage: {prop.drainage_system}
-                                    </div>
-                                  )}
-                                  {prop.pool !== null && (
-                                    <div className="flex items-center gap-2">
-                                      <Droplets size={12} className="text-blue-400" />
-                                      Pool: {prop.pool ? 'Yes' : 'No'}
-                                    </div>
-                                  )}
-                                  {prop.property_condition && (
-                                    <div>Condition: {prop.property_condition}</div>
-                                  )}
-                                  {prop.year_built && (
-                                    <div>Built: {prop.year_built}</div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {(prop.energy_consumption || prop.co2_emissions) && (
-                                <div className="bg-white/5 rounded p-4">
-                                  <div className="text-xs text-[#00ffff] uppercase mb-2">
-                                    Energy Performance
-                                  </div>
-                                  <div className="space-y-1 text-sm text-white/80">
-                                    {prop.energy_consumption && (
-                                      <div>Consumption: {prop.energy_consumption} kWh/m²/year</div>
-                                    )}
-                                    {prop.co2_emissions && (
-                                      <div>CO₂ Emissions: {prop.co2_emissions} kg/m²/year</div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="bg-white/5 rounded p-4">
-                                <div className="text-xs text-[#00ffff] uppercase mb-2">
-                                  Location
-                                </div>
-                                <div className="space-y-1 text-sm text-white/80">
-                                  {prop.location_city && <div>City: {prop.location_city}</div>}
-                                  {prop.location_postal_code && (
-                                    <div>Postal: {prop.location_postal_code}</div>
-                                  )}
-                                  {prop.location_department && (
-                                    <div>Department: {prop.location_department}</div>
-                                  )}
-                                  {prop.location_lat && prop.location_lng && (
-                                    <div>
-                                      Coords: {prop.location_lat.toFixed(4)},{' '}
-                                      {prop.location_lng.toFixed(4)}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {validationErrors.length > 0 && (
-                            <div>
-                              <h5 className="text-sm font-bold text-yellow-500 uppercase mb-3 flex items-center gap-2">
-                                <AlertTriangle size={16} /> Data Quality Issues
-                              </h5>
-                              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-4">
-                                <ul className="text-sm text-yellow-200 space-y-1">
-                                  {validationErrors.map((err, idx) => (
-                                    <li key={idx}>• {err}</li>
-                                  ))}
-                                </ul>
-                                <div className="mt-3 text-xs text-yellow-500/70">
-                                  Quality Score: {(parseFloat(qualityScore) * 100).toFixed(0)}%
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {hasPriceChange && (
-                            <div>
-                              <h5 className="text-sm font-bold text-[#00ffff] uppercase mb-3 flex items-center gap-2">
-                                💰 Price History
-                              </h5>
-                              <div className="bg-white/5 rounded p-4">
-                                <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-gray-400">Original Price:</span>
-                                    <span className="text-white font-bold">
-                                      €
-                                      {parseInt(
-                                        String(prop.previous_price),
-                                        10
-                                      ).toLocaleString()}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-gray-400">Current Price:</span>
-                                    <span className="text-[#00ff00] font-bold">
-                                      €{parseInt(prop.price || '0', 10).toLocaleString()}
-                                    </span>
-                                  </div>
-                                  {priceDrop > 0 && (
-                                    <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                                      <span className="text-gray-400">Price Reduction:</span>
-                                      <span className="text-[#00ff00] font-bold flex items-center gap-1">
-                                        €{priceDrop.toLocaleString()} (-
-                                        {((priceDrop / (prop.previous_price || 1)) * 100).toFixed(1)}
-                                        %)
-                                      </span>
-                                    </div>
-                                  )}
-                                  {prop.price_changed_at && (
-                                    <div className="text-xs text-gray-500 pt-2">
-                                      Changed on{' '}
-                                      {new Date(prop.price_changed_at).toLocaleDateString('en-GB', {
-                                        day: 'numeric',
-                                        month: 'long',
-                                        year: 'numeric',
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="border-t border-white/10 pt-4">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-500">
-                              {prop.reference && (
-                                <div>
-                                  <div className="text-[#00ffff] font-bold mb-1">Reference</div>
-                                  {prop.reference}
-                                </div>
-                              )}
-                              {prop.scraped_at && (
-                                <div>
-                                  <div className="text-[#00ffff] font-bold mb-1">First Seen</div>
-                                  {new Date(prop.scraped_at).toLocaleDateString()}
-                                </div>
-                              )}
-                              {prop.last_seen_at && (
-                                <div>
-                                  <div className="text-[#00ffff] font-bold mb-1">Last Updated</div>
-                                  {new Date(prop.last_seen_at).toLocaleDateString()}
-                                </div>
-                              )}
+                          {/* Additional Details */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                            {prop.energy_consumption && (
                               <div>
-                                <div className="text-[#00ffff] font-bold mb-1">Match Score</div>
-                                {match.match_score}%
+                                <span className="text-gray-500 uppercase block mb-1">Energy</span>
+                                <span className="text-white font-bold">{prop.energy_consumption} kWh/m²</span>
                               </div>
+                            )}
+                            {prop.co2_emissions && (
+                              <div>
+                                <span className="text-gray-500 uppercase block mb-1">CO2</span>
+                                <span className="text-white font-bold">{prop.co2_emissions} kg/m²</span>
+                              </div>
+                            )}
+                            {prop.floors && (
+                              <div>
+                                <span className="text-gray-500 uppercase block mb-1">Floors</span>
+                                <span className="text-white font-bold">{prop.floors}</span>
+                              </div>
+                            )}
+                            <div>
+                              <span className="text-gray-500 uppercase block mb-1">Reference</span>
+                              <span className="text-white font-bold">{prop.reference}</span>
                             </div>
                           </div>
                         </div>
@@ -1389,57 +1568,21 @@ export default function ClientDetailPage() {
                 })}
               </div>
             )}
-
-            {activeTab === 'shortlist' && rejectedMatches.length > 0 && (
-              <details className="bg-[#020222] border border-red-500/30 rounded-lg p-4">
-                <summary className="cursor-pointer text-red-500 font-bold uppercase text-sm flex items-center gap-2">
-                  <XCircle size={16} />
-                  ▼ Discarded Properties ({rejectedMatches.length})
-                </summary>
-                <div className="mt-4 space-y-3">
-                  {rejectedMatches.map(match => {
-                    if (!match.properties) return null;
-                    const prop = match.properties;
-
-                    return (
-                      <div
-                        key={match.id}
-                        className="flex justify-between items-center p-3 bg-red-500/5 border border-red-500/20 rounded"
-                      >
-                        <div>
-                          <div className="text-white font-bold text-sm">
-                            {prop.title}
-                          </div>
-                          <div className="text-gray-400 text-xs">
-                            {prop.location_city} • €
-                            {parseInt(prop.price || '0', 10).toLocaleString()}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => updateMatchStatus(match.id, 'new')}
-                          className="px-3 py-1 border border-[#00ffff] text-[#00ffff] hover:bg-[#00ffff]/10 rounded uppercase text-xs font-bold"
-                        >
-                          Restore
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
           </div>
         )}
       </main>
 
       {/* Edit Client Popup */}
-      <EditClientPopup 
-        isOpen={isEditPopupOpen}
-        onClose={() => {
-          setIsEditPopupOpen(false);
-          fetchClientData();
-        }}
-        clientId={clientId}
-      />
+      {isEditPopupOpen && (
+        <EditClientPopup
+          isOpen={isEditPopupOpen}
+          clientId={clientId}
+          onClose={() => {
+            setIsEditPopupOpen(false);
+            fetchClientData(); // Refresh data after closing
+          }}
+        />
+      )}
     </div>
   );
 }
