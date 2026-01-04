@@ -4,7 +4,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 import { 
   ArrowLeft, 
   User, 
@@ -39,10 +38,9 @@ import MainHeader from '../../../../components/MainHeader';
 import EditClientPopup from '../../../../components/popups/EditClientPopup';
 import { pdf } from '@react-pdf/renderer';
 import { PropertyBrochurePDF } from '../../../../components/PropertyBrochurePDF';
+import { createClient } from '@/lib/supabase-client';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient();
 
 // --- Types ---
 interface ClientDetails {
