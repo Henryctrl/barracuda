@@ -28,9 +28,9 @@ interface SearchCriteria {
   features?: string[];
   desired_dpe?: string;
   location_mode?: string;
-  selected_places?: any;
-  radius_searches?: any;
-  custom_sectors?: any;
+  selected_places?: unknown;
+  radius_searches?: unknown;
+  custom_sectors?: unknown;
   min_land_surface?: number;
   max_land_surface?: number;
   pool_preference?: string;
@@ -65,6 +65,26 @@ interface Property {
   year_built?: number;
   bathrooms?: number;
   energy_consumption?: number;
+}
+
+interface RadiusSearch {
+  center?: [number, number];
+  radius_km?: number;
+  place_name?: string;
+}
+
+interface Place {
+  center?: [number, number];
+}
+
+interface CustomSector {
+  type?: string;
+  features?: Array<{
+    geometry?: {
+      type?: string;
+      coordinates?: unknown;
+    };
+  }>;
 }
 
 function removeAccents(str: string): string {
@@ -107,9 +127,9 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
   // Radius search matching
   if (criteria.radius_searches && property.location_lat && property.location_lng) {
     try {
-      const radiusSearches = typeof criteria.radius_searches === 'string' 
+      const radiusSearches: RadiusSearch[] = typeof criteria.radius_searches === 'string' 
         ? JSON.parse(criteria.radius_searches) 
-        : criteria.radius_searches;
+        : criteria.radius_searches as RadiusSearch[];
 
       if (Array.isArray(radiusSearches)) {
         for (const search of radiusSearches) {
@@ -139,9 +159,9 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
   // Places matching
   if (criteria.selected_places && property.location_lat && property.location_lng) {
     try {
-      const places = typeof criteria.selected_places === 'string'
+      const places: Place[] = typeof criteria.selected_places === 'string'
         ? JSON.parse(criteria.selected_places)
-        : criteria.selected_places;
+        : criteria.selected_places as Place[];
 
       if (Array.isArray(places)) {
         for (const place of places) {
@@ -169,16 +189,16 @@ function matchesLocation(property: Property, criteria: SearchCriteria): boolean 
   // Custom sectors matching (point-in-polygon)
   if (criteria.custom_sectors && property.location_lat && property.location_lng) {
     try {
-      const sectors = typeof criteria.custom_sectors === 'string'
+      const sectors: CustomSector = typeof criteria.custom_sectors === 'string'
         ? JSON.parse(criteria.custom_sectors)
-        : criteria.custom_sectors;
+        : criteria.custom_sectors as CustomSector;
 
       if (sectors && sectors.type === 'FeatureCollection' && Array.isArray(sectors.features)) {
         const propertyPoint = turf.point([property.location_lng, property.location_lat]);
         
         for (const feature of sectors.features) {
           if (feature.geometry && feature.geometry.type === 'Polygon') {
-            const polygon = turf.polygon(feature.geometry.coordinates);
+            const polygon = turf.polygon(feature.geometry.coordinates as number[][][]);
             
             if (turf.booleanPointInPolygon(propertyPoint, polygon)) {
               console.log(`✅ ${property.location_city} is INSIDE custom sector polygon`);
@@ -344,7 +364,7 @@ export async function POST(request: NextRequest) {
 
     let totalMatches = 0;
     let newMatches = 0;
-    let updatedMatches = 0;
+    const updatedMatches = 0;
     const results: Array<{ clientName: string; matchesFound: number }> = [];
 
     for (const client of clients) {
@@ -361,7 +381,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const criteria: SearchCriteria = criteriaData;
+      const criteria: SearchCriteria = criteriaData as SearchCriteria;
       
       console.log('📋 Criteria:', JSON.stringify({
         min_budget: criteria.min_budget,
@@ -383,7 +403,6 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // ✅ OPTION 1: Delete all existing matches before re-matching
       console.log(`\n🗑️  Clearing existing matches for this client...`);
       const { error: deleteError } = await supabase
         .from('property_matches')
@@ -425,7 +444,7 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(`\n🏠 Sample properties (first 5):`);
-      properties.slice(0, 5).forEach((p: any, idx: number) => {
+      properties.slice(0, 5).forEach((p: Property, idx: number) => {
         console.log(`   ${idx + 1}. ${p.location_city} - €${p.price} - Land: ${p.land_surface}m² - Coords: [lng: ${p.location_lng}, lat: ${p.location_lat}]`);
       });
 
@@ -447,9 +466,8 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        console.log(`\n✅ MATCH FOUND: ${(property as any).location_city} - Score: ${matchScore}`);
+        console.log(`\n✅ MATCH FOUND: ${(property as Property).location_city} - Score: ${matchScore}`);
 
-        // Since we deleted all matches, we only INSERT (no need to check for existing)
         const { error: insertError } = await supabase
           .from('property_matches')
           .insert({
