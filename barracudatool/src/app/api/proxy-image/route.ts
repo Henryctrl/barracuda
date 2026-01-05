@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       finalBuffer = Buffer.from(imageBuffer);
     }
 
-    return new NextResponse(finalBuffer, {
+    return new NextResponse(new Uint8Array(finalBuffer), {
       status: 200,
       headers: {
         'Content-Type': finalContentType,
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       'base64'
     );
     
-    return new NextResponse(placeholderPixel, {
+    return new NextResponse(new Uint8Array(placeholderPixel), {
       status: 200,
       headers: {
         'Content-Type': 'image/png',
