@@ -55,9 +55,9 @@ interface ClientDetails {
     min_budget: number | null;
     max_budget: number | null;
     locations: string | null;
-    selected_places: any;
-    radius_searches: any;
-    custom_sectors: any;
+    selected_places: Array<{ name: string; lat: number; lng: number }> | null;
+    radius_searches: Array<{ center: { lat: number; lng: number }; radius: number; name?: string }> | null;
+    custom_sectors: { type: string; features: Array<{ type: string; geometry: { type: string; coordinates: number[][][] }; properties?: Record<string, unknown> }> } | null;
     min_surface: number | null;
     max_surface: number | null;
     min_bedrooms: number | null;
@@ -143,6 +143,15 @@ interface CriteriaField {
   value?: string;
 }
 
+
+interface UserBranding {
+  company_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  brand_color: string | null;
+  logo_url: string | null;
+}
+
 export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -163,7 +172,7 @@ export default function ClientDetailPage() {
   );
   const [isEditPopupOpen, setIsEditPopupOpen] = useState(false);
   const [isCompletenessExpanded, setIsCompletenessExpanded] = useState(false);
-  const [userBranding, setUserBranding] = useState<any>(null);
+  const [userBranding, setUserBranding] = useState<UserBranding | null>(null);
   const [generatingPdfId, setGeneratingPdfId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -236,18 +245,18 @@ export default function ClientDetailPage() {
       matchesResponse.data &&
       matchesResponse.data.length > 0
     ) {
-      const propertyIds = matchesResponse.data.map((m: any) => m.property_id);
+      const propertyIds = matchesResponse.data.map((m: { property_id: string }) => m.property_id);
 
       const propertiesResponse = await supabase
         .from("properties")
         .select("*")
         .in("id", propertyIds);
 
-      let parsedProperties: any[] | undefined =
+      let parsedProperties: Array<PropertyMatch['properties']> | undefined =
         propertiesResponse.data ?? undefined;
 
       if (!propertiesResponse.error && propertiesResponse.data) {
-        parsedProperties = propertiesResponse.data.map((p: any) => {
+        parsedProperties = propertiesResponse.data.map((p: Record<string, unknown>) => {
           let images: string[] = [];
           let validation_errors: string[] = [];
 
@@ -282,20 +291,20 @@ export default function ClientDetailPage() {
             validation_errors,
             data_quality_score: p.data_quality_score || "1.0",
           };
-        });
+        }) as Array<PropertyMatch['properties']>;
       }
 
       const mergedMatches = matchesResponse.data
-        .map((match: any) => {
+        .map((match: { property_id: string; [key: string]: unknown }) => {
           const matchedProperty = parsedProperties?.find(
-            (p: any) => p.id === match.property_id
+            (p) => (p as { id: string })?.id === match.property_id
           );
           return {
             ...match,
             properties: matchedProperty || null,
           };
         })
-        .filter((m: any) => m.properties !== null);
+        .filter((m: { properties: unknown }) => m.properties !== null);
 
       setMatches(mergedMatches as PropertyMatch[]);
     } else {
@@ -363,11 +372,17 @@ export default function ClientDetailPage() {
     setUpdatingMatchId(null);
   };
 
-  const handleCreateBrochure = async (property: any) => {
+  const handleCreateBrochure = async (property: PropertyMatch['properties']) => {
     console.log("🎨 handleCreateBrochure called");
     console.log("📦 userBranding state:", userBranding);
     console.log("🏢 Company name:", userBranding?.company_name);
     console.log("🎯 Property:", property);
+
+    // Check if property is null
+    if (!property) {
+      alert("⚠️ Property data is not available.");
+      return;
+    }
 
     if (!userBranding) {
       console.log("❌ No branding data at all");
@@ -389,9 +404,12 @@ export default function ClientDetailPage() {
     setGeneratingPdfId(property.id);
 
     try {
-      // Generate the PDF
+      // Generate the PDF - cast types to match PDF component expectations
       const doc = (
-        <PropertyBrochurePDF property={property} branding={userBranding} />
+        <PropertyBrochurePDF 
+          property={property as never} 
+          branding={userBranding as never} 
+        />
       );
       const blob = await pdf(doc).toBlob();
 
