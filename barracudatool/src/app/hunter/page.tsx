@@ -1,3 +1,5 @@
+//src/app/hunter/page.tsx
+
 'use client';
 import { useState } from 'react';
 import { Layers, FileText, Home, DollarSign, Search } from 'lucide-react';

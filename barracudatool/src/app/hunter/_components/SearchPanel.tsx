@@ -1,3 +1,5 @@
+//src/app/hunter/_components/SearchPanel.tsx
+
 'use client';
 import { useState, useMemo } from 'react';
 import { RefreshCw, X, SlidersHorizontal, ArrowRight, Loader2, ChevronUp } from 'lucide-react';

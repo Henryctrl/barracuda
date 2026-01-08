@@ -1,3 +1,5 @@
+//src/app/hunter/_components/MapComponent.tsx
+
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
