@@ -62,6 +62,9 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [highlightedSaleParcels, setHighlightedSaleParcels] = useState<ParcelInfo[]>([]);
   const [isPanelMinimized, setIsPanelMinimized] = useState(false);
   const [dpeAutoIncrement, setDpeAutoIncrement] = useState(false);
+  const [dpeHighlightedParcelId, setDpeHighlightedParcelId] = useState<string | null>(null);
+const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
+
 
   
   const [searchCenter, setSearchCenter] = useState<[number, number]>([2.3522, 48.8566]);
@@ -94,13 +97,14 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     setDpeError('');
     setDpeResults([]);
     setDpeSearchInfo('INITIALIZING DPE SECTOR SCAN...');
+    setDpeScanCommune(postalCode); // Store the postal code for boundary display
     
     try {
       setDpeSearchInfo(`QUERYING INTERNAL BARRACUDA GRID FOR SECTOR ${postalCode}...`);
       const response = await fetch(`/api/dpe?postalCode=${postalCode}&lat=${lat}&lon=${lon}`);
       if (!response.ok) throw new Error('DPE data fetch failed');
-      const data: DPERecord[] = await response.json();
       
+      const data: DPERecord[] = await response.json();
       if (data.length === 0) {
         setDpeSearchInfo(`NO DPE ASSETS FOUND IN SECTOR ${postalCode}.`);
         return;
@@ -123,6 +127,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       setIsDpeLoading(false);
     }
   }, []);
+  
 
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => {
     setIsDvfLoading(true);
@@ -230,7 +235,30 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       { id: 'parcelles-click-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': '#00ffff', 'fill-opacity': 0.3 }, filter: ['==', 'id', ''] },
       { id: 'parcelles-click-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#ff00ff', 'line-width': 3, 'line-opacity': 0.9 }, filter: ['==', 'id', ''] },
       { id: 'parcelles-sale-highlight-fill', type: 'fill', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'fill-color': '#FFFF00', 'fill-opacity': 0.3 }, filter: ['in', 'id', ''] },
-      { id: 'parcelles-sale-highlight-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#F3FF58', 'line-width': 3.5, 'line-opacity': 0.9 }, filter: ['in', 'id', ''] }
+      { id: 'parcelles-sale-highlight-line', type: 'line', source: 'cadastre-parcelles', 'source-layer': 'parcelles', paint: { 'line-color': '#F3FF58', 'line-width': 3.5, 'line-opacity': 0.9 }, filter: ['in', 'id', ''] }, {
+        id: 'parcelles-dpe-highlight-fill',
+        type: 'fill',
+        source: 'cadastre-parcelles',
+        'source-layer': 'parcelles',
+        paint: {
+          'fill-color': '#FFD700', // Gold/yellow
+          'fill-opacity': 0.4
+        },
+        filter: ['==', 'id', '']
+      },
+      {
+        id: 'parcelles-dpe-highlight-line',
+        type: 'line',
+        source: 'cadastre-parcelles',
+        'source-layer': 'parcelles',
+        paint: {
+          'line-color': '#FFD700', // Gold/yellow
+          'line-width': 4,
+          'line-opacity': 1
+        },
+        filter: ['==', 'id', '']
+      },
+      
     ];
 
     layers.forEach(layer => {
@@ -346,11 +374,28 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
     }
   };
 
-  const handleDpeLocate = (dpe: DPERecord) => {
+  const handleDpeLocate = async (dpe: DPERecord) => {
     if (!map.current || !dpe._geopoint) return;
+    
     const [lat, lon] = dpe._geopoint.split(',').map(Number);
     if (!isNaN(lat) && !isNaN(lon)) {
+      // Fly to location
       map.current.flyTo({ center: [lon, lat], zoom: 18 });
+      
+      // Try to find and highlight the parcel at this location
+      try {
+        const response = await fetch(`/api/reverse-geocode?lon=${lon}&lat=${lat}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.parcelId) {
+            setDpeHighlightedParcelId(data.parcelId);
+            // Clear highlight after 5 seconds
+            setTimeout(() => setDpeHighlightedParcelId(null), 5000);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to find parcel for DPE location', error);
+      }
     }
   };
   
@@ -368,6 +413,8 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
       if (currentMap.getLayer('parcelles-click-line')) currentMap.setFilter('parcelles-click-line', ['==', 'id', '']);
       if (currentMap.getLayer('parcelles-sale-highlight-line')) currentMap.setFilter('parcelles-sale-highlight-line', emptyFilter);
       if (currentMap.getLayer('parcelles-sale-highlight-fill')) currentMap.setFilter('parcelles-sale-highlight-fill', emptyFilter);
+      setDpeScanCommune(null);
+
       
       dpeMarkers.current.forEach(marker => marker.remove());
       dpeMarkers.current = [];
@@ -647,6 +694,22 @@ useEffect(() => {
     }
   }, [highlightedSaleParcels]);
 
+  // Handle DPE-highlighted parcel (when clicking "Show on map" in DPE results)
+useEffect(() => {
+  if (map.current) {
+    const filter: FilterSpecification = dpeHighlightedParcelId 
+      ? ['==', 'id', dpeHighlightedParcelId]
+      : ['==', 'id', ''];
+    
+    if (map.current.getLayer('parcelles-dpe-highlight-line')) {
+      map.current.setFilter('parcelles-dpe-highlight-line', filter);
+    }
+    if (map.current.getLayer('parcelles-dpe-highlight-fill')) {
+      map.current.setFilter('parcelles-dpe-highlight-fill', filter);
+    }
+  }
+}, [dpeHighlightedParcelId]);
+
   useEffect(() => {
     if (activeView === 'sales' && dvfResults.length > 0) {
       setHighlightedSaleParcels(dvfResults[0].l_idpar);
@@ -911,7 +974,7 @@ useEffect(() => {
           id="minConso"
           type="number"
           value={dpeMinConso}
-          onChange={e => setDpeMinConso(Number(e.target.value))}
+          onChange={e => setDpeMinConso(e.target.value === '' ? 0 : Number(e.target.value))}
           className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta"
         />
       </div>
@@ -923,7 +986,7 @@ useEffect(() => {
           id="maxConso"
           type="number"
           value={dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso}
-          onChange={e => !dpeAutoIncrement && setDpeMaxConso(Number(e.target.value))}
+          onChange={e => !dpeAutoIncrement && setDpeMaxConso(e.target.value === '' ? 0 : Number(e.target.value))}
           disabled={dpeAutoIncrement}
           className={`w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta ${
             dpeAutoIncrement ? 'opacity-50 cursor-not-allowed' : ''
@@ -941,7 +1004,7 @@ useEffect(() => {
           id="minEmissions"
           type="number"
           value={dpeMinEmissions}
-          onChange={e => setDpeMinEmissions(Number(e.target.value))}
+          onChange={e => setDpeMinEmissions(e.target.value === '' ? 0 : Number(e.target.value))}
           className="w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta"
         />
       </div>
@@ -953,7 +1016,7 @@ useEffect(() => {
           id="maxEmissions"
           type="number"
           value={dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions}
-          onChange={e => !dpeAutoIncrement && setDpeMaxEmissions(Number(e.target.value))}
+          onChange={e => !dpeAutoIncrement && setDpeMaxEmissions(e.target.value === '' ? 0 : Number(e.target.value))}
           disabled={dpeAutoIncrement}
           className={`w-full mt-1 p-1 bg-background-dark border-2 border-accent-yellow/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta ${
             dpeAutoIncrement ? 'opacity-50 cursor-not-allowed' : ''

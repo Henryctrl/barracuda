@@ -184,7 +184,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
               <input 
                 type="number" 
                 value={targetLandSize} 
-                onChange={e => setTargetLandSize(Number(e.target.value))} 
+                onChange={e => setTargetLandSize(e.target.value === '' ? 0 : Number(e.target.value))} 
                 className="w-full mt-1 p-2 bg-background-dark border-2 border-accent-cyan/50 rounded-md text-white focus:outline-none focus:border-accent-magenta" 
               />
               <div className="text-xs text-accent-cyan/70 mt-1 flex items-center justify-center gap-2">
@@ -219,7 +219,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
                   <input 
                     type="number" 
                     value={dpeMinConsumption} 
-                    onChange={e => setDpeMinConsumption(Number(e.target.value))} 
+                    onChange={e => setDpeMinConsumption(e.target.value === '' ? 0 : Number(e.target.value))} 
                     className="w-full mt-1 p-2 bg-background-dark border-2 border-accent-cyan/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" 
                   />
                 </div>
@@ -228,7 +228,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
                   <input 
                     type="number" 
                     value={dpeAutoIncrement ? dpeMinConsumption + 1 : dpeMaxConsumption}
-                    onChange={e => !dpeAutoIncrement && setDpeMaxConsumption(Number(e.target.value))}
+                    onChange={e => !dpeAutoIncrement && setDpeMaxConsumption(e.target.value === '' ? 0 : Number(e.target.value))}
                     disabled={dpeAutoIncrement}
                     className={`w-full mt-1 p-2 bg-background-dark border-2 border-accent-cyan/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta ${
                       dpeAutoIncrement ? 'opacity-50 cursor-not-allowed' : ''
@@ -248,7 +248,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
                   <input 
                     type="number" 
                     value={dpeMinEmissions} 
-                    onChange={e => setDpeMinEmissions(Number(e.target.value))} 
+                    onChange={e => setDpeMinEmissions(e.target.value === '' ? 0 : Number(e.target.value))} 
                     className="w-full mt-1 p-2 bg-background-dark border-2 border-accent-cyan/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta" 
                   />
                 </div>
@@ -257,7 +257,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
                   <input 
                     type="number" 
                     value={dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions}
-                    onChange={e => !dpeAutoIncrement && setDpeMaxEmissions(Number(e.target.value))}
+                    onChange={e => !dpeAutoIncrement && setDpeMaxEmissions(e.target.value === '' ? 0 : Number(e.target.value))}
                     disabled={dpeAutoIncrement}
                     className={`w-full mt-1 p-2 bg-background-dark border-2 border-accent-cyan/50 rounded-md text-white text-sm focus:outline-none focus:border-accent-magenta ${
                       dpeAutoIncrement ? 'opacity-50 cursor-not-allowed' : ''
