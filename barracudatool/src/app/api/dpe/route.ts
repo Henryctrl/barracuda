@@ -14,10 +14,11 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 // Interface for the DPE records from the API
 interface DPERecord {
   'numero_dpe': string;
-  'adresse_brut': string;
+  'adresse_ban': string;
+  'adresse_brut': string;  // ADD THIS
   'nom_commune_ban': string;
   'code_postal_ban': string;
-  'code_insee_ban': string;  // ADDED
+  'code_insee_ban': string;
   'etiquette_dpe': string;
   'etiquette_ges': string;
   '_geopoint': string;
@@ -46,7 +47,8 @@ export async function GET(request: Request) {
     const queryParams = new URLSearchParams({
         qs: `code_postal_ban:"${postalCode}"`,
         size: '10000',
-        select: 'numero_dpe,adresse_brut,surface_habitable_logement,adresse_ban,nom_commune_ban,code_postal_ban,code_insee_ban,etiquette_dpe,etiquette_ges,_geopoint,type_generateur_chauffage_principal,type_batiment,date_etablissement_dpe,conso_5_usages_par_m2_ep,conso_5_usages_par_m2_ef,emission_ges_5_usages_par_m2',
+        // Added adresse_brut to the select list
+        select: 'numero_dpe,adresse_ban,adresse_brut,surface_habitable_logement,nom_commune_ban,code_postal_ban,code_insee_ban,etiquette_dpe,etiquette_ges,_geopoint,type_generateur_chauffage_principal,type_batiment,date_etablissement_dpe,conso_5_usages_par_m2_ep,conso_5_usages_par_m2_ef,emission_ges_5_usages_par_m2',
     }).toString();
     const url = `https://data.ademe.fr/data-fair/api/v1/datasets/${dataset}/lines?${queryParams}`;
     

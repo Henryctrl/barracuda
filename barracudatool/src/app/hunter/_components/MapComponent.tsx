@@ -22,6 +22,8 @@ interface BanFeature {
 interface DPERecord {
   'numero_dpe': string; 
   'adresse_ban': string; 
+  'adresse_brut': string; 
+  'code_postal_ban': string;
   'date_etablissement_dpe': string; 
   'etiquette_dpe': string; 
   'etiquette_ges': string; 
@@ -109,6 +111,25 @@ const [communeBoundaries, setCommuneBoundaries] = useState<any>(null);
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
   };
+
+  const formatDpeAddress = (dpe: DPERecord): string => {
+    // Priority 1: Use adresse_ban if available and not just commune name
+    if (dpe.adresse_ban && dpe.adresse_ban.trim() !== '' && dpe.adresse_ban !== dpe.nom_commune_ban) {
+      return dpe.adresse_ban;
+    }
+    
+    // Priority 2: Use adresse_brut + commune + postal code
+    if (dpe.adresse_brut && dpe.adresse_brut.trim() !== '') {
+      const parts = [dpe.adresse_brut];
+      if (dpe.code_postal_ban) parts.push(dpe.code_postal_ban);
+      if (dpe.nom_commune_ban) parts.push(dpe.nom_commune_ban);
+      return parts.join(' ');
+    }
+    
+    // Priority 3: Just commune name as last resort
+    return dpe.nom_commune_ban || 'Address unavailable';
+  };
+  
 
   const fetchCommuneBoundaries = useCallback(async (communeCodes: string[]) => {
     try {
@@ -1034,27 +1055,25 @@ return consoMatch && emissionsMatch && dateMatch;
         
 
         const renderDpeItem = (dpe: DPERecord, isTopResult: boolean) => (
-          <div
-            key={dpe.numero_dpe}
-            id={`dpe-${dpe.numero_dpe}`}
-            className={`p-3 rounded-lg transition-all relative ${
-              expandedDpeId === dpe.numero_dpe ? 'bg-accent-cyan/10' : ''
-            }`}
-          >
-            <button
-              onClick={() => handleDpeLocate(dpe)}
+          <div key={dpe.numero_dpe} id={`dpe-${dpe.numero_dpe}`} className={`p-3 rounded-lg transition-all relative ${expandedDpeId === dpe.numero_dpe ? 'bg-accent-cyan/10' : ''}`}>
+            <button 
+              onClick={() => handleDpeLocate(dpe)} 
               className="absolute top-2 right-2 p-2 bg-accent-magenta/80 hover:bg-accent-magenta rounded-md transition-all"
               title="Show on map"
             >
               <MapPin size={16} className="text-white" />
             </button>
             
-            <div className={`text-sm font-bold mb-2 ${isTopResult ? 'text-accent-magenta' : 'text-accent-cyan'}`}>
-              {isTopResult ? 'Closest Result' : `Result #${dpeResults.indexOf(dpe) + 1}`}: ~{Math.round(dpe._distance ?? 0)}m
+            <div className="text-sm font-bold mb-2">
+              <span className={isTopResult ? 'text-accent-magenta' : 'text-accent-cyan'}>
+                {isTopResult ? '★ Closest Result' : `Result ${dpeResults.indexOf(dpe) + 1}`} • {Math.round(dpe._distance ?? 0)}m
+              </span>
             </div>
+            
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-              <span className="font-semibold text-text-primary/80">Address:</span>
-              <span className="font-bold text-white text-right">{dpe.adresse_ban || 'N/A'}</span>
+              <span className="font-semibold text-text-primary/80">Address</span>
+              <span className="font-bold text-white text-right">{formatDpeAddress(dpe)}</span>
+        
               <span className="font-semibold text-text-primary/80">Date:</span>
               <span className="font-bold text-white text-right">{formatEuropeanDate(dpe.date_etablissement_dpe)}</span>
               <span className="font-semibold text-text-primary/80">Energy:</span>
