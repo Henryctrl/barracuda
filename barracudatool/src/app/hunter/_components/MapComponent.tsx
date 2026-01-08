@@ -478,7 +478,7 @@ if (communeCodes.length > 0) {
     const [lat, lon] = dpe._geopoint.split(',').map(Number);
     if (!isNaN(lat) && !isNaN(lon)) {
       // Fly to location first
-      map.current.flyTo({ center: [lon, lat], zoom: 19 });
+      map.current.flyTo({ center: [lon, lat], zoom: 18 });
       
       // Wait for map to finish moving, then query for parcel
       setTimeout(() => {
@@ -1288,6 +1288,7 @@ return consoMatch && emissionsMatch && dateMatch;
         setDpeMaxEmissions(200);
         setDpeStartDate('');
         setDpeEndDate('');
+        setDpeAutoIncrement(false); 
       }}
       className="w-full flex items-center justify-center gap-2 text-sm mt-2 bg-accent-yellow/80 border-2 border-accent-yellow/90 text-background-dark rounded-md px-3 py-2 font-bold hover:bg-accent-yellow transition-all"
     >
