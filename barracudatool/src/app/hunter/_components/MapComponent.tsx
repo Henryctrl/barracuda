@@ -616,12 +616,20 @@ const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
         }
         
         // Use auto-increment logic if enabled
-        const effectiveMaxConso = dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso;
-        const effectiveMaxEmissions = dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions;
-        
-        return conso >= dpeMinConso && conso <= effectiveMaxConso &&
-               emissions >= dpeMinEmissions && emissions <= effectiveMaxEmissions &&
-               dateMatch;
+const effectiveMaxConso = dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso;
+const effectiveMaxEmissions = dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions;
+
+// Only apply filters if values are set (not zero)
+const consoMatch = dpeMinConso === 0 && effectiveMaxConso === 0 
+  ? true 
+  : conso >= dpeMinConso && conso <= effectiveMaxConso;
+
+const emissionsMatch = dpeMinEmissions === 0 && effectiveMaxEmissions === 0
+  ? true
+  : emissions >= dpeMinEmissions && emissions <= effectiveMaxEmissions;
+
+return consoMatch && emissionsMatch && dateMatch;
+
       });
       
       
@@ -846,12 +854,20 @@ useEffect(() => {
           }
           
           // Use auto-increment logic if enabled
-          const effectiveMaxConso = dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso;
-          const effectiveMaxEmissions = dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions;
-          
-          return conso >= dpeMinConso && conso <= effectiveMaxConso &&
-                 emissions >= dpeMinEmissions && emissions <= effectiveMaxEmissions &&
-                 dateMatch;
+const effectiveMaxConso = dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso;
+const effectiveMaxEmissions = dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions;
+
+// Only apply filters if values are set (not zero)
+const consoMatch = dpeMinConso === 0 && effectiveMaxConso === 0 
+  ? true 
+  : conso >= dpeMinConso && conso <= effectiveMaxConso;
+
+const emissionsMatch = dpeMinEmissions === 0 && effectiveMaxEmissions === 0
+  ? true
+  : emissions >= dpeMinEmissions && emissions <= effectiveMaxEmissions;
+
+return consoMatch && emissionsMatch && dateMatch;
+
         });
         
 
