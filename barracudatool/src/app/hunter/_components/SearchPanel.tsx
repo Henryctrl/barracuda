@@ -117,7 +117,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
   );
 
   return (
-    <div className="absolute top-20 sm:top-4 left-4 z-20 w-96 max-h-[calc(100vh-10rem)] flex flex-col rounded-lg border-2 border-accent-cyan bg-container-bg shadow-glow-cyan backdrop-blur-sm">
+    <div className="absolute top-[88px] sm:top-16 left-4 z-[15] w-96 max-h-[calc(100vh-10rem)] flex flex-col rounded-lg border-2 border-accent-cyan shadow-glow-cyan backdrop-blur-sm bg-background-dark/75">
       <div className="flex items-center justify-between p-4">
         <h3 className="text-lg font-bold text-accent-cyan flex items-center gap-2 [filter:drop-shadow(0_0_4px_#00ffff)]">
           <SlidersHorizontal size={20} /> AREA SEARCH
@@ -136,9 +136,8 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
       </div>
       
       <div className={`px-4 pb-4 transition-all duration-300 overflow-y-auto ${
-  isCollapsed ? 'max-h-0 py-0' : 'max-h-[600px] border-t border-dashed border-accent-cyan/30 pt-4'
-}`}>
-
+        isCollapsed ? 'max-h-0 py-0' : 'max-h-[600px] border-t border-dashed border-accent-cyan/30 pt-4'
+      }`}>
         <div className="space-y-4">
           <div className="flex w-full rounded-md bg-background-dark p-1 border border-accent-cyan/50">
             <button 
@@ -306,7 +305,7 @@ export function SearchPanel({ onClose, onSearch, onRecenter, center, results, is
           <div className="flex items-center gap-2 pt-4 border-t border-dashed border-accent-cyan/30">
             <button 
               onClick={onRecenter} 
-              className="flex-1 flex items-center justify-center gap-2 text-sm bg-container-bg border-2 border-accent-yellow text-accent-yellow rounded-md px-3 py-2 hover:bg-accent-yellow hover:text-background-dark transition-all"
+              className="flex-1 flex items-center justify-center gap-2 text-sm bg-background-dark/75 border-2 border-accent-yellow text-accent-yellow rounded-md px-3 py-2 hover:bg-accent-yellow hover:text-background-dark transition-all"
             >
               <RefreshCw size={16} /> Recenter
             </button>

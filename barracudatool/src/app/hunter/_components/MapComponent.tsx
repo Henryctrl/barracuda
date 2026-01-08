@@ -568,10 +568,15 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
           dateMatch = dateMatch && dpeDate <= new Date(dpeEndDate);
         }
         
-        return conso >= dpeMinConso && conso <= dpeMaxConso && 
-               emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions && 
+        // Use auto-increment logic if enabled
+        const effectiveMaxConso = dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso;
+        const effectiveMaxEmissions = dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions;
+        
+        return conso >= dpeMinConso && conso <= effectiveMaxConso &&
+               emissions >= dpeMinEmissions && emissions <= effectiveMaxEmissions &&
                dateMatch;
       });
+      
       
       filteredDpeResults.slice(0, 10000).forEach((dpe) => {
         if (!dpe._geopoint) return;
@@ -777,10 +782,15 @@ useEffect(() => {
             dateMatch = dateMatch && dpeDate <= new Date(dpeEndDate);
           }
           
-          return conso >= dpeMinConso && conso <= dpeMaxConso &&
-                 emissions >= dpeMinEmissions && emissions <= dpeMaxEmissions &&
+          // Use auto-increment logic if enabled
+          const effectiveMaxConso = dpeAutoIncrement ? dpeMinConso + 1 : dpeMaxConso;
+          const effectiveMaxEmissions = dpeAutoIncrement ? dpeMinEmissions + 1 : dpeMaxEmissions;
+          
+          return conso >= dpeMinConso && conso <= effectiveMaxConso &&
+                 emissions >= dpeMinEmissions && emissions <= effectiveMaxEmissions &&
                  dateMatch;
         });
+        
 
         const renderDpeItem = (dpe: DPERecord, isTopResult: boolean) => (
           <div
@@ -1192,7 +1202,8 @@ useEffect(() => {
 
 {(selectedParcelId && !isSearchMode) && (
   <div
-    className={`absolute top-20 sm:top-16 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan bg-container-bg p-4 shadow-glow-cyan backdrop-blur-sm`}
+  className={`absolute top-20 sm:top-16 left-4 z-20 w-80 max-h-[calc(100vh-10rem)] overflow-y-auto rounded-lg border-2 border-accent-cyan p-4 shadow-glow-cyan backdrop-blur-sm bg-background-dark/75`}
+
   >
     <div className="flex items-center justify-between">
       <h3 className="text-lg font-bold text-accent-cyan [filter:drop-shadow(0_0_4px_#00ffff)]">
@@ -1219,7 +1230,8 @@ useEffect(() => {
 )}
 
 
-      <div className="absolute bottom-4 right-4 z-10">
+<div className="absolute top-4 right-4 z-10">
+
         <button
           onClick={() => setMapStyle(mapStyle === 'basic-v2' ? 'hybrid' : 'basic-v2')}
           className="px-4 py-2 bg-container-bg border-2 border-accent-yellow text-accent-yellow rounded-md font-bold hover:bg-accent-yellow hover:text-background-dark transition-all shadow-glow-yellow backdrop-blur-sm bg-background-dark/75"
