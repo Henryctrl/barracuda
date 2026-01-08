@@ -242,7 +242,7 @@ const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
         'source-layer': 'parcelles',
         paint: {
           'fill-color': '#FFD700', // Gold/yellow
-          'fill-opacity': 0.4
+          'fill-opacity': 0.1
         },
         filter: ['==', 'id', '']
       },
@@ -374,30 +374,36 @@ const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
     }
   };
 
-  const handleDpeLocate = async (dpe: DPERecord) => {
+  const handleDpeLocate = (dpe: DPERecord) => {
     if (!map.current || !dpe._geopoint) return;
     
     const [lat, lon] = dpe._geopoint.split(',').map(Number);
     if (!isNaN(lat) && !isNaN(lon)) {
-      // Fly to location
-      map.current.flyTo({ center: [lon, lat], zoom: 18 });
+      // Fly to location first
+      map.current.flyTo({ center: [lon, lat], zoom: 19 });
       
-      // Try to find and highlight the parcel at this location
-      try {
-        const response = await fetch(`/api/reverse-geocode?lon=${lon}&lat=${lat}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.parcelId) {
-            setDpeHighlightedParcelId(data.parcelId);
+      // Wait for map to finish moving, then query for parcel
+      setTimeout(() => {
+        if (!map.current) return;
+        
+        // Query the cadastre layer at this point
+        const features = map.current.queryRenderedFeatures(
+          map.current.project([lon, lat]),
+          { layers: ['parcelles-fill'] }
+        );
+        
+        if (features && features.length > 0) {
+          const parcelId = features[0].properties?.id as string;
+          if (parcelId) {
+            setDpeHighlightedParcelId(parcelId);
             // Clear highlight after 5 seconds
             setTimeout(() => setDpeHighlightedParcelId(null), 5000);
           }
         }
-      } catch (error) {
-        console.error('Failed to find parcel for DPE location', error);
-      }
+      }, 1000); // Wait 1 second for map to finish flying
     }
   };
+  
   
   useEffect(() => {
     if (isSearchMode) setSelectedParcelId(null);
@@ -702,7 +708,7 @@ useEffect(() => {
     }
   }, [highlightedSaleParcels]);
 
-  // Handle DPE-highlighted parcel (when clicking "Show on map" in DPE results)
+  // Handle DPE-highlighted parcel with fade in/out animation
 useEffect(() => {
   if (map.current) {
     const filter: FilterSpecification = dpeHighlightedParcelId 
@@ -715,8 +721,46 @@ useEffect(() => {
     if (map.current.getLayer('parcelles-dpe-highlight-fill')) {
       map.current.setFilter('parcelles-dpe-highlight-fill', filter);
     }
+    
+    // Animate fade in
+    if (dpeHighlightedParcelId) {
+      let opacity = 0;
+      const fadeIn = setInterval(() => {
+        opacity += 0.05;
+        if (opacity >= 1) {
+          opacity = 1;
+          clearInterval(fadeIn);
+        }
+        if (map.current?.getLayer('parcelles-dpe-highlight-line')) {
+          map.current.setPaintProperty('parcelles-dpe-highlight-line', 'line-opacity', opacity);
+        }
+        if (map.current?.getLayer('parcelles-dpe-highlight-fill')) {
+          map.current.setPaintProperty('parcelles-dpe-highlight-fill', 'fill-opacity', 0.25 * opacity);
+        }
+      }, 30);
+      
+      // Start fade out after 4 seconds
+      setTimeout(() => {
+        let opacity = 1;
+        const fadeOut = setInterval(() => {
+          opacity -= 0.05;
+          if (opacity <= 0) {
+            opacity = 0;
+            clearInterval(fadeOut);
+            setDpeHighlightedParcelId(null);
+          }
+          if (map.current?.getLayer('parcelles-dpe-highlight-line')) {
+            map.current.setPaintProperty('parcelles-dpe-highlight-line', 'line-opacity', opacity);
+          }
+          if (map.current?.getLayer('parcelles-dpe-highlight-fill')) {
+            map.current.setPaintProperty('parcelles-dpe-highlight-fill', 'fill-opacity', 0.25 * opacity);
+          }
+        }, 30);
+      }, 4000);
+    }
   }
 }, [dpeHighlightedParcelId]);
+
 
   useEffect(() => {
     if (activeView === 'sales' && dvfResults.length > 0) {
