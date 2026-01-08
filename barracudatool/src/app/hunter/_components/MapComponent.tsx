@@ -4,12 +4,13 @@ import * as maptilersdk from '@maptiler/sdk';
 import type { FilterSpecification, MapGeoJSONFeature } from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { X, ChevronDown, ChevronUp, Search, Filter, RotateCcw, MapPin, Plus, Minus } from 'lucide-react';
-import type { Polygon, Position } from 'geojson';
+import type { Polygon, Position, FeatureCollection, Geometry } from 'geojson';
 
 import { SearchPanel, SearchParams } from './SearchPanel';
 import { useSearchCircle } from '../../../hooks/useSearchCircle';
 import { ParcelSearchResult, DPERecord as DpeSearchResult } from '../types';
 import BarracudaLoader from '../../../components/loaders/BarracudaLoader';
+
 
 // --- Interfaces ---
 interface ParcelData {
@@ -54,6 +55,8 @@ interface MapComponentProps {
   setIsSearchMode: (isSearchMode: boolean) => void;
 }
 
+type CommuneBoundary = FeatureCollection<Geometry>;
+
 export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maptilersdk.Map | null>(null);
@@ -83,7 +86,9 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [dpeAutoIncrement, setDpeAutoIncrement] = useState(false);
   const [dpeHighlightedParcelId, setDpeHighlightedParcelId] = useState<string | null>(null);
 const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
-const [communeBoundaries, setCommuneBoundaries] = useState<any>(null);
+const [communeBoundaries, setCommuneBoundaries] = useState<CommuneBoundary | null>(null);
+
+
 
 
   
@@ -148,8 +153,8 @@ const [communeBoundaries, setCommuneBoundaries] = useState<any>(null);
               if (data && data.geometry) {
                 console.log(`✅ Found boundary for INSEE ${code}: ${data.nom}`);
                 return {
-                  type: 'Feature',
-                  geometry: data.geometry,
+                  type: 'Feature' as const,
+                  geometry: data.geometry as Geometry,
                   properties: { code: data.code, nom: data.nom }
                 };
               }
