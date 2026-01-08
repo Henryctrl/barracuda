@@ -20,8 +20,25 @@ interface BanFeature {
   properties: { label: string; housenumber?: string; postcode?: string; city?: string; };
 }
 interface DPERecord {
-  'numero_dpe': string; 'adresse_ban': string; 'date_etablissement_dpe': string; 'etiquette_dpe': string; 'etiquette_ges': string; 'surface_habitable_logement': number; 'conso_5_usages_par_m2_ep': number; 'conso_5_usages_par_m2_ef': number; 'emission_ges_5_usages_par_m2': number; 'type_batiment': string; 'type_generateur_chauffage_principal': string; '_geopoint': string; 'nom_commune_ban': string; '_distance'?: number;
+  'numero_dpe': string; 
+  'adresse_ban': string; 
+  'date_etablissement_dpe': string; 
+  'etiquette_dpe': string; 
+  'etiquette_ges': string; 
+  'surface_habitable_logement': number; 
+  'conso_5_usages_par_m2_ep': number; 
+  'conso_5_usages_par_m2_ef': number; 
+  'emission_ges_5_usages_par_m2': number; 
+  'type_batiment': string; 
+  'type_generateur_chauffage_principal': string; 
+  '_geopoint': string; 
+  'nom_commune_ban': string; 
+  'code_insee_ban': string;  // ADDED
+   '_distance'?: number;
 }
+
+//https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines?size=1&select=*
+//example code to use to find example of results
 interface ParcelInfo {
   id: string; sterr: number;
 }
@@ -93,45 +110,53 @@ const [communeBoundaries, setCommuneBoundaries] = useState<any>(null);
     return `${day}/${month}/${year}`;
   };
 
-  const fetchCommuneBoundaries = useCallback(async (communeNames: string[]) => {
+  const fetchCommuneBoundaries = useCallback(async (communeCodes: string[]) => {
     try {
-      // Get unique commune names
-      const uniqueCommunes = [...new Set(communeNames)];
+      const uniqueCodes = [...new Set(communeCodes)].filter(code => code && code.trim().length === 5);
+      console.log('🏘️ Fetching boundaries for commune INSEE codes:', uniqueCodes);
       
-      // Fetch boundaries for all communes
       const boundaries = await Promise.all(
-        uniqueCommunes.map(async (communeName) => {
+        uniqueCodes.map(async (code) => {
           try {
-            // Search for commune by name
             const searchResponse = await fetch(
-              `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(communeName)}&fields=nom,code,contour&format=geojson&geometry=contour`
+              `https://geo.api.gouv.fr/communes/${code}?fields=nom,code,contour&format=geojson&geometry=contour`
             );
             
             if (searchResponse.ok) {
               const data = await searchResponse.json();
-              return data.features && data.features.length > 0 ? data.features[0] : null;
+              if (data && data.geometry) {
+                console.log(`✅ Found boundary for INSEE ${code}: ${data.nom}`);
+                return {
+                  type: 'Feature',
+                  geometry: data.geometry,
+                  properties: { code: data.code, nom: data.nom }
+                };
+              }
             }
+            console.warn(`⚠️ No boundary for INSEE code: ${code}`);
             return null;
           } catch (error) {
-            console.error(`Failed to fetch boundary for ${communeName}`, error);
+            console.error(`❌ Failed for INSEE code ${code}:`, error);
             return null;
           }
         })
       );
       
-      // Filter out nulls and combine into FeatureCollection
       const validBoundaries = boundaries.filter(b => b !== null);
+      console.log(`📊 Successfully fetched ${validBoundaries.length}/${uniqueCodes.length} commune boundaries`);
       
       if (validBoundaries.length > 0) {
         setCommuneBoundaries({
           type: 'FeatureCollection',
           features: validBoundaries
         });
+      } else {
+        console.warn('⚠️ No valid commune boundaries found');
       }
     } catch (error) {
-      console.error('Failed to fetch commune boundaries', error);
+      console.error('❌ Commune boundary fetch failed:', error);
     }
-  }, []);
+  }, []);  
 
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => {
     setIsDpeLoading(true);
@@ -160,15 +185,17 @@ const [communeBoundaries, setCommuneBoundaries] = useState<any>(null);
       });
       
       setDpeResults(data);
-      setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`);
+setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`);
 
-      // Fetch commune boundaries based on results
-const communeNames = data
-.map(dpe => dpe.nom_commune_ban)
-.filter(name => name && name.trim() !== '');
-if (communeNames.length > 0) {
-fetchCommuneBoundaries(communeNames);
+// Fetch commune boundaries based on INSEE codes
+const communeCodes = data
+  .map(dpe => dpe.code_insee_ban)
+  .filter(code => code && code.trim() !== '');
+
+if (communeCodes.length > 0) {
+  fetchCommuneBoundaries(communeCodes);
 }
+
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown DPE Error';
@@ -871,17 +898,6 @@ useEffect(() => {
     currentMap.addSource('commune-boundary-source', {
       type: 'geojson',
       data: communeBoundaries
-    });
-    
-    // Add fill layer (very subtle)
-    currentMap.addLayer({
-      id: 'commune-boundary-fill',
-      type: 'fill',
-      source: 'commune-boundary-source',
-      paint: {
-        'fill-color': '#00ffff',
-        'fill-opacity': 0.05
-      }
     });
     
     // Add outline (dashed cyan)

@@ -17,6 +17,7 @@ interface DPERecord {
   'adresse_brut': string;
   'nom_commune_ban': string;
   'code_postal_ban': string;
+  'code_insee_ban': string;  // ADDED
   'etiquette_dpe': string;
   'etiquette_ges': string;
   '_geopoint': string;
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
     const queryParams = new URLSearchParams({
         qs: `code_postal_ban:"${postalCode}"`,
         size: '10000',
-        select: 'numero_dpe,adresse_brut,surface_habitable_logement,adresse_ban,nom_commune_ban,code_postal_ban,etiquette_dpe,etiquette_ges,_geopoint,type_generateur_chauffage_principal,type_batiment,date_etablissement_dpe,conso_5_usages_par_m2_ep,conso_5_usages_par_m2_ef,emission_ges_5_usages_par_m2',
+        select: 'numero_dpe,adresse_brut,surface_habitable_logement,adresse_ban,nom_commune_ban,code_postal_ban,code_insee_ban,etiquette_dpe,etiquette_ges,_geopoint,type_generateur_chauffage_principal,type_batiment,date_etablissement_dpe,conso_5_usages_par_m2_ep,conso_5_usages_par_m2_ef,emission_ges_5_usages_par_m2',
     }).toString();
     const url = `https://data.ademe.fr/data-fair/api/v1/datasets/${dataset}/lines?${queryParams}`;
     
