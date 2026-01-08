@@ -1500,7 +1500,7 @@ return consoMatch && emissionsMatch && dateMatch;
 
         <button
           onClick={() => setMapStyle(mapStyle === 'basic-v2' ? 'hybrid' : 'basic-v2')}
-          className="px-4 py-2 bg-container-bg border-2 border-accent-yellow text-accent-yellow rounded-md font-bold hover:bg-accent-yellow hover:text-background-dark transition-all shadow-glow-yellow backdrop-blur-sm bg-background-dark/75"
+          className="px-4 py-2 bg-container-bg border-2 border-accent-cyan text-accent-cyan rounded-md font-bold hover:bg-accent-yellow hover:text-background-light transition-all shadow-glow-yellow backdrop-blur-sm bg-background-dark/75"
         >
           {mapStyle === 'basic-v2' ? 'Satellite View' : 'Map View'}
         </button>
