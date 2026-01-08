@@ -64,6 +64,7 @@ export function MapComponent({ activeView, isSearchMode, setIsSearchMode }: MapC
   const [dpeAutoIncrement, setDpeAutoIncrement] = useState(false);
   const [dpeHighlightedParcelId, setDpeHighlightedParcelId] = useState<string | null>(null);
 const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
+const [communeBoundaries, setCommuneBoundaries] = useState<any>(null);
 
 
   
@@ -91,6 +92,46 @@ const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
   };
+
+  const fetchCommuneBoundaries = useCallback(async (communeNames: string[]) => {
+    try {
+      // Get unique commune names
+      const uniqueCommunes = [...new Set(communeNames)];
+      
+      // Fetch boundaries for all communes
+      const boundaries = await Promise.all(
+        uniqueCommunes.map(async (communeName) => {
+          try {
+            // Search for commune by name
+            const searchResponse = await fetch(
+              `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(communeName)}&fields=nom,code,contour&format=geojson&geometry=contour`
+            );
+            
+            if (searchResponse.ok) {
+              const data = await searchResponse.json();
+              return data.features && data.features.length > 0 ? data.features[0] : null;
+            }
+            return null;
+          } catch (error) {
+            console.error(`Failed to fetch boundary for ${communeName}`, error);
+            return null;
+          }
+        })
+      );
+      
+      // Filter out nulls and combine into FeatureCollection
+      const validBoundaries = boundaries.filter(b => b !== null);
+      
+      if (validBoundaries.length > 0) {
+        setCommuneBoundaries({
+          type: 'FeatureCollection',
+          features: validBoundaries
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch commune boundaries', error);
+    }
+  }, []);
 
   const findDPE = useCallback(async (postalCode: string, lat: number, lon: number) => {
     setIsDpeLoading(true);
@@ -120,13 +161,22 @@ const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
       
       setDpeResults(data);
       setDpeSearchInfo(`ANALYSIS COMPLETE. ${data.length} RAW ASSETS FOUND.`);
+
+      // Fetch commune boundaries based on results
+const communeNames = data
+.map(dpe => dpe.nom_commune_ban)
+.filter(name => name && name.trim() !== '');
+if (communeNames.length > 0) {
+fetchCommuneBoundaries(communeNames);
+}
+
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown DPE Error';
       setDpeError(msg);
     } finally {
       setIsDpeLoading(false);
     }
-  }, []);
+  }, [fetchCommuneBoundaries]);
   
 
   const findDVF = useCallback(async (inseeCode: string, targetParcelId: string) => {
@@ -439,6 +489,8 @@ const [dpeScanCommune, setDpeScanCommune] = useState<string | null>(null);
       setDvfError('');
       setDvfSearchInfo('');
       setIsPanelMinimized(false);
+      setCommuneBoundaries(null);
+
     }
   }, [selectedParcelId]);
   
@@ -797,6 +849,56 @@ useEffect(() => {
       }
     });
   }, [mapStyle]);
+
+  // Render commune boundaries for DPE scan area
+useEffect(() => {
+  const currentMap = map.current;
+  if (!currentMap?.isStyleLoaded()) return;
+  
+  // Remove existing layers/sources
+  if (currentMap.getLayer('commune-boundary-fill')) {
+    currentMap.removeLayer('commune-boundary-fill');
+  }
+  if (currentMap.getLayer('commune-boundary-line')) {
+    currentMap.removeLayer('commune-boundary-line');
+  }
+  if (currentMap.getSource('commune-boundary-source')) {
+    currentMap.removeSource('commune-boundary-source');
+  }
+  
+  // Only show when on DPE view with boundaries data
+  if (activeView === 'dpe' && communeBoundaries && !isSearchMode) {
+    currentMap.addSource('commune-boundary-source', {
+      type: 'geojson',
+      data: communeBoundaries
+    });
+    
+    // Add fill layer (very subtle)
+    currentMap.addLayer({
+      id: 'commune-boundary-fill',
+      type: 'fill',
+      source: 'commune-boundary-source',
+      paint: {
+        'fill-color': '#00ffff',
+        'fill-opacity': 0.05
+      }
+    });
+    
+    // Add outline (dashed cyan)
+    currentMap.addLayer({
+      id: 'commune-boundary-line',
+      type: 'line',
+      source: 'commune-boundary-source',
+      paint: {
+        'line-color': '#00ffff',
+        'line-width': 3,
+        'line-opacity': 0.6,
+        'line-dasharray': [4, 2]
+      }
+    });
+  }
+}, [activeView, communeBoundaries, isSearchMode]);
+
   
   const getPanelTitle = () => {
     switch(activeView) {
