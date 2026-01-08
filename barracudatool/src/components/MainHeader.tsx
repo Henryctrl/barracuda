@@ -63,7 +63,7 @@ export default function MainHeader() {
 
   return (
     <header style={styles.header}>
-      <div style={styles.logo}>BARRACUDA</div>
+      <Link href="/" style={styles.logo}>BARRACUDA</Link>
       <nav style={styles.nav}>
         <Link href="/gatherer" style={styles.navLink}>HOME</Link>
         <Link href="/gatherer/properties" style={styles.navLink}>PROPERTIES</Link>
