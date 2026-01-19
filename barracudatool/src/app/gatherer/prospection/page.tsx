@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Map, List, Plus, Upload, Filter, X, MapPin, Search } from 'lucide-react';
+import { Map, List, Plus, Upload, Filter, X, MapPin, Search, AlertTriangle } from 'lucide-react';
 import ProspectionMap from './components/ProspectionMap';
 import ProspectionTable from './components/ProspectionTable';
 import AddProspectModal from './components/AddProspectModal';
 import UploadCSVModal from './components/UploadCSVModal';
+import FailedEntriesModal from './components/FailedEntriesModal';
 import FilterPanel from './components/FilterPanel';
 import { PropertyProspect, ProspectionFilters } from './types';
 
@@ -16,9 +17,30 @@ export default function ProspectionPage() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showFailedEntries, setShowFailedEntries] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<ProspectionFilters>({});
   const [selectedProspect, setSelectedProspect] = useState<PropertyProspect | null>(null);
+  const [failedEntriesCount, setFailedEntriesCount] = useState(0);
+
+  // Check for failed entries count
+  useEffect(() => {
+    const updateFailedCount = () => {
+      const stored = localStorage.getItem('failed_csv_entries');
+      if (stored) {
+        setFailedEntriesCount(JSON.parse(stored).length);
+      } else {
+        setFailedEntriesCount(0);
+      }
+    };
+
+    updateFailedCount();
+    
+    // Listen for storage changes (in case user opens multiple tabs)
+    window.addEventListener('storage', updateFailedCount);
+    
+    return () => window.removeEventListener('storage', updateFailedCount);
+  }, []);
 
   // Fetch prospects
   const fetchProspects = useCallback(async () => {
@@ -130,23 +152,54 @@ export default function ProspectionPage() {
     }
   };
 
-  const handleCSVUpload = async (csvData: Partial<PropertyProspect>[]) => {
+  const handleCSVUpload = async (data: Partial<PropertyProspect>[]) => {
     try {
       const response = await fetch('/api/prospection/upload-csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prospects: csvData })
+        body: JSON.stringify({ prospects: data }),
       });
-      
-      if (!response.ok) throw new Error('Failed to upload CSV');
-      
-      await fetchProspects();
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to upload CSV');
+      }
+
+      // Show success message with details
+      if (result.failed > 0) {
+        alert(`Upload complete!\n✅ ${result.success} prospects added\n⚠️ ${result.failed} entries failed - check the Failed Entries list`);
+        
+        // Store failed entries in localStorage for later review
+        const existingFailed = JSON.parse(localStorage.getItem('failed_csv_entries') || '[]');
+        localStorage.setItem('failed_csv_entries', JSON.stringify([...existingFailed, ...result.failures]));
+        
+        // Update failed count
+        setFailedEntriesCount(existingFailed.length + result.failures.length);
+      } else {
+        alert(`✅ Successfully uploaded ${result.success} prospects!`);
+      }
+
       setShowUploadModal(false);
-      alert('CSV uploaded successfully!');
+      fetchProspects(); // Refresh the list
     } catch (error) {
       console.error('Error uploading CSV:', error);
-      alert('Failed to upload CSV');
+      alert('Failed to upload CSV: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
+  };
+
+  const handleRetryFailedEntry = (entryData: any) => {
+    // Close failed entries modal
+    setShowFailedEntries(false);
+    
+    // Open add prospect modal with pre-filled data
+    // You could either:
+    // 1. Set the data and open the add modal
+    // 2. Create a special "edit mode" for the add modal
+    
+    // For now, just alert the user - you can implement full editing later
+    alert('To fix this entry, please add it manually with the correct data.');
+    setShowAddModal(true);
   };
 
   return (
@@ -185,6 +238,17 @@ export default function ProspectionPage() {
                   DATA
                 </button>
               </div>
+
+              {/* Failed Entries Button (only show if there are failures) */}
+              {failedEntriesCount > 0 && (
+                <button
+                  onClick={() => setShowFailedEntries(true)}
+                  className="px-4 py-2 bg-red-900/50 border-2 border-red-500 text-red-400 rounded-md font-bold hover:bg-red-900/70 transition-all shadow-glow-red animate-pulse"
+                >
+                  <AlertTriangle className="inline mr-2" size={20} />
+                  {failedEntriesCount} FAILED {failedEntriesCount === 1 ? 'ENTRY' : 'ENTRIES'}
+                </button>
+              )}
 
               {/* Action Buttons */}
               <button
@@ -288,6 +352,18 @@ export default function ProspectionPage() {
         <UploadCSVModal
           onClose={() => setShowUploadModal(false)}
           onUpload={handleCSVUpload}
+        />
+      )}
+
+      {showFailedEntries && (
+        <FailedEntriesModal
+          onClose={() => {
+            setShowFailedEntries(false);
+            // Update count when closing modal
+            const stored = localStorage.getItem('failed_csv_entries');
+            setFailedEntriesCount(stored ? JSON.parse(stored).length : 0);
+          }}
+          onRetry={handleRetryFailedEntry}
         />
       )}
     </div>

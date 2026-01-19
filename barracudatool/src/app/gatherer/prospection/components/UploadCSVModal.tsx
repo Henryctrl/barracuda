@@ -19,6 +19,19 @@ interface ValidationIssue {
   severity: 'warning' | 'error';
 }
 
+// BAN API interface (matching your MapComponent)
+interface BanFeature {
+  geometry: {
+    coordinates: [number, number]; // [lon, lat]
+  };
+  properties: {
+    label: string;
+    housenumber?: string;
+    postcode?: string;
+    city?: string;
+  };
+}
+
 export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Partial<PropertyProspect>[]>([]);
@@ -28,6 +41,9 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
   const [step, setStep] = useState<ValidationStep>('upload');
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [failedEntries, setFailedEntries] = useState<any[]>([]);
+  const [showFailedEntries, setShowFailedEntries] = useState(false);
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -67,40 +83,74 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
 
   const normalizeHeader = (header: string): string => {
     return header.toLowerCase()
-      .replace(/[()]/g, '') // Remove parentheses
-      .replace(/\s+/g, ' ') // Normalize spaces
+      .replace(/[()]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
+  };
+
+  // Extract French postcode (5 digits) and town from address string
+  const extractPostcodeFromAddress = (address: string): { 
+    cleanAddress: string; 
+    postcode?: string; 
+    town?: string 
+  } => {
+    if (!address) return { cleanAddress: '' };
+    
+    // French postcode pattern: 5 digits
+    const postcodeMatch = address.match(/\b(\d{5})\b/);
+    
+    if (postcodeMatch) {
+      const postcode = postcodeMatch[1];
+      const parts = address.split(postcode);
+      
+      // Town is usually after the postcode
+      const town = parts[1]?.trim().split(/[,\n]/)[0]?.trim();
+      // Clean address is before the postcode
+      const cleanAddress = parts[0].trim();
+      
+      return { cleanAddress, postcode, town };
+    }
+    
+    return { cleanAddress: address };
   };
 
   const parseCSV = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      // Handle both \n and \r\n line endings
-      const lines = text.split(/\r?\n/).filter(line => line.trim());
-
+      // Filter out completely empty lines (only commas/whitespace)
+      const lines = text.split(/\r?\n/).filter(line => {
+        const trimmed = line.trim();
+        // Skip if empty or only commas
+        return trimmed && trimmed.replace(/,/g, '').length > 0;
+      });
+  
       if (lines.length < 2) {
         setError('CSV file is empty or invalid');
         return;
       }
-
+  
       const headers = parseCSVLine(lines[0]).map(h => normalizeHeader(h));
       const data: Partial<PropertyProspect>[] = [];
-
-      console.log('Detected headers:', headers); // Debug
-
+  
+      console.log('Detected headers:', headers);
+  
       for (let i = 1; i < lines.length; i++) {
         const values = parseCSVLine(lines[i]);
         const row: any = {};
-
+  
         headers.forEach((header, index) => {
           const value = values[index] || '';
-
+  
           // Map CSV headers to PropertyProspect fields
           if (header.includes('link') || header === 'photo') {
             row.link = value;
           } else if (header.includes('property address') || header === 'exact location' || header === 'address') {
-            row.address = value;
+            // Extract postcode and town from address
+            const extracted = extractPostcodeFromAddress(value);
+            row.address = extracted.cleanAddress || value;
+            if (extracted.postcode && !row.postcode) row.postcode = extracted.postcode;
+            if (extracted.town && !row.town) row.town = extracted.town;
           } else if (header.includes('photo_url') || header === 'photo') {
             row.photo_url = value;
           } else if (header === 'town') {
@@ -130,35 +180,33 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
             row.reference = value;
           }
         });
-
+  
         // More lenient validation - accept row if it has any meaningful data
         if (row.address || row.link || row.owner_name || row.reference) {
           row.status = 'not_contacted';
           data.push(row);
         }
       }
-
+  
       if (data.length === 0) {
         setError('No valid data found in CSV. Detected columns: ' + headers.join(', '));
         console.log('Parsed headers:', headers);
-        console.log('Parsed headers:', headers);
-console.log('Total lines:', lines.length);
-console.log('First line raw:', lines[1]);
-
+        console.log('First data row:', lines[1] ? parseCSVLine(lines[1]) : 'No data rows');
       } else {
         console.log('Successfully parsed', data.length, 'rows');
         setPreview(data);
-        setEditedData(JSON.parse(JSON.stringify(data))); // Deep copy
+        setEditedData(JSON.parse(JSON.stringify(data)));
         validateData(data);
       }
     };
-
+  
     reader.onerror = () => {
       setError('Failed to read file');
     };
-
+  
     reader.readAsText(file);
   };
+  
 
   const validateData = (data: Partial<PropertyProspect>[]) => {
     const issues: ValidationIssue[] = [];
@@ -186,13 +234,13 @@ console.log('First line raw:', lines[1]);
         });
       }
 
-      // Check for missing location data
+      // Check for missing location data - but only warn (geocoding will fix it)
       if (prospect.address && !prospect.town && !prospect.postcode) {
         issues.push({
           index,
           field: 'location',
           value: null,
-          message: 'Missing town or postcode',
+          message: 'Missing town or postcode (will geocode)',
           severity: 'warning'
         });
       }
@@ -211,8 +259,9 @@ console.log('First line raw:', lines[1]);
 
     setValidationIssues(issues);
 
-    // If there are issues, go to validation step
-    if (issues.length > 0) {
+    // If there are ERROR issues, go to validation step
+    const errors = issues.filter(i => i.severity === 'error');
+    if (errors.length > 0) {
       setStep('validate');
     } else {
       setStep('confirm');
@@ -229,43 +278,72 @@ console.log('First line raw:', lines[1]);
     setStep('confirm');
   };
 
-  const handleUpload = async () => {
+  // Update the handleUpload function in UploadCSVModal.tsx
+const handleUpload = async () => {
     if (editedData.length === 0) {
       setError('No valid data to upload');
       return;
     }
-
+  
     setIsUploading(true);
-
-    // Geocode addresses before uploading
+  
+    // Geocode addresses using BAN API
     const geocodedData = await Promise.all(
       editedData.map(async (prospect) => {
         if (prospect.address && !prospect.latitude && !prospect.longitude) {
           try {
+            const searchQuery = [
+              prospect.address,
+              prospect.postcode,
+              prospect.town
+            ].filter(Boolean).join(' ').trim();
+  
+            console.log('Geocoding:', searchQuery);
+  
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
             const response = await fetch(
-              `/api/prospection/geocode?address=${encodeURIComponent(prospect.address)}`
+              `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(searchQuery)}&limit=1`,
+              { signal: controller.signal }
             );
+            
+            clearTimeout(timeoutId);
+            
             if (response.ok) {
-              const geoData = await response.json();
-              return {
-                ...prospect,
-                latitude: geoData.latitude,
-                longitude: geoData.longitude,
-                town: prospect.town || geoData.town,
-                postcode: prospect.postcode || geoData.postcode
-              };
+              const data = await response.json();
+              if (data.features && data.features.length > 0) {
+                const feature = data.features[0] as BanFeature;
+                const [lon, lat] = feature.geometry.coordinates;
+                
+                return {
+                  ...prospect,
+                  longitude: lon,
+                  latitude: lat,
+                  town: prospect.town || feature.properties.city,
+                  postcode: prospect.postcode || feature.properties.postcode
+                };
+              }
             }
           } catch (error) {
-            console.error('Geocoding failed for:', prospect.address);
+            if (error instanceof Error && error.name === 'AbortError') {
+              console.warn('Geocoding timeout for:', prospect.address);
+            } else {
+              console.error('Geocoding failed for:', prospect.address, error);
+            }
           }
         }
         return prospect;
       })
     );
-
+  
+    console.log('Geocoded data:', geocodedData);
     setIsUploading(false);
+    
+    // Pass to parent and capture result
     onUpload(geocodedData);
   };
+  
 
   const renderUploadStep = () => (
     <>
@@ -316,6 +394,7 @@ console.log('First line raw:', lines[1]);
                   <p className="text-white font-semibold">{prospect.address || prospect.reference || 'No address'}</p>
                   <div className="text-sm text-text-primary/70 mt-1 flex gap-4 flex-wrap">
                     {prospect.town && <span>Town: {prospect.town}</span>}
+                    {prospect.postcode && <span>Postcode: {prospect.postcode}</span>}
                     {prospect.price && <span>Price: €{prospect.price.toLocaleString()}</span>}
                     {prospect.property_type && <span>Type: {prospect.property_type}</span>}
                     {prospect.owner_name && <span>Owner: {prospect.owner_name}</span>}
