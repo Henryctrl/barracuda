@@ -13,14 +13,20 @@ export async function GET(request: Request) {
     const response = await fetch(
       `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}&limit=1`
     );
+
+    if (!response.ok) {
+      throw new Error('Geocoding API failed');
+    }
+
     const data = await response.json();
 
     if (data.features && data.features.length > 0) {
       const feature = data.features[0];
+      const [longitude, latitude] = feature.geometry.coordinates;
+
       return NextResponse.json({
-        latitude: feature.geometry.coordinates[1],
-        longitude: feature.geometry.coordinates[0],
-        formatted_address: feature.properties.label,
+        latitude,
+        longitude,
         town: feature.properties.city,
         postcode: feature.properties.postcode
       });
@@ -28,6 +34,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ error: 'Address not found' }, { status: 404 });
   } catch (error) {
+    console.error('Geocoding error:', error);
     return NextResponse.json({ error: 'Geocoding failed' }, { status: 500 });
   }
 }

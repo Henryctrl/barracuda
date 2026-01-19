@@ -279,7 +279,7 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
   };
 
   // Update the handleUpload function in UploadCSVModal.tsx
-const handleUpload = async () => {
+  const handleUpload = async () => {
     if (editedData.length === 0) {
       setError('No valid data to upload');
       return;
@@ -287,63 +287,12 @@ const handleUpload = async () => {
   
     setIsUploading(true);
   
-    // Geocode addresses using BAN API
-    const geocodedData = await Promise.all(
-      editedData.map(async (prospect) => {
-        if (prospect.address && !prospect.latitude && !prospect.longitude) {
-          try {
-            const searchQuery = [
-              prospect.address,
-              prospect.postcode,
-              prospect.town
-            ].filter(Boolean).join(' ').trim();
-  
-            console.log('Geocoding:', searchQuery);
-  
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-  
-            const response = await fetch(
-              `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(searchQuery)}&limit=1`,
-              { signal: controller.signal }
-            );
-            
-            clearTimeout(timeoutId);
-            
-            if (response.ok) {
-              const data = await response.json();
-              if (data.features && data.features.length > 0) {
-                const feature = data.features[0] as BanFeature;
-                const [lon, lat] = feature.geometry.coordinates;
-                
-                return {
-                  ...prospect,
-                  longitude: lon,
-                  latitude: lat,
-                  town: prospect.town || feature.properties.city,
-                  postcode: prospect.postcode || feature.properties.postcode
-                };
-              }
-            }
-          } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
-              console.warn('Geocoding timeout for:', prospect.address);
-            } else {
-              console.error('Geocoding failed for:', prospect.address, error);
-            }
-          }
-        }
-        return prospect;
-      })
-    );
-  
-    console.log('Geocoded data:', geocodedData);
-    setIsUploading(false);
+    // Send data directly - backend will handle geocoding
+    console.log('Uploading data to backend for geocoding...');
+    onUpload(editedData);
     
-    // Pass to parent and capture result
-    onUpload(geocodedData);
-  };
-  
+    setIsUploading(false);
+  };  
 
   const renderUploadStep = () => (
     <>

@@ -2,22 +2,48 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
+// Helper to add delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Helper function to validate and parse dates
 function parseDate(dateString: string | null | undefined): string | null {
   if (!dateString || dateString.trim() === '') {
     return null;
   }
-
-  // Try to parse the date
   const date = new Date(dateString);
-  
-  // Check if it's a valid date
   if (isNaN(date.getTime())) {
     return null;
   }
-
-  // Return ISO format (YYYY-MM-DD)
   return date.toISOString().split('T')[0];
+}
+
+// Geocode function with retry logic
+async function geocodeAddress(address: string, town?: string, postcode?: string): Promise<{lat: number, lon: number} | null> {
+  const searchQuery = [address, postcode, town].filter(Boolean).join(' ').trim();
+  
+  if (!searchQuery) return null;
+
+  try {
+    const response = await fetch(
+      `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(searchQuery)}&limit=1`,
+      { 
+        headers: { 'User-Agent': 'BarracudaTool/1.0' },
+        signal: AbortSignal.timeout(15000) // 15 second timeout
+      }
+    );
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (data.features && data.features.length > 0) {
+      const [lon, lat] = data.features[0].geometry.coordinates;
+      return { lat, lon };
+    }
+  } catch (error) {
+    console.warn('Geocoding failed for:', searchQuery);
+  }
+  
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -35,14 +61,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid data format' }, { status: 400 });
   }
 
-  // Separate valid and failed prospects
   const validProspects: any[] = [];
   const failedProspects: any[] = [];
 
-  prospects.forEach((p, index) => {
-    // Validate required fields
+  // Process sequentially to avoid rate limiting
+  for (let i = 0; i < prospects.length; i++) {
+    const p = prospects[i];
     const errors: string[] = [];
 
+    // Validate required fields
     if (!p.address && !p.link) {
       errors.push('Missing both address and link');
     }
@@ -55,33 +82,52 @@ export async function POST(request: Request) {
       errors.push('Invalid email format');
     }
 
-    // If there are errors, add to failed list
     if (errors.length > 0) {
       failedProspects.push({
-        row_number: index + 2, // +2 because row 1 is headers, index starts at 0
+        row_number: i + 2,
         data: p,
         errors: errors,
         failed_at: new Date().toISOString()
       });
-    } else {
-      // Clean and prepare valid prospect
-      validProspects.push({
-        ...p,
-        user_id: user.id,
-        last_contact_date: parseDate(p.last_contact_date),
-        owner_email: p.owner_email && p.owner_email.trim() !== '' ? p.owner_email : null,
-        owner_phone: p.owner_phone && p.owner_phone.trim() !== '' ? p.owner_phone : null,
-        owner_address: p.owner_address && p.owner_address.trim() !== '' ? p.owner_address : null,
-        owner_name: p.owner_name && p.owner_name.trim() !== '' ? p.owner_name : null,
-        notes: p.notes && p.notes.trim() !== '' ? p.notes : null,
-      });
+      continue;
     }
-  });
+
+    // Geocode if needed (server-side)
+    let latitude = p.latitude;
+    let longitude = p.longitude;
+
+    if (p.address && !latitude && !longitude) {
+      console.log(`Geocoding ${i + 1}/${prospects.length}: ${p.address}`);
+      const coords = await geocodeAddress(p.address, p.town, p.postcode);
+      
+      if (coords) {
+        latitude = coords.lat;
+        longitude = coords.lon;
+      }
+
+      // Add delay to avoid rate limiting (300ms between requests)
+      await delay(300);
+    }
+
+    // Prepare valid prospect
+    validProspects.push({
+      ...p,
+      user_id: user.id,
+      latitude,
+      longitude,
+      last_contact_date: parseDate(p.last_contact_date),
+      owner_email: p.owner_email && p.owner_email.trim() !== '' ? p.owner_email : null,
+      owner_phone: p.owner_phone && p.owner_phone.trim() !== '' ? p.owner_phone : null,
+      owner_address: p.owner_address && p.owner_address.trim() !== '' ? p.owner_address : null,
+      owner_name: p.owner_name && p.owner_name.trim() !== '' ? p.owner_name : null,
+      notes: p.notes && p.notes.trim() !== '' ? p.notes : null,
+    });
+  }
 
   let insertedData = [];
   let insertError = null;
 
-  // Try to insert valid prospects
+  // Insert valid prospects
   if (validProspects.length > 0) {
     const { data, error } = await supabase
       .from('property_prospects')
@@ -94,12 +140,6 @@ export async function POST(request: Request) {
     } else {
       insertedData = data || [];
     }
-  }
-
-  // Store failed prospects in a separate table (if you want persistence)
-  // Or just return them to the frontend
-  if (failedProspects.length > 0) {
-    console.warn(`${failedProspects.length} prospects failed validation:`, failedProspects);
   }
 
   return NextResponse.json({ 
