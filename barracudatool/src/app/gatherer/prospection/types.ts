@@ -31,6 +31,7 @@ export interface PropertyProspect {
   return_date?: string;
   notes?: string;
   user_id: string;
+  reference?: string;  // Add this line
 }
 
 export interface ProspectionFilters {
