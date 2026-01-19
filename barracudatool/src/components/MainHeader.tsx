@@ -66,7 +66,7 @@ export default function MainHeader() {
       <Link href="/" style={styles.logo}>BARRACUDA</Link>
       <nav style={styles.nav}>
         <Link href="/gatherer" style={styles.navLink}>HOME</Link>
-        <Link href="/gatherer/properties" style={styles.navLink}>PROPERTIES</Link>
+        <Link href="/gatherer/prospection" style={styles.navLink}>PROSPECTION</Link>
         <Link href="/gatherer/clients" style={styles.navLink}>CLIENTS</Link>
         <Link href="/gatherer/tools" style={styles.navLink}>TOOLS</Link>
         <Link href="/gatherer/mandates" style={styles.navLink}>MANDATES</Link>
