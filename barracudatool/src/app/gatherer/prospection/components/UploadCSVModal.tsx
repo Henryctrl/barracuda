@@ -100,7 +100,7 @@ export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {
   
       for (let i = 1; i < lines.length; i++) {
         const values = parseCSVLine(lines[i]);
-        const row: any = {};
+        const row: Record<string, string | number | undefined> = {};
   
         headers.forEach((header, index) => {
           const value = values[index] || '';

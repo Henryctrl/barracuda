@@ -11,26 +11,26 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const filters: any = {};
-
-  // Apply filters
-  if (searchParams.get('minPrice')) filters.minPrice = parseFloat(searchParams.get('minPrice')!);
-  if (searchParams.get('maxPrice')) filters.maxPrice = parseFloat(searchParams.get('maxPrice')!);
-  if (searchParams.get('town')) filters.town = searchParams.get('town');
-  if (searchParams.get('status')) filters.status = searchParams.get('status')!.split(',');
-
+  
+  // Build query directly instead of using a filters object
   let query = supabase
     .from('property_prospects')
     .select('*')
     .eq('user_id', user.id);
 
-  if (filters.minPrice) query = query.gte('price', filters.minPrice);
-  if (filters.maxPrice) query = query.lte('price', filters.maxPrice);
-  if (filters.town) query = query.ilike('town', `%${filters.town}%`);
-  if (filters.status) query = query.in('status', filters.status);
+  // Apply filters
+  const minPrice = searchParams.get('minPrice');
+  const maxPrice = searchParams.get('maxPrice');
+  const town = searchParams.get('town');
+  const status = searchParams.get('status');
+
+  if (minPrice) query = query.gte('price', parseFloat(minPrice));
+  if (maxPrice) query = query.lte('price', parseFloat(maxPrice));
+  if (town) query = query.ilike('town', `%${town}%`);
+  if (status) query = query.in('status', status.split(','));
 
   const sortBy = searchParams.get('sortBy') || 'created_at';
-  const sortOrder = searchParams.get('sortOrder') === 'asc' ? true : false;
+  const sortOrder = searchParams.get('sortOrder') === 'asc';
   query = query.order(sortBy, { ascending: sortOrder });
 
   const { data, error } = await query;

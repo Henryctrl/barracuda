@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Map, List, Plus, Upload, Filter, X, MapPin, Search, AlertTriangle } from 'lucide-react';
+import { Map, List, Plus, Upload, Filter, AlertTriangle } from 'lucide-react';
 import ProspectionMap from './components/ProspectionMap';
 import ProspectionTable from './components/ProspectionTable';
 import AddProspectModal from './components/AddProspectModal';
@@ -152,7 +152,7 @@ export default function ProspectionPage() {
     }
   };
 
-  const handleRetryFailedEntry = (entryData: any) => {
+  const handleRetryFailedEntry = (entryData: unknown) => {
     setShowFailedEntries(false);
     alert('To fix this entry, please add it manually with the correct data.');
     setShowAddModal(true);

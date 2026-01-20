@@ -2,17 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { X, AlertTriangle, Trash2 } from 'lucide-react';
+import { PropertyProspect } from '../types';
 
 interface FailedEntry {
   row_number: number;
-  data: any;
+  data: Partial<PropertyProspect>;
   errors: string[];
   failed_at: string;
 }
 
 interface FailedEntriesModalProps {
   onClose: () => void;
-  onRetry: (entry: any) => void;
+  onRetry: (entry: Partial<PropertyProspect>) => void;
 }
 
 export default function FailedEntriesModal({ onClose, onRetry }: FailedEntriesModalProps) {

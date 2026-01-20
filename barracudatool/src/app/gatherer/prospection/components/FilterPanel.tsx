@@ -181,7 +181,7 @@ export default function FilterPanel({ filters, onFiltersChange, onClose }: Filte
             <div className="flex gap-2">
               <select
                 value={localFilters.sortBy || 'created_at'}
-                onChange={(e) => setLocalFilters({ ...localFilters, sortBy: e.target.value as any })}
+                onChange={(e) => setLocalFilters({ ...localFilters, sortBy: e.target.value as typeof localFilters.sortBy })}
                 className="flex-1 px-3 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
               >
                 <option value="price">Price</option>

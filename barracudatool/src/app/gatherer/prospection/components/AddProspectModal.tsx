@@ -22,7 +22,8 @@ export default function AddProspectModal({ onClose, onAdd }: AddProspectModalPro
   const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const handleChange = (field: keyof PropertyProspect, value: any) => {
+  const handleChange = (field: keyof PropertyProspect, value: string | number | undefined) => {
+
     setFormData({ ...formData, [field]: value });
   };
 

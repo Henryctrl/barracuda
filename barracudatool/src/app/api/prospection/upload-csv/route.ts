@@ -28,8 +28,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid data format' }, { status: 400 });
   }
 
-  const validProspects: any[] = [];
-  const failedProspects: any[] = [];
+  const validProspects: Array<Record<string, unknown>> = [];
+const failedProspects: Array<{
+  row_number: number;
+  data: Record<string, unknown>;
+  errors: string[];
+  failed_at: string;
+}> = [];
 
   // Process prospects (no geocoding - should already be geocoded in review queue)
   prospects.forEach((p, i) => {

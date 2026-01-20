@@ -181,7 +181,7 @@ export default function ProspectionMap({
   };
 
   // Handle click to set center
-  const handleMapClick = (e: any) => {
+  const handleMapClick = (e: maptilersdk.MapMouseEvent) => {
     if (isSettingCenter) {
       const { lng, lat } = e.lngLat;
       onFiltersChange({

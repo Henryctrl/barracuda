@@ -102,7 +102,7 @@ export default function ReviewEntryModal({
     });
   }, [formData.latitude, formData.longitude]);
 
-  const handleChange = (field: keyof PropertyProspect, value: any) => {
+  const handleChange = (field: keyof PropertyProspect, value: string | number | undefined) => {
     setFormData({ ...formData, [field]: value });
   };
 
