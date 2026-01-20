@@ -152,52 +152,8 @@ export default function ProspectionPage() {
     }
   };
 
-  const handleCSVUpload = async (data: Partial<PropertyProspect>[]) => {
-    try {
-      const response = await fetch('/api/prospection/upload-csv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prospects: data }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to upload CSV');
-      }
-
-      // Show success message with details
-      if (result.failed > 0) {
-        alert(`Upload complete!\n✅ ${result.success} prospects added\n⚠️ ${result.failed} entries failed - check the Failed Entries list`);
-        
-        // Store failed entries in localStorage for later review
-        const existingFailed = JSON.parse(localStorage.getItem('failed_csv_entries') || '[]');
-        localStorage.setItem('failed_csv_entries', JSON.stringify([...existingFailed, ...result.failures]));
-        
-        // Update failed count
-        setFailedEntriesCount(existingFailed.length + result.failures.length);
-      } else {
-        alert(`✅ Successfully uploaded ${result.success} prospects!`);
-      }
-
-      setShowUploadModal(false);
-      fetchProspects(); // Refresh the list
-    } catch (error) {
-      console.error('Error uploading CSV:', error);
-      alert('Failed to upload CSV: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    }
-  };
-
   const handleRetryFailedEntry = (entryData: any) => {
-    // Close failed entries modal
     setShowFailedEntries(false);
-    
-    // Open add prospect modal with pre-filled data
-    // You could either:
-    // 1. Set the data and open the add modal
-    // 2. Create a special "edit mode" for the add modal
-    
-    // For now, just alert the user - you can implement full editing later
     alert('To fix this entry, please add it manually with the correct data.');
     setShowAddModal(true);
   };
@@ -351,7 +307,6 @@ export default function ProspectionPage() {
       {showUploadModal && (
         <UploadCSVModal
           onClose={() => setShowUploadModal(false)}
-          onUpload={handleCSVUpload}
         />
       )}
 
