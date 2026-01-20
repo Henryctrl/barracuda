@@ -4,8 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
 import { PropertyProspect, STATUS_CONFIG, ProspectionFilters } from '../types';
-import { MapPin, Navigation } from 'lucide-react';
+import { MapPin, Navigation, X, Search } from 'lucide-react';
 import ProspectDetailModal from './ProspectDetailModal';
+
+interface BanFeature {
+  geometry: { coordinates: [number, number] };
+  properties: { label: string; housenumber?: string; postcode?: string; city?: string };
+}
 
 interface ProspectionMapProps {
   prospects: PropertyProspect[];
@@ -28,7 +33,9 @@ export default function ProspectionMap({
   const [mapStyle, setMapStyle] = useState('basic-v2');
   const [selectedProspect, setSelectedProspect] = useState<PropertyProspect | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
   const [isSettingCenter, setIsSettingCenter] = useState(false);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize map
   useEffect(() => {
@@ -109,7 +116,51 @@ export default function ProspectionMap({
     }
   }, [prospects, onProspectClick]);
 
-  // Handle search
+  // Fetch autocomplete suggestions
+  const fetchSuggestions = async (query: string) => {
+    if (query.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`
+      );
+      const data = await response.json();
+      setSuggestions(data.features || []);
+    } catch (error) {
+      console.error('Failed to fetch suggestions:', error);
+      setSuggestions([]);
+    }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      fetchSuggestions(query);
+    }, 300);
+  };
+
+  const handleSuggestionClick = (feature: BanFeature) => {
+    const [lon, lat] = feature.geometry.coordinates;
+    
+    setSearchQuery(feature.properties.label);
+    setSuggestions([]);
+    
+    if (map.current) {
+      map.current.flyTo({ center: [lon, lat], zoom: 14 });
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSuggestions([]);
+  };
+
+  // Handle search (for Enter key)
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
@@ -122,6 +173,7 @@ export default function ProspectionMap({
       if (data.features && data.features.length > 0) {
         const [lon, lat] = data.features[0].geometry.coordinates;
         map.current?.flyTo({ center: [lon, lat], zoom: 14 });
+        setSuggestions([]);
       }
     } catch (error) {
       console.error('Search failed:', error);
@@ -173,23 +225,58 @@ export default function ProspectionMap({
     <div className="relative h-full w-full">
       <div ref={mapContainer} className="absolute h-full w-full" />
 
-      {/* Search Bar */}
-      <div className="absolute top-4 left-4 z-10 w-80">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Search location..."
-            className="flex-1 px-4 py-2 bg-background-dark/90 border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan backdrop-blur-sm"
-          />
-          <button
-            onClick={handleSearch}
-            className="px-4 py-2 bg-accent-cyan text-background-dark rounded-md font-bold hover:bg-accent-cyan/80"
-          >
-            <MapPin size={20} />
-          </button>
+      {/* Search Bar with Autocomplete */}
+      <div className="absolute top-4 left-4 z-50 w-80">
+        <div className="relative">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <div className="relative flex items-center">
+                <Search className="absolute left-3 text-accent-cyan/70" size={20} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={handleSearchChange}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  placeholder="Search location..."
+                  className="w-full pl-10 pr-10 py-2 bg-background-dark/90 border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta shadow-glow-cyan backdrop-blur-sm"
+                />
+                {searchQuery.length > 0 && (
+                  <button
+                    onClick={handleClearSearch}
+                    className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan"
+                  >
+                    <X size={20} />
+                  </button>
+                )}
+              </div>
+              
+              {/* Suggestions Dropdown */}
+              {suggestions.length > 0 && (
+                <div className="absolute mt-2 w-full bg-background-dark border-2 border-accent-cyan rounded-md shadow-glow-cyan max-h-60 overflow-y-auto z-[9999]">
+                  {suggestions.map((feature, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handleSuggestionClick(feature)}
+                      className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer border-b border-accent-cyan/10 last:border-b-0"
+                    >
+                      <div className="font-semibold">{feature.properties.label}</div>
+                      {feature.properties.postcode && (
+                        <div className="text-xs text-accent-cyan/70">
+                          {feature.properties.postcode} {feature.properties.city}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleSearch}
+              className="px-4 py-2 bg-accent-cyan text-background-dark rounded-md font-bold hover:bg-accent-cyan/80 shadow-glow-cyan"
+            >
+              <MapPin size={20} />
+            </button>
+          </div>
         </div>
       </div>
 
