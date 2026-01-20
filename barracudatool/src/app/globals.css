@@ -38,3 +38,49 @@ html.map-page-lock {
 *::after {
   box-sizing: border-box;
 }
+
+/* ===== FIX WHITE INPUT FIELDS - CYBERPUNK THEME ===== */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+textarea,
+select {
+  background-color: #1a1a2e !important;
+  border-color: rgba(0, 255, 255, 0.5) !important;
+  color: white !important;
+}
+
+input:focus:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+textarea:focus,
+select:focus {
+  border-color: #00ffff !important;
+  outline: none !important;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3) !important;
+}
+
+/* Select dropdown options */
+select option {
+  background-color: #1a1a2e !important;
+  color: white !important;
+}
+
+/* Fix browser autofill white background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #1a1a2e inset !important;
+  -webkit-text-fill-color: white !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Placeholder text */
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Date/Time inputs calendar icon */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
