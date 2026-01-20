@@ -1,49 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Upload, FileText, AlertTriangle, Check, Edit2 } from 'lucide-react';
+import { X, Upload, FileText, AlertTriangle, ArrowRight } from 'lucide-react';
 import { PropertyProspect } from '../types';
+import { useRouter } from 'next/navigation';
 
 interface UploadCSVModalProps {
   onClose: () => void;
-  onUpload: (data: Partial<PropertyProspect>[]) => void;
 }
 
-type ValidationStep = 'upload' | 'validate' | 'confirm';
-
-interface ValidationIssue {
-  index: number;
-  field: string;
-  value: any;
-  message: string;
-  severity: 'warning' | 'error';
-}
-
-// BAN API interface (matching your MapComponent)
-interface BanFeature {
-  geometry: {
-    coordinates: [number, number]; // [lon, lat]
-  };
-  properties: {
-    label: string;
-    housenumber?: string;
-    postcode?: string;
-    city?: string;
-  };
-}
-
-export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProps) {
+export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Partial<PropertyProspect>[]>([]);
-  const [editedData, setEditedData] = useState<Partial<PropertyProspect>[]>([]);
   const [error, setError] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [step, setStep] = useState<ValidationStep>('upload');
-  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [failedEntries, setFailedEntries] = useState<any[]>([]);
-  const [showFailedEntries, setShowFailedEntries] = useState(false);
-
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -56,7 +27,6 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
 
     setFile(selectedFile);
     setError('');
-    setStep('upload');
     parseCSV(selectedFile);
   };
 
@@ -88,7 +58,6 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
       .trim();
   };
 
-  // Extract French postcode (5 digits) and town from address string
   const extractPostcodeFromAddress = (address: string): { 
     cleanAddress: string; 
     postcode?: string; 
@@ -96,16 +65,12 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
   } => {
     if (!address) return { cleanAddress: '' };
     
-    // French postcode pattern: 5 digits
     const postcodeMatch = address.match(/\b(\d{5})\b/);
     
     if (postcodeMatch) {
       const postcode = postcodeMatch[1];
       const parts = address.split(postcode);
-      
-      // Town is usually after the postcode
       const town = parts[1]?.trim().split(/[,\n]/)[0]?.trim();
-      // Clean address is before the postcode
       const cleanAddress = parts[0].trim();
       
       return { cleanAddress, postcode, town };
@@ -118,10 +83,8 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      // Filter out completely empty lines (only commas/whitespace)
       const lines = text.split(/\r?\n/).filter(line => {
         const trimmed = line.trim();
-        // Skip if empty or only commas
         return trimmed && trimmed.replace(/,/g, '').length > 0;
       });
   
@@ -142,11 +105,9 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
         headers.forEach((header, index) => {
           const value = values[index] || '';
   
-          // Map CSV headers to PropertyProspect fields
           if (header.includes('link') || header === 'photo') {
             row.link = value;
           } else if (header.includes('property address') || header === 'exact location' || header === 'address') {
-            // Extract postcode and town from address
             const extracted = extractPostcodeFromAddress(value);
             row.address = extracted.cleanAddress || value;
             if (extracted.postcode && !row.postcode) row.postcode = extracted.postcode;
@@ -181,7 +142,6 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
           }
         });
   
-        // More lenient validation - accept row if it has any meaningful data
         if (row.address || row.link || row.owner_name || row.reference) {
           row.status = 'not_contacted';
           data.push(row);
@@ -190,13 +150,9 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
   
       if (data.length === 0) {
         setError('No valid data found in CSV. Detected columns: ' + headers.join(', '));
-        console.log('Parsed headers:', headers);
-        console.log('First data row:', lines[1] ? parseCSVLine(lines[1]) : 'No data rows');
       } else {
         console.log('Successfully parsed', data.length, 'rows');
         setPreview(data);
-        setEditedData(JSON.parse(JSON.stringify(data)));
-        validateData(data);
       }
     };
   
@@ -206,344 +162,23 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
   
     reader.readAsText(file);
   };
-  
 
-  const validateData = (data: Partial<PropertyProspect>[]) => {
-    const issues: ValidationIssue[] = [];
-
-    data.forEach((prospect, index) => {
-      // Check for missing critical fields
-      if (!prospect.address && !prospect.link) {
-        issues.push({
-          index,
-          field: 'address',
-          value: prospect.address,
-          message: 'Missing address and link',
-          severity: 'error'
-        });
-      }
-
-      // Check for invalid price
-      if (prospect.price && (prospect.price < 0 || prospect.price > 100000000)) {
-        issues.push({
-          index,
-          field: 'price',
-          value: prospect.price,
-          message: 'Price seems unusually high or invalid',
-          severity: 'warning'
-        });
-      }
-
-      // Check for missing location data - but only warn (geocoding will fix it)
-      if (prospect.address && !prospect.town && !prospect.postcode) {
-        issues.push({
-          index,
-          field: 'location',
-          value: null,
-          message: 'Missing town or postcode (will geocode)',
-          severity: 'warning'
-        });
-      }
-
-      // Check for invalid email format
-      if (prospect.owner_email && !prospect.owner_email.includes('@')) {
-        issues.push({
-          index,
-          field: 'owner_email',
-          value: prospect.owner_email,
-          message: 'Invalid email format',
-          severity: 'warning'
-        });
-      }
-    });
-
-    setValidationIssues(issues);
-
-    // If there are ERROR issues, go to validation step
-    const errors = issues.filter(i => i.severity === 'error');
-    if (errors.length > 0) {
-      setStep('validate');
-    } else {
-      setStep('confirm');
-    }
-  };
-
-  const handleFieldEdit = (index: number, field: string, value: any) => {
-    const updated = [...editedData];
-    updated[index] = { ...updated[index], [field]: value };
-    setEditedData(updated);
-  };
-
-  const proceedToConfirm = () => {
-    setStep('confirm');
-  };
-
-  // Update the handleUpload function in UploadCSVModal.tsx
-  const handleUpload = async () => {
-    if (editedData.length === 0) {
-      setError('No valid data to upload');
-      return;
-    }
-  
-    setIsUploading(true);
-  
-    // Send data directly - backend will handle geocoding
-    console.log('Uploading data to backend for geocoding...');
-    onUpload(editedData);
+  const handleSendToReview = () => {
+    setIsProcessing(true);
     
-    setIsUploading(false);
-  };  
-
-  const renderUploadStep = () => (
-    <>
-      {/* File Upload */}
-      <div className="border-2 border-dashed border-accent-yellow rounded-lg p-8 text-center">
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="hidden"
-          id="csv-upload"
-        />
-        <label
-          htmlFor="csv-upload"
-          className="cursor-pointer flex flex-col items-center gap-4"
-        >
-          <Upload size={48} className="text-accent-yellow" />
-          <div>
-            <p className="text-accent-yellow font-bold text-lg mb-2">
-              {file ? file.name : 'Click to upload CSV file'}
-            </p>
-            <p className="text-text-primary/60 text-sm">
-              Supported columns: address, town, postcode, price, type, agency, owner info, etc.
-            </p>
-          </div>
-        </label>
-      </div>
-
-      {error && (
-        <div className="bg-red-900/50 border-2 border-red-500 text-red-400 p-4 rounded-md font-bold">
-          {error}
-        </div>
-      )}
-
-      {/* Preview */}
-      {preview.length > 0 && step === 'upload' && (
-        <div className="border-2 border-accent-cyan rounded-md">
-          <div className="bg-background-light p-3 border-b-2 border-accent-cyan">
-            <h3 className="text-accent-cyan font-bold flex items-center gap-2">
-              <FileText size={20} />
-              PREVIEW ({preview.length} prospects found)
-            </h3>
-          </div>
-          <div className="p-4 max-h-64 overflow-y-auto">
-            <div className="space-y-2">
-              {preview.slice(0, 5).map((prospect, index) => (
-                <div key={index} className="bg-background-light p-3 rounded border border-accent-cyan/30">
-                  <p className="text-white font-semibold">{prospect.address || prospect.reference || 'No address'}</p>
-                  <div className="text-sm text-text-primary/70 mt-1 flex gap-4 flex-wrap">
-                    {prospect.town && <span>Town: {prospect.town}</span>}
-                    {prospect.postcode && <span>Postcode: {prospect.postcode}</span>}
-                    {prospect.price && <span>Price: €{prospect.price.toLocaleString()}</span>}
-                    {prospect.property_type && <span>Type: {prospect.property_type}</span>}
-                    {prospect.owner_name && <span>Owner: {prospect.owner_name}</span>}
-                  </div>
-                </div>
-              ))}
-              {preview.length > 5 && (
-                <p className="text-text-primary/60 text-center py-2">
-                  ... and {preview.length - 5} more
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-
-  const renderValidationStep = () => {
-    const errors = validationIssues.filter(i => i.severity === 'error');
-    const warnings = validationIssues.filter(i => i.severity === 'warning');
-
-    return (
-      <div className="space-y-4">
-        <div className="bg-accent-yellow/20 border-2 border-accent-yellow rounded-md p-4">
-          <div className="flex items-center gap-2 text-accent-yellow font-bold mb-2">
-            <AlertTriangle size={24} />
-            <span>DATA VALIDATION REQUIRED</span>
-          </div>
-          <p className="text-text-primary/80">
-            Found {errors.length} error(s) and {warnings.length} warning(s) in your data.
-            Please review and correct the issues below.
-          </p>
-        </div>
-
-        <div className="max-h-96 overflow-y-auto space-y-3">
-          {validationIssues.map((issue, idx) => {
-            const prospect = editedData[issue.index];
-            const isEditing = editingIndex === issue.index;
-
-            return (
-              <div
-                key={idx}
-                className={`border-2 rounded-md p-4 ${
-                  issue.severity === 'error'
-                    ? 'border-red-500 bg-red-900/20'
-                    : 'border-yellow-500 bg-yellow-900/20'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className={`font-bold ${issue.severity === 'error' ? 'text-red-400' : 'text-yellow-400'}`}>
-                      Row {issue.index + 1}: {issue.message}
-                    </p>
-                    <p className="text-sm text-text-primary/60 mt-1">
-                      {prospect.address || prospect.owner_name || prospect.reference || 'Unknown prospect'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setEditingIndex(isEditing ? null : issue.index)}
-                    className="text-accent-cyan hover:text-accent-magenta"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                </div>
-
-                {isEditing && (
-                  <div className="mt-3 space-y-2 bg-background-dark/50 p-3 rounded">
-                    {issue.field === 'address' && (
-                      <div>
-                        <label className="text-sm text-text-primary/80 block mb-1">Address:</label>
-                        <input
-                          type="text"
-                          value={prospect.address || ''}
-                          onChange={(e) => handleFieldEdit(issue.index, 'address', e.target.value)}
-                          className="w-full bg-background-light border-2 border-accent-cyan/50 rounded px-3 py-2 text-white focus:border-accent-cyan focus:outline-none"
-                        />
-                      </div>
-                    )}
-                    {issue.field === 'price' && (
-                      <div>
-                        <label className="text-sm text-text-primary/80 block mb-1">Price (€):</label>
-                        <input
-                          type="number"
-                          value={prospect.price || ''}
-                          onChange={(e) => handleFieldEdit(issue.index, 'price', parseFloat(e.target.value))}
-                          className="w-full bg-background-light border-2 border-accent-cyan/50 rounded px-3 py-2 text-white focus:border-accent-cyan focus:outline-none"
-                        />
-                      </div>
-                    )}
-                    {issue.field === 'owner_email' && (
-                      <div>
-                        <label className="text-sm text-text-primary/80 block mb-1">Email:</label>
-                        <input
-                          type="email"
-                          value={prospect.owner_email || ''}
-                          onChange={(e) => handleFieldEdit(issue.index, 'owner_email', e.target.value)}
-                          className="w-full bg-background-light border-2 border-accent-cyan/50 rounded px-3 py-2 text-white focus:border-accent-cyan focus:outline-none"
-                        />
-                      </div>
-                    )}
-                    {issue.field === 'location' && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-sm text-text-primary/80 block mb-1">Town:</label>
-                          <input
-                            type="text"
-                            value={prospect.town || ''}
-                            onChange={(e) => handleFieldEdit(issue.index, 'town', e.target.value)}
-                            className="w-full bg-background-light border-2 border-accent-cyan/50 rounded px-3 py-2 text-white focus:border-accent-cyan focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-sm text-text-primary/80 block mb-1">Postcode:</label>
-                          <input
-                            type="text"
-                            value={prospect.postcode || ''}
-                            onChange={(e) => handleFieldEdit(issue.index, 'postcode', e.target.value)}
-                            className="w-full bg-background-light border-2 border-accent-cyan/50 rounded px-3 py-2 text-white focus:border-accent-cyan focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex gap-3 justify-end pt-4 border-t-2 border-accent-cyan/30">
-          <button
-            onClick={() => setStep('upload')}
-            className="px-6 py-2 bg-transparent border-2 border-text-primary/50 text-text-primary rounded-md font-bold hover:bg-text-primary/10"
-          >
-            BACK
-          </button>
-          <button
-            onClick={proceedToConfirm}
-            className="px-6 py-2 bg-accent-cyan border-2 border-accent-cyan text-background-dark rounded-md font-bold hover:bg-accent-cyan/80"
-          >
-            <Check className="inline mr-2" size={18} />
-            PROCEED {warnings.length > 0 && '(WITH WARNINGS)'}
-          </button>
-        </div>
-      </div>
-    );
+    // Store in localStorage with timestamp
+    const reviewData = {
+      data: preview,
+      uploadedAt: new Date().toISOString(),
+      filename: file?.name
+    };
+    
+    localStorage.setItem('csv_review_queue', JSON.stringify(reviewData));
+    
+    // Close modal and redirect to review page
+    onClose();
+    router.push('/gatherer/prospection/review');
   };
-
-  const renderConfirmStep = () => (
-    <div className="space-y-4">
-      <div className="bg-accent-cyan/20 border-2 border-accent-cyan rounded-md p-4">
-        <div className="flex items-center gap-2 text-accent-cyan font-bold mb-2">
-          <Check size={24} />
-          <span>READY TO UPLOAD</span>
-        </div>
-        <p className="text-text-primary/80">
-          {editedData.length} prospect(s) will be uploaded and geocoded.
-        </p>
-      </div>
-
-      <div className="border-2 border-accent-cyan rounded-md max-h-96 overflow-y-auto">
-        <div className="bg-background-light p-3 border-b-2 border-accent-cyan sticky top-0">
-          <h3 className="text-accent-cyan font-bold">FINAL DATA PREVIEW</h3>
-        </div>
-        <div className="p-4 space-y-2">
-          {editedData.map((prospect, index) => (
-            <div key={index} className="bg-background-light p-3 rounded border border-accent-cyan/30">
-              <p className="text-white font-semibold">{prospect.address || prospect.reference || 'No address'}</p>
-              <div className="text-sm text-text-primary/70 mt-1 grid grid-cols-2 gap-2">
-                {prospect.town && <span>Town: {prospect.town}</span>}
-                {prospect.postcode && <span>Postcode: {prospect.postcode}</span>}
-                {prospect.price && <span>Price: €{prospect.price.toLocaleString()}</span>}
-                {prospect.property_type && <span>Type: {prospect.property_type}</span>}
-                {prospect.owner_name && <span>Owner: {prospect.owner_name}</span>}
-                {prospect.current_agent && <span>Agent: {prospect.current_agent}</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-3 justify-end pt-4 border-t-2 border-accent-cyan/30">
-        <button
-          onClick={() => setStep(validationIssues.length > 0 ? 'validate' : 'upload')}
-          className="px-6 py-2 bg-transparent border-2 border-text-primary/50 text-text-primary rounded-md font-bold hover:bg-text-primary/10"
-        >
-          BACK
-        </button>
-        <button
-          onClick={handleUpload}
-          disabled={isUploading}
-          className="px-6 py-2 bg-accent-yellow border-2 border-accent-yellow text-background-dark rounded-md font-bold hover:bg-accent-yellow/80 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Upload className="inline mr-2" size={18} />
-          {isUploading ? 'GEOCODING...' : `UPLOAD ${editedData.length} PROSPECTS`}
-        </button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -551,32 +186,107 @@ export default function UploadCSVModal({ onClose, onUpload }: UploadCSVModalProp
         <div className="sticky top-0 bg-background-dark border-b-2 border-accent-yellow p-4 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-accent-yellow">UPLOAD CSV DATA</h2>
-            <div className="flex gap-2 mt-2">
-              {['upload', 'validate', 'confirm'].map((s, idx) => (
-                <div
-                  key={s}
-                  className={`text-xs px-3 py-1 rounded-full ${
-                    step === s
-                      ? 'bg-accent-yellow text-background-dark'
-                      : s === 'validate' && validationIssues.length === 0
-                      ? 'bg-gray-700 text-gray-500'
-                      : 'bg-gray-700 text-gray-400'
-                  }`}
-                >
-                  {idx + 1}. {s.toUpperCase()}
-                </div>
-              ))}
-            </div>
+            <p className="text-text-primary/70 text-sm mt-1">Upload and send to review queue for validation</p>
           </div>
           <button onClick={onClose} className="text-accent-yellow hover:text-accent-magenta">
             <X size={24} />
           </button>
         </div>
 
-        <div className="p-6">
-          {step === 'upload' && renderUploadStep()}
-          {step === 'validate' && renderValidationStep()}
-          {step === 'confirm' && renderConfirmStep()}
+        <div className="p-6 space-y-4">
+          {/* File Upload */}
+          <div className="border-2 border-dashed border-accent-yellow rounded-lg p-8 text-center">
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              className="hidden"
+              id="csv-upload"
+            />
+            <label
+              htmlFor="csv-upload"
+              className="cursor-pointer flex flex-col items-center gap-4"
+            >
+              <Upload size={48} className="text-accent-yellow" />
+              <div>
+                <p className="text-accent-yellow font-bold text-lg mb-2">
+                  {file ? file.name : 'Click to upload CSV file'}
+                </p>
+                <p className="text-text-primary/60 text-sm">
+                  Supported columns: address, town, postcode, price, type, agency, owner info, etc.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {error && (
+            <div className="bg-red-900/50 border-2 border-red-500 text-red-400 p-4 rounded-md font-bold">
+              {error}
+            </div>
+          )}
+
+          {/* Preview */}
+          {preview.length > 0 && (
+            <>
+              <div className="border-2 border-accent-cyan rounded-md">
+                <div className="bg-background-light p-3 border-b-2 border-accent-cyan">
+                  <h3 className="text-accent-cyan font-bold flex items-center gap-2">
+                    <FileText size={20} />
+                    PREVIEW ({preview.length} prospects found)
+                  </h3>
+                </div>
+                <div className="p-4 max-h-64 overflow-y-auto">
+                  <div className="space-y-2">
+                    {preview.slice(0, 5).map((prospect, index) => (
+                      <div key={index} className="bg-background-light p-3 rounded border border-accent-cyan/30">
+                        <p className="text-white font-semibold">{prospect.address || prospect.reference || 'No address'}</p>
+                        <div className="text-sm text-text-primary/70 mt-1 flex gap-4 flex-wrap">
+                          {prospect.town && <span>Town: {prospect.town}</span>}
+                          {prospect.postcode && <span>Postcode: {prospect.postcode}</span>}
+                          {prospect.price && <span>Price: €{prospect.price.toLocaleString()}</span>}
+                          {prospect.property_type && <span>Type: {prospect.property_type}</span>}
+                          {prospect.owner_name && <span>Owner: {prospect.owner_name}</span>}
+                        </div>
+                      </div>
+                    ))}
+                    {preview.length > 5 && (
+                      <p className="text-text-primary/60 text-center py-2">
+                        ... and {preview.length - 5} more
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-accent-cyan/20 border-2 border-accent-cyan rounded-md p-4">
+                <div className="flex items-center gap-2 text-accent-cyan font-bold mb-2">
+                  <AlertTriangle size={20} />
+                  <span>MANUAL REVIEW REQUIRED</span>
+                </div>
+                <p className="text-text-primary/80 text-sm">
+                  All {preview.length} entries will be sent to the Review Queue where you can validate addresses, 
+                  edit data, and approve entries before they're added to your prospection database.
+                </p>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4 border-t-2 border-accent-cyan/30">
+                <button
+                  onClick={onClose}
+                  className="px-6 py-2 bg-transparent border-2 border-text-primary/50 text-text-primary rounded-md font-bold hover:bg-text-primary/10"
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleSendToReview}
+                  disabled={isProcessing}
+                  className="px-6 py-2 bg-accent-yellow border-2 border-accent-yellow text-background-dark rounded-md font-bold hover:bg-accent-yellow/80 disabled:opacity-50 shadow-glow-yellow"
+                >
+                  <ArrowRight className="inline mr-2" size={18} />
+                  SEND TO REVIEW QUEUE
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
