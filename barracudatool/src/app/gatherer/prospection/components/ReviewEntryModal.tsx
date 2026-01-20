@@ -1,10 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, Check, Loader, AlertTriangle } from 'lucide-react';
+import { X, Check, AlertTriangle, Layers, Search } from 'lucide-react';
 import { PropertyProspect, ProspectionStatus, STATUS_CONFIG } from '../types';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
+
+interface BanFeature {
+  geometry: { coordinates: [number, number] };
+  properties: { label: string; housenumber?: string; postcode?: string; city?: string };
+}
 
 interface ReviewEntryModalProps {
   entry: Partial<PropertyProspect>;
@@ -24,9 +29,11 @@ export default function ReviewEntryModal({
   onClose
 }: ReviewEntryModalProps) {
   const [formData, setFormData] = useState<Partial<PropertyProspect>>(entry);
-  const [isGeocoding, setIsGeocoding] = useState(false);
-  const [geocodeStatus, setGeocodeStatus] = useState<'pending' | 'success' | 'failed'>('pending');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [mapStyle, setMapStyle] = useState<'basic' | 'satellite'>('basic');
+  const [searchQuery, setSearchQuery] = useState(entry.address || '');
+  const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maptilersdk.Map | null>(null);
@@ -40,7 +47,7 @@ export default function ReviewEntryModal({
     const newMap = new maptilersdk.Map({
       container: mapContainer.current,
       style: maptilersdk.MapStyle.BASIC,
-      center: [2.3522, 48.8566], // Paris default
+      center: [2.3522, 48.8566],
       zoom: 6
     });
 
@@ -53,6 +60,17 @@ export default function ReviewEntryModal({
       }
     };
   }, []);
+
+  // Update map style
+  useEffect(() => {
+    if (!map.current) return;
+    
+    const styleUrl = mapStyle === 'satellite' 
+      ? maptilersdk.MapStyle.SATELLITE 
+      : maptilersdk.MapStyle.BASIC;
+    
+    map.current.setStyle(styleUrl);
+  }, [mapStyle]);
 
   // Update marker when coordinates change
   useEffect(() => {
@@ -82,69 +100,67 @@ export default function ReviewEntryModal({
       zoom: 14,
       duration: 1000
     });
-
-    setGeocodeStatus('success');
   }, [formData.latitude, formData.longitude]);
 
   const handleChange = (field: keyof PropertyProspect, value: any) => {
     setFormData({ ...formData, [field]: value });
   };
 
-  const handleGeocode = async () => {
-    if (!formData.address) {
-      alert('Please enter an address first');
+  // Fetch autocomplete suggestions
+  const fetchSuggestions = async (query: string) => {
+    if (query.length < 3) {
+      setSuggestions([]);
       return;
     }
-
-    setIsGeocoding(true);
-    setGeocodeStatus('pending');
-
     try {
-      const searchQuery = [
-        formData.address,
-        formData.postcode,
-        formData.town
-      ].filter(Boolean).join(' ').trim();
-
       const response = await fetch(
-        `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(searchQuery)}&limit=1`
+        `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`
       );
-
-      if (!response.ok) throw new Error('Geocoding failed');
-
       const data = await response.json();
-
-      if (data.features && data.features.length > 0) {
-        const feature = data.features[0];
-        const [lon, lat] = feature.geometry.coordinates;
-
-        setFormData({
-          ...formData,
-          latitude: lat,
-          longitude: lon,
-          town: formData.town || feature.properties.city,
-          postcode: formData.postcode || feature.properties.postcode
-        });
-
-        setGeocodeStatus('success');
-      } else {
-        setGeocodeStatus('failed');
-        alert('Address not found. Please check and try again.');
-      }
+      setSuggestions(data.features || []);
     } catch (error) {
-      console.error('Geocoding error:', error);
-      setGeocodeStatus('failed');
-      alert('Failed to geocode address');
-    } finally {
-      setIsGeocoding(false);
+      console.error('Failed to fetch suggestions:', error);
+      setSuggestions([]);
     }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      fetchSuggestions(query);
+    }, 300);
+  };
+
+  const handleSuggestionClick = (feature: BanFeature) => {
+    const [lon, lat] = feature.geometry.coordinates;
+    const { label, postcode, city } = feature.properties;
+    
+    setSearchQuery(label);
+    setSuggestions([]);
+    
+    setFormData({
+      ...formData,
+      address: label,
+      latitude: lat,
+      longitude: lon,
+      town: city || formData.town,
+      postcode: postcode || formData.postcode
+    });
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSuggestions([]);
   };
 
   const validateData = (): boolean => {
     const errors: string[] = [];
 
     if (!formData.address) errors.push('Address is required');
-    if (!formData.latitude || !formData.longitude) errors.push('Address must be geocoded (click the pin icon)');
+    if (!formData.latitude || !formData.longitude) errors.push('Address must be geocoded using the search');
     if (formData.price && formData.price < 0) errors.push('Price cannot be negative');
     if (formData.owner_email && !formData.owner_email.includes('@')) errors.push('Invalid email format');
 
@@ -198,38 +214,53 @@ export default function ReviewEntryModal({
               <h3 className="text-accent-magenta font-bold mb-3">PROPERTY DETAILS</h3>
 
               <div className="space-y-3">
+                {/* Address Search with Autocomplete */}
                 <div>
                   <label className="block text-text-primary/80 mb-1 font-semibold text-sm">
                     Address <span className="text-red-400">*</span>
                   </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={formData.address || ''}
-                      onChange={(e) => handleChange('address', e.target.value)}
-                      className="flex-1 px-3 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
-                      placeholder="Full property address"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleGeocode}
-                      disabled={isGeocoding}
-                      className={`px-4 py-2 rounded-md font-bold transition-all ${
-                        geocodeStatus === 'success'
-                          ? 'bg-green-600 text-white'
-                          : geocodeStatus === 'failed'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-accent-cyan text-background-dark hover:bg-accent-cyan/80'
-                      } disabled:opacity-50`}
-                    >
-                      {isGeocoding ? <Loader size={20} className="animate-spin" /> : <MapPin size={20} />}
-                    </button>
+                  <div className="relative">
+                    <div className="relative flex items-center">
+                      <Search className="absolute left-3 text-accent-cyan/70" size={20} />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={handleSearchChange}
+                        placeholder="Search for address..."
+                        className="w-full pl-10 pr-10 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
+                      />
+                      {searchQuery.length > 0 && (
+                        <button
+                          onClick={handleClearSearch}
+                          className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan"
+                        >
+                          <X size={20} />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Suggestions Dropdown */}
+                    {suggestions.length > 0 && (
+                      <div className="absolute mt-2 w-full bg-background-dark border-2 border-accent-cyan rounded-md shadow-glow-cyan max-h-60 overflow-y-auto z-10">
+                        {suggestions.map((feature, index) => (
+                          <div
+                            key={index}
+                            onClick={() => handleSuggestionClick(feature)}
+                            className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer"
+                          >
+                            {feature.properties.label}
+                            {feature.properties.postcode && (
+                              <span className="text-accent-cyan/70 ml-2">
+                                ({feature.properties.postcode})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {geocodeStatus === 'success' && (
+                  {formData.latitude && formData.longitude && (
                     <p className="text-green-400 text-xs mt-1">✓ Geocoded successfully</p>
-                  )}
-                  {geocodeStatus === 'failed' && (
-                    <p className="text-red-400 text-xs mt-1">✗ Geocoding failed - try again</p>
                   )}
                 </div>
 
@@ -279,21 +310,21 @@ export default function ReviewEntryModal({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
+                    <label className="block text-text-primary/80 mb-1 font-semibold text-sm">Reference</label>
+                    <input
+                      type="text"
+                      value={formData.reference || ''}
+                      onChange={(e) => handleChange('reference', e.target.value)}
+                      className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
+                      placeholder="Internal reference"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-text-primary/80 mb-1 font-semibold text-sm">Link</label>
                     <input
                       type="url"
                       value={formData.link || ''}
                       onChange={(e) => handleChange('link', e.target.value)}
-                      className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
-                      placeholder="https://..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-text-primary/80 mb-1 font-semibold text-sm">Photo URL</label>
-                    <input
-                      type="url"
-                      value={formData.photo_url || ''}
-                      onChange={(e) => handleChange('photo_url', e.target.value)}
                       className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
                       placeholder="https://..."
                     />
@@ -418,13 +449,40 @@ export default function ReviewEntryModal({
 
           {/* Right Side - Map Preview */}
           <div className="w-1/2 flex flex-col">
-            <div className="bg-background-light p-3 border-b-2 border-accent-cyan/30">
-              <h3 className="text-accent-cyan font-bold">MAP PREVIEW</h3>
-              <p className="text-text-primary/60 text-sm">
-                {formData.latitude && formData.longitude
-                  ? `Coordinates: ${formData.latitude.toFixed(4)}, ${formData.longitude.toFixed(4)}`
-                  : 'Click the pin icon to geocode the address'}
-              </p>
+            <div className="bg-background-light p-3 border-b-2 border-accent-cyan/30 flex items-center justify-between">
+              <div>
+                <h3 className="text-accent-cyan font-bold">MAP PREVIEW</h3>
+                <p className="text-text-primary/60 text-sm">
+                  {formData.latitude && formData.longitude
+                    ? `Coordinates: ${formData.latitude.toFixed(4)}, ${formData.longitude.toFixed(4)}`
+                    : 'Use the address search above to locate'}
+                </p>
+              </div>
+              
+              {/* Map Style Toggle */}
+              <div className="flex border-2 border-accent-cyan rounded overflow-hidden">
+                <button
+                  onClick={() => setMapStyle('basic')}
+                  className={`px-3 py-1 text-xs font-bold transition-all ${
+                    mapStyle === 'basic'
+                      ? 'bg-accent-cyan text-background-dark'
+                      : 'bg-transparent text-accent-cyan hover:bg-accent-cyan/20'
+                  }`}
+                >
+                  MAP
+                </button>
+                <button
+                  onClick={() => setMapStyle('satellite')}
+                  className={`px-3 py-1 text-xs font-bold transition-all ${
+                    mapStyle === 'satellite'
+                      ? 'bg-accent-cyan text-background-dark'
+                      : 'bg-transparent text-accent-cyan hover:bg-accent-cyan/20'
+                  }`}
+                >
+                  <Layers className="inline mr-1" size={12} />
+                  SATELLITE
+                </button>
+              </div>
             </div>
             <div ref={mapContainer} className="flex-1" />
           </div>
