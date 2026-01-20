@@ -1,8 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { X, MapPin } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { X, Search } from 'lucide-react';
 import { PropertyProspect, ProspectionStatus, STATUS_CONFIG } from '../types';
+
+interface BanFeature {
+  geometry: { coordinates: [number, number] };
+  properties: { label: string; housenumber?: string; postcode?: string; city?: string };
+}
 
 interface AddProspectModalProps {
   onClose: () => void;
@@ -13,40 +18,62 @@ export default function AddProspectModal({ onClose, onAdd }: AddProspectModalPro
   const [formData, setFormData] = useState<Partial<PropertyProspect>>({
     status: 'not_contacted'
   });
-  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const handleChange = (field: keyof PropertyProspect, value: any) => {
     setFormData({ ...formData, [field]: value });
   };
 
-  const handleGeocode = async () => {
-    if (!formData.address) {
-      alert('Please enter an address first');
+  // Fetch autocomplete suggestions
+  const fetchSuggestions = async (query: string) => {
+    if (query.length < 3) {
+      setSuggestions([]);
       return;
     }
-
-    setIsGeocoding(true);
     try {
       const response = await fetch(
-        `/api/prospection/geocode?address=${encodeURIComponent(formData.address)}`
+        `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`
       );
-      
-      if (!response.ok) throw new Error('Geocoding failed');
-      
       const data = await response.json();
-      setFormData({
-        ...formData,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        town: data.town || formData.town,
-        postcode: data.postcode || formData.postcode
-      });
+      setSuggestions(data.features || []);
     } catch (error) {
-      console.error('Geocoding error:', error);
-      alert('Failed to geocode address');
-    } finally {
-      setIsGeocoding(false);
+      console.error('Failed to fetch suggestions:', error);
+      setSuggestions([]);
     }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      fetchSuggestions(query);
+    }, 300);
+  };
+
+  const handleSuggestionClick = (feature: BanFeature) => {
+    const [lon, lat] = feature.geometry.coordinates;
+    const { label, postcode, city } = feature.properties;
+    
+    setSearchQuery(label);
+    setSuggestions([]);
+    
+    setFormData({
+      ...formData,
+      address: label,
+      latitude: lat,
+      longitude: lon,
+      town: city || formData.town,
+      postcode: postcode || formData.postcode
+    });
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSuggestions([]);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -57,13 +84,18 @@ export default function AddProspectModal({ onClose, onAdd }: AddProspectModalPro
       return;
     }
 
+    if (!formData.latitude || !formData.longitude) {
+      alert('Please select an address from the suggestions to geocode the location');
+      return;
+    }
+
     onAdd(formData);
   };
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
       <div className="bg-background-dark border-2 border-accent-cyan rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-glow-cyan">
-        <div className="sticky top-0 bg-background-dark border-b-2 border-accent-cyan p-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-background-dark border-b-2 border-accent-cyan p-4 flex items-center justify-between z-10">
           <h2 className="text-2xl font-bold text-accent-cyan">ADD NEW PROSPECT</h2>
           <button
             onClick={onClose}
@@ -79,28 +111,56 @@ export default function AddProspectModal({ onClose, onAdd }: AddProspectModalPro
             <h3 className="text-accent-magenta font-bold mb-3">PROPERTY DETAILS</h3>
             
             <div className="grid grid-cols-1 gap-4">
+              {/* Address Search with Autocomplete */}
               <div>
                 <label className="block text-text-primary/80 mb-1 font-semibold">
                   Address <span className="text-red-400">*</span>
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={formData.address || ''}
-                    onChange={(e) => handleChange('address', e.target.value)}
-                    className="flex-1 px-3 py-2 bg-background-light border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta"
-                    placeholder="Full property address"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={handleGeocode}
-                    disabled={isGeocoding}
-                    className="px-4 py-2 bg-accent-cyan text-background-dark rounded-md font-bold hover:bg-accent-cyan/80 disabled:opacity-50"
-                  >
-                    <MapPin size={20} />
-                  </button>
+                <div className="relative">
+                  <div className="relative flex items-center">
+                    <Search className="absolute left-3 text-accent-cyan/70" size={20} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={handleSearchChange}
+                      placeholder="Search for address..."
+                      className="w-full pl-10 pr-10 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
+                      required
+                    />
+                    {searchQuery.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearSearch}
+                        className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan"
+                      >
+                        <X size={20} />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Suggestions Dropdown */}
+                  {suggestions.length > 0 && (
+                    <div className="absolute mt-2 w-full bg-background-dark border-2 border-accent-cyan rounded-md shadow-glow-cyan max-h-60 overflow-y-auto z-20">
+                      {suggestions.map((feature, index) => (
+                        <div
+                          key={index}
+                          onClick={() => handleSuggestionClick(feature)}
+                          className="px-4 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer border-b border-accent-cyan/10 last:border-b-0"
+                        >
+                          <div className="font-semibold">{feature.properties.label}</div>
+                          {feature.properties.postcode && (
+                            <div className="text-xs text-accent-cyan/70">
+                              {feature.properties.postcode} {feature.properties.city}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                {formData.latitude && formData.longitude && (
+                  <p className="text-green-400 text-xs mt-1">✓ Location geocoded successfully</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -149,21 +209,21 @@ export default function AddProspectModal({ onClose, onAdd }: AddProspectModalPro
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-text-primary/80 mb-1 font-semibold">Reference</label>
+                  <input
+                    type="text"
+                    value={formData.reference || ''}
+                    onChange={(e) => handleChange('reference', e.target.value)}
+                    className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta"
+                    placeholder="Internal reference"
+                  />
+                </div>
+                <div>
                   <label className="block text-text-primary/80 mb-1 font-semibold">Link</label>
                   <input
                     type="url"
                     value={formData.link || ''}
                     onChange={(e) => handleChange('link', e.target.value)}
-                    className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta"
-                    placeholder="https://..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-text-primary/80 mb-1 font-semibold">Photo URL</label>
-                  <input
-                    type="url"
-                    value={formData.photo_url || ''}
-                    onChange={(e) => handleChange('photo_url', e.target.value)}
                     className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan text-white rounded-md focus:outline-none focus:border-accent-magenta"
                     placeholder="https://..."
                   />
