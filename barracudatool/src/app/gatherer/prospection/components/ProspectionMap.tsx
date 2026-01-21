@@ -45,8 +45,9 @@ export default function ProspectionMap({
     const newMap = new maptilersdk.Map({
       container: mapContainer.current,
       style: maptilersdk.MapStyle.BASIC,
-      center: [2.3522, 48.8566], // Paris default
-      zoom: 10
+      center: [0.4816, 44.8527], // Bergerac default
+      zoom: 10,
+      attributionControl: false
     });
 
     map.current = newMap;

@@ -554,8 +554,8 @@ if (communeCodes.length > 0) {
     const newMap = new maptilersdk.Map({
       container: mapContainer.current,
       style: maptilersdk.MapStyle.BASIC,
-      center: [2.3522, 48.8566],
-      zoom: 15
+      center: [0.4816, 44.8527], //Bergerac
+      zoom: 10
     });
     
     map.current = newMap;
