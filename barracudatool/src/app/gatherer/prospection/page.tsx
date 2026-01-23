@@ -24,6 +24,7 @@ export default function ProspectionPage() {
   const [filters, setFilters] = useState<ProspectionFilters>({});
   const [selectedProspect, setSelectedProspect] = useState<PropertyProspect | null>(null);
   const [failedEntriesCount, setFailedEntriesCount] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // NEW
 
   useEffect(() => {
     const updateFailedCount = () => {
@@ -284,6 +285,8 @@ export default function ProspectionPage() {
             onProspectUpdate={handleUpdateProspect}
             filters={filters}
             onFiltersChange={setFilters}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
           />
         ) : (
           <ProspectionTable
@@ -291,6 +294,8 @@ export default function ProspectionPage() {
             onProspectClick={setSelectedProspect}
             onProspectUpdate={handleUpdateProspect}
             onProspectDelete={handleDeleteProspect}
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
           />
         )}
       </div>

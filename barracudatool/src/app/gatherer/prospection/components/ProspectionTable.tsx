@@ -10,18 +10,21 @@ interface ProspectionTableProps {
   onProspectClick: (prospect: PropertyProspect) => void;
   onProspectUpdate: (id: string, updates: Partial<PropertyProspect>) => void;
   onProspectDelete: (id: string) => void;
+  selectedIds: Set<string>;
+  onSelectedIdsChange: (ids: Set<string>) => void;
 }
 
 export default function ProspectionTable({
   prospects,
   onProspectClick,
   onProspectUpdate,
-  onProspectDelete
+  onProspectDelete,
+  selectedIds,
+  onSelectedIdsChange
 }: ProspectionTableProps) {
   const [selectedProspect, setSelectedProspect] = useState<PropertyProspect | null>(null);
   const [sortBy, setSortBy] = useState<'price' | 'town' | 'last_contact_date'>('price');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBatchActions, setShowBatchActions] = useState(false);
   const [showBatchAddedBy, setShowBatchAddedBy] = useState(false);
   const [showHitListModal, setShowHitListModal] = useState(false);
@@ -42,14 +45,14 @@ export default function ProspectionTable({
     } else {
       newSelected.add(id);
     }
-    setSelectedIds(newSelected);
+    onSelectedIdsChange(newSelected);
   };
 
   const toggleSelectAll = () => {
     if (selectedIds.size === prospects.length) {
-      setSelectedIds(new Set());
+      onSelectedIdsChange(new Set());
     } else {
-      setSelectedIds(new Set(prospects.map(p => p.id)));
+      onSelectedIdsChange(new Set(prospects.map(p => p.id)));
     }
   };
 
@@ -57,7 +60,7 @@ export default function ProspectionTable({
     selectedIds.forEach(id => {
       onProspectUpdate(id, { status });
     });
-    setSelectedIds(new Set());
+    onSelectedIdsChange(new Set());
     setShowBatchActions(false);
   };
 
@@ -65,7 +68,7 @@ export default function ProspectionTable({
     selectedIds.forEach(id => {
       onProspectUpdate(id, { added_by: addedBy });
     });
-    setSelectedIds(new Set());
+    onSelectedIdsChange(new Set());
     setShowBatchAddedBy(false);
   };
 
@@ -104,7 +107,7 @@ export default function ProspectionTable({
     }
 
     localStorage.setItem('hit_lists', JSON.stringify(hitLists));
-    setSelectedIds(new Set());
+    onSelectedIdsChange(new Set());
     setShowHitListModal(false);
     alert(`Added ${selectedProspects.length} prospects to hit list!`);
   };
@@ -189,7 +192,7 @@ export default function ProspectionTable({
             </button>
 
             <button
-              onClick={() => setSelectedIds(new Set())}
+              onClick={() => onSelectedIdsChange(new Set())}
               className="flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm bg-red-900/50 border-2 border-red-500 text-red-400 rounded-md font-bold hover:bg-red-900/70"
             >
               CLEAR
