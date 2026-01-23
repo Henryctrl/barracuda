@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, ExternalLink, Save } from 'lucide-react';
+import { X, ExternalLink, Save, User } from 'lucide-react';
 import { PropertyProspect, ProspectionStatus, STATUS_CONFIG } from '../types';
 
 interface ProspectDetailModalProps {
@@ -67,30 +67,50 @@ export default function ProspectDetailModal({ prospect, onClose, onUpdate }: Pro
             </div>
           )}
 
-          {/* Status Badge */}
-          <div className="flex items-center gap-3">
-            <div
-              className="w-6 h-6 rounded-full border-2 border-white"
-              style={{
-                backgroundColor: STATUS_CONFIG[formData.status].dotColor,
-                boxShadow: `0 0 12px ${STATUS_CONFIG[formData.status].dotColor}`
-              }}
-            />
-            {isEditing ? (
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value as ProspectionStatus })}
-                className="px-3 py-2 bg-background-light border-2 border-accent-cyan text-white rounded-md"
-              >
-                {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                  <option key={key} value={key}>{config.label}</option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-xl font-bold text-accent-cyan">
-                {STATUS_CONFIG[formData.status].label}
-              </span>
-            )}
+          {/* Status Badge and Added By */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-6 h-6 rounded-full border-2 border-white"
+                style={{
+                  backgroundColor: STATUS_CONFIG[formData.status].dotColor,
+                  boxShadow: `0 0 12px ${STATUS_CONFIG[formData.status].dotColor}`
+                }}
+              />
+              {isEditing ? (
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as ProspectionStatus })}
+                  className="px-3 py-2 bg-background-light border-2 border-accent-cyan text-white rounded-md"
+                >
+                  {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                    <option key={key} value={key}>{config.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xl font-bold text-accent-cyan">
+                  {STATUS_CONFIG[formData.status].label}
+                </span>
+              )}
+            </div>
+
+            {/* Added By */}
+            <div className="flex items-center gap-2">
+              <User size={18} className="text-accent-magenta" />
+              <label className="text-text-primary/60 text-sm font-semibold">ADDED BY:</label>
+              {isEditing ? (
+                <select
+                  value={formData.added_by || 'Henry'}
+                  onChange={(e) => setFormData({ ...formData, added_by: e.target.value })}
+                  className="px-3 py-2 bg-background-light border-2 border-accent-magenta text-white rounded-md font-bold"
+                >
+                  <option value="Henry" className="bg-background-light">Henry</option>
+                  <option value="Millé" className="bg-background-light">Millé</option>
+                </select>
+              ) : (
+                <span className="text-accent-magenta font-bold">{formData.added_by || 'N/A'}</span>
+              )}
+            </div>
           </div>
 
           {/* Property Details */}

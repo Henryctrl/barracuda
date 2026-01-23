@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Upload, FileText, AlertTriangle, ArrowRight } from 'lucide-react';
+import { X, Upload, FileText, AlertTriangle, ArrowRight, User } from 'lucide-react';
 import { PropertyProspect } from '../types';
 import { useRouter } from 'next/navigation';
 
@@ -10,12 +10,13 @@ interface UploadCSVModalProps {
   onRefresh: () => Promise<void>;
 }
 
-export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {
+export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalProps) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Partial<PropertyProspect>[]>([]);
   const [error, setError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [addedBy, setAddedBy] = useState<string>('Henry');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -165,13 +166,25 @@ export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {
   };
 
   const handleSendToReview = () => {
+    if (!addedBy) {
+      setError('Please select who is adding this data');
+      return;
+    }
+
     setIsProcessing(true);
+    
+    // Add 'added_by' to each entry
+    const dataWithAddedBy = preview.map(entry => ({
+      ...entry,
+      added_by: addedBy
+    }));
     
     // Store in localStorage with timestamp
     const reviewData = {
-      data: preview,
+      data: dataWithAddedBy,
       uploadedAt: new Date().toISOString(),
-      filename: file?.name
+      filename: file?.name,
+      addedBy: addedBy
     };
     
     localStorage.setItem('csv_review_queue', JSON.stringify(reviewData));
@@ -195,6 +208,22 @@ export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Added By Selector */}
+          <div className="border-2 border-accent-magenta rounded-lg p-4 bg-accent-magenta/10">
+            <label className="text-accent-magenta font-bold mb-2 flex items-center gap-2">
+              <User size={20} />
+              WHO IS ADDING THIS DATA? <span className="text-red-400">*</span>
+            </label>
+            <select
+              value={addedBy}
+              onChange={(e) => setAddedBy(e.target.value)}
+              className="w-full px-4 py-3 bg-background-light border-2 border-accent-magenta text-white rounded-md focus:outline-none focus:border-accent-magenta font-bold text-lg"
+            >
+              <option value="Henry" className="bg-background-light">Henry</option>
+              <option value="Millé" className="bg-background-light">Millé</option>
+            </select>
+          </div>
+
           {/* File Upload */}
           <div className="border-2 border-dashed border-accent-yellow rounded-lg p-8 text-center">
             <input
@@ -279,7 +308,7 @@ export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {
                 </button>
                 <button
                   onClick={handleSendToReview}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !addedBy}
                   className="px-6 py-2 bg-accent-yellow border-2 border-accent-yellow text-background-dark rounded-md font-bold hover:bg-accent-yellow/80 disabled:opacity-50 shadow-glow-yellow"
                 >
                   <ArrowRight className="inline mr-2" size={18} />

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { PropertyProspect, STATUS_CONFIG, ProspectionStatus } from '../types';
-import { Trash2, ExternalLink, ChevronUp, ChevronDown, ListPlus } from 'lucide-react';
+import { Trash2, ExternalLink, ChevronUp, ChevronDown, ListPlus, User } from 'lucide-react';
 import ProspectDetailModal from './ProspectDetailModal';
 
 interface ProspectionTableProps {
@@ -23,6 +23,7 @@ export default function ProspectionTable({
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBatchActions, setShowBatchActions] = useState(false);
+  const [showBatchAddedBy, setShowBatchAddedBy] = useState(false);
   const [showHitListModal, setShowHitListModal] = useState(false);
 
   const handleSort = (field: 'price' | 'town' | 'last_contact_date') => {
@@ -58,6 +59,14 @@ export default function ProspectionTable({
     });
     setSelectedIds(new Set());
     setShowBatchActions(false);
+  };
+
+  const batchUpdateAddedBy = (addedBy: string) => {
+    selectedIds.forEach(id => {
+      onProspectUpdate(id, { added_by: addedBy });
+    });
+    setSelectedIds(new Set());
+    setShowBatchAddedBy(false);
   };
 
   const addToHitList = (listName?: string) => {
@@ -151,10 +160,24 @@ export default function ProspectionTable({
           
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
             <button
-              onClick={() => setShowBatchActions(!showBatchActions)}
+              onClick={() => {
+                setShowBatchActions(!showBatchActions);
+                setShowBatchAddedBy(false);
+              }}
               className="flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm bg-accent-cyan text-background-dark rounded-md font-bold hover:bg-accent-cyan/80"
             >
               UPDATE STATUS
+            </button>
+
+            <button
+              onClick={() => {
+                setShowBatchAddedBy(!showBatchAddedBy);
+                setShowBatchActions(false);
+              }}
+              className="flex-1 sm:flex-none px-3 py-2 text-xs sm:text-sm bg-accent-magenta text-background-dark rounded-md font-bold hover:bg-accent-magenta/80"
+            >
+              <User className="inline mr-1 sm:mr-2" size={16} />
+              ADDED BY
             </button>
 
             <button
@@ -193,6 +216,29 @@ export default function ProspectionTable({
                 {config.label}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {showBatchAddedBy && selectedIds.size > 0 && (
+        <div className="mb-4 bg-background-light border-2 border-accent-magenta rounded-md p-4">
+          <h3 className="text-accent-magenta font-bold mb-3 text-sm sm:text-base flex items-center gap-2">
+            <User size={20} />
+            UPDATE "ADDED BY" FOR SELECTED:
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => batchUpdateAddedBy('Henry')}
+              className="px-6 py-3 text-sm sm:text-base rounded-md font-bold border-2 border-accent-magenta text-accent-magenta bg-accent-magenta/20 hover:bg-accent-magenta hover:text-background-dark transition-all"
+            >
+              Henry
+            </button>
+            <button
+              onClick={() => batchUpdateAddedBy('Millé')}
+              className="px-6 py-3 text-sm sm:text-base rounded-md font-bold border-2 border-accent-magenta text-accent-magenta bg-accent-magenta/20 hover:bg-accent-magenta hover:text-background-dark transition-all"
+            >
+              Millé
+            </button>
           </div>
         </div>
       )}

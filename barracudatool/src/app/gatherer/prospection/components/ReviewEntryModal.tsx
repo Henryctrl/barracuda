@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Check, AlertTriangle, Layers, Search } from 'lucide-react';
+import { X, Check, AlertTriangle, Layers, Search, User } from 'lucide-react';
 import { PropertyProspect, ProspectionStatus, STATUS_CONFIG } from '../types';
 import * as maptilersdk from '@maptiler/sdk';
 import '@maptiler/sdk/dist/maptiler-sdk.css';
@@ -397,6 +397,22 @@ export default function ReviewEntryModal({
               <h3 className="text-accent-cyan font-bold mb-3">PROSPECTION STATUS</h3>
 
               <div className="space-y-3">
+                {/* Added By */}
+                <div>
+                  <label className="text-text-primary/80 mb-1 font-semibold text-sm flex items-center gap-2">
+                    <User size={16} />
+                    Added By
+                  </label>
+                  <select
+                    value={formData.added_by || 'Henry'}
+                    onChange={(e) => handleChange('added_by', e.target.value)}
+                    className="w-full px-3 py-2 bg-background-light border-2 border-accent-cyan/50 text-white rounded-md focus:outline-none focus:border-accent-cyan"
+                  >
+                    <option value="Henry" className="bg-background-light">Henry</option>
+                    <option value="Millé" className="bg-background-light">Millé</option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-text-primary/80 mb-1 font-semibold text-sm">Status</label>
                   <select
