@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 interface UploadCSVModalProps {
   onClose: () => void;
+  onRefresh: () => Promise<void>;
 }
 
 export default function UploadCSVModal({ onClose }: UploadCSVModalProps) {

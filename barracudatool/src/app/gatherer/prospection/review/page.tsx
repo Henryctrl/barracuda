@@ -6,12 +6,13 @@ import { ArrowLeft, Check, X, AlertTriangle, FileText, Trash2 } from 'lucide-rea
 import { PropertyProspect } from '../types';
 import ReviewEntryModal from '../components/ReviewEntryModal';
 
+
 export default function ReviewQueuePage() {
   const router = useRouter();
   const [reviewQueue, setReviewQueue] = useState<Partial<PropertyProspect>[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [validatedEntries, setValidatedEntries] = useState<Partial<PropertyProspect>[]>([]);
+  const [validatedEntries, setValidatedEntries] = useState<Array<{ index: number; data: Partial<PropertyProspect> }>>([]);
   const [skippedIndices, setSkippedIndices] = useState<number[]>([]);
   const [filename, setFilename] = useState('');
   const [uploadedAt, setUploadedAt] = useState('');
@@ -32,7 +33,7 @@ export default function ReviewQueuePage() {
   }, [router]);
 
   const handleSaveEntry = (data: Partial<PropertyProspect>) => {
-    setValidatedEntries([...validatedEntries, data]);
+    setValidatedEntries([...validatedEntries, { index: currentIndex, data }]);
     setShowReviewModal(false);
 
     // Move to next entry
@@ -71,10 +72,12 @@ export default function ReviewQueuePage() {
     setIsSaving(true);
 
     try {
+      const dataToSave = validatedEntries.map(v => v.data);
+      
       const response = await fetch('/api/prospection/upload-csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prospects: validatedEntries }),
+        body: JSON.stringify({ prospects: dataToSave }),
       });
 
       const result = await response.json();
@@ -109,7 +112,7 @@ export default function ReviewQueuePage() {
   };
 
   const remainingEntries = reviewQueue.filter((_, idx) => 
-    !validatedEntries.some((v, i) => i === idx) && !skippedIndices.includes(idx)
+    !validatedEntries.some(v => v.index === idx) && !skippedIndices.includes(idx)
   );
 
   return (
@@ -191,7 +194,7 @@ export default function ReviewQueuePage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 max-w-5xl mx-auto">
             {reviewQueue.map((entry, index) => {
-              const isValidated = validatedEntries.some((_, i) => i === index);
+              const isValidated = validatedEntries.some(v => v.index === index);
               const isSkipped = skippedIndices.includes(index);
               const isPending = !isValidated && !isSkipped;
 
