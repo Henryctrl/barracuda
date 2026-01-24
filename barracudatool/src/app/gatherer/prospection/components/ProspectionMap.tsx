@@ -218,12 +218,13 @@ pulseRing.style.cssText = `
   const addToHitList = (listName?: string) => {
     const selectedProspects = prospects.filter(p => selectedIds.has(p.id));
     const stored = localStorage.getItem('hit_lists');
-    let hitLists = stored ? JSON.parse(stored) : [];
+    const hitLists = stored ? JSON.parse(stored) : [];
 
-    if (listName) {
-      const existingList = hitLists.find((list: any) => list.name === listName);
-      if (existingList) {
-        const existingIds = new Set(existingList.prospects.map((p: any) => p.id));
+if (listName) {
+  const existingList = hitLists.find((list: { name: string; prospects: PropertyProspect[] }) => list.name === listName);
+  if (existingList) {
+    const existingIds = new Set(existingList.prospects.map((p: PropertyProspect) => p.id));
+
         selectedProspects.forEach(p => {
           if (!existingIds.has(p.id)) {
             existingList.prospects.push(p);
