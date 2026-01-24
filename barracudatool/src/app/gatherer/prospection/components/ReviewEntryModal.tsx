@@ -30,7 +30,7 @@ export default function ReviewEntryModal({
 }: ReviewEntryModalProps) {
   const [formData, setFormData] = useState<Partial<PropertyProspect>>(entry);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [mapStyle, setMapStyle] = useState<'basic' | 'satellite'>('basic');
+  const [mapStyle, setMapStyle] = useState<'basic' | 'satellite'>('satellite'); // Changed default to 'satellite'
   const [searchQuery, setSearchQuery] = useState(entry.address || '');
   const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -39,14 +39,14 @@ export default function ReviewEntryModal({
   const map = useRef<maptilersdk.Map | null>(null);
   const marker = useRef<maptilersdk.Marker | null>(null);
 
-  // Initialize map
+  // Initialize map in satellite mode
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
     maptilersdk.config.apiKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY!;
     const newMap = new maptilersdk.Map({
       container: mapContainer.current,
-      style: maptilersdk.MapStyle.BASIC,
+      style: maptilersdk.MapStyle.SATELLITE, // Changed default style to SATELLITE
       center: [2.3522, 48.8566],
       zoom: 6
     });
@@ -97,7 +97,7 @@ export default function ReviewEntryModal({
     // Fly to location
     map.current.flyTo({
       center: [formData.longitude, formData.latitude],
-      zoom: 14,
+      zoom: 17,
       duration: 1000
     });
   }, [formData.latitude, formData.longitude]);
@@ -475,18 +475,8 @@ export default function ReviewEntryModal({
                 </p>
               </div>
               
-              {/* Map Style Toggle */}
+              {/* Map Style Toggle - Switched order */}
               <div className="flex border-2 border-accent-cyan rounded overflow-hidden">
-                <button
-                  onClick={() => setMapStyle('basic')}
-                  className={`px-3 py-1 text-xs font-bold transition-all ${
-                    mapStyle === 'basic'
-                      ? 'bg-accent-cyan text-background-dark'
-                      : 'bg-transparent text-accent-cyan hover:bg-accent-cyan/20'
-                  }`}
-                >
-                  MAP
-                </button>
                 <button
                   onClick={() => setMapStyle('satellite')}
                   className={`px-3 py-1 text-xs font-bold transition-all ${
@@ -496,7 +486,17 @@ export default function ReviewEntryModal({
                   }`}
                 >
                   <Layers className="inline mr-1" size={12} />
-                  SATELLITE
+                  SAT
+                </button>
+                <button
+                  onClick={() => setMapStyle('basic')}
+                  className={`px-3 py-1 text-xs font-bold transition-all ${
+                    mapStyle === 'basic'
+                      ? 'bg-accent-cyan text-background-dark'
+                      : 'bg-transparent text-accent-cyan hover:bg-accent-cyan/20'
+                  }`}
+                >
+                  MAP
                 </button>
               </div>
             </div>
