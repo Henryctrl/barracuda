@@ -480,7 +480,7 @@ if (listName) {
               {(() => {
                 const stored = localStorage.getItem('hit_lists');
                 const existing = stored ? JSON.parse(stored) : [];
-                return existing.map((list: any) => (
+                return existing.map((list: { id: string; name: string }) => (
                   <button
                     key={list.id}
                     onClick={() => addToHitList(list.name)}
