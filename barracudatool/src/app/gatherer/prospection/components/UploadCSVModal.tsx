@@ -22,17 +22,26 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    if (!selectedFile.name.endsWith('.csv')) {
-      setError('Please select a CSV file');
+    const isCSV = selectedFile.name.endsWith('.csv');
+    const isTSV = selectedFile.name.endsWith('.tsv') || selectedFile.name.endsWith('.txt');
+
+    if (!isCSV && !isTSV) {
+      setError('Please select a CSV or TSV file');
       return;
     }
 
     setFile(selectedFile);
     setError('');
-    parseCSV(selectedFile);
+    parseFile(selectedFile, isTSV ? '\t' : ',');
   };
 
-  const parseCSVLine = (line: string): string[] => {
+  const parseFileLine = (line: string, delimiter: string): string[] => {
+    if (delimiter === '\t') {
+      // TSV is simple - just split by tabs
+      return line.split('\t').map(field => field.trim());
+    }
+
+    // CSV parsing with quote handling
     const result: string[] = [];
     let current = '';
     let inQuotes = false;
@@ -42,7 +51,7 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
 
       if (char === '"') {
         inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
+      } else if (char === delimiter && !inQuotes) {
         result.push(current.trim());
         current = '';
       } else {
@@ -60,90 +69,165 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
       .trim();
   };
 
+  const cleanPhoneNumber = (phone: string): string => {
+    // Remove prefixes like "Mobile : " or "Mobile: "
+    return phone.replace(/^(Mobile\s*:\s*|Phone\s*:\s*)/i, '').trim();
+  };
+
   const extractPostcodeFromAddress = (address: string): { 
     cleanAddress: string; 
     postcode?: string; 
-    town?: string 
+    town?: string;
+    latitude?: number;
+    longitude?: number;
   } => {
     if (!address) return { cleanAddress: '' };
     
+    // Extract coordinates if present (format: "44.536065, 0.823411")
+    const coordMatch = address.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    
+    if (coordMatch) {
+      latitude = parseFloat(coordMatch[1]);
+      longitude = parseFloat(coordMatch[2]);
+      // Remove coordinates from address
+      address = address.replace(coordMatch[0], '').trim();
+    }
+    
+    // Extract postcode (5 digits for French postcodes)
     const postcodeMatch = address.match(/\b(\d{5})\b/);
     
     if (postcodeMatch) {
       const postcode = postcodeMatch[1];
       const parts = address.split(postcode);
-      const town = parts[1]?.trim().split(/[,\n]/)[0]?.trim();
-      const cleanAddress = parts[0].trim();
       
-      return { cleanAddress, postcode, town };
+      // Town is after the postcode
+      const townPart = parts[1]?.trim().replace(/[\r\n]+/g, ' ').trim();
+      const town = townPart?.split(/[,]/)[0]?.trim();
+      
+      // Clean address is before the postcode
+      const cleanAddress = parts[0].trim().replace(/[\n\r]+/g, ' ').trim();
+      
+      return { cleanAddress, postcode, town, latitude, longitude };
     }
     
-    return { cleanAddress: address };
+    return { 
+      cleanAddress: address.replace(/[\n\r]+/g, ' ').trim(), 
+      latitude, 
+      longitude 
+    };
   };
 
-  const parseCSV = (file: File) => {
+  const parseFile = (file: File, delimiter: string) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const lines = text.split(/\r?\n/).filter(line => {
         const trimmed = line.trim();
-        return trimmed && trimmed.replace(/,/g, '').length > 0;
+        return trimmed && trimmed.replace(/[,\t]/g, '').length > 0;
       });
   
       if (lines.length < 2) {
-        setError('CSV file is empty or invalid');
+        setError('File is empty or invalid');
         return;
       }
   
-      const headers = parseCSVLine(lines[0]).map(h => normalizeHeader(h));
+      const headers = parseFileLine(lines[0], delimiter).map(h => normalizeHeader(h));
       const data: Partial<PropertyProspect>[] = [];
   
       console.log('Detected headers:', headers);
+      console.log('Using delimiter:', delimiter === '\t' ? 'TAB' : 'COMMA');
   
       for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
+        const values = parseFileLine(lines[i], delimiter);
         const row: Record<string, string | number | undefined> = {};
   
         headers.forEach((header, index) => {
-          const value = values[index] || '';
-  
-          if (header.includes('link') || header === 'photo') {
+          const value = values[index]?.trim() || '';
+
+          // Skip empty values
+          if (!value) return;
+
+          // Link/Photo URL
+          if (header.includes('link')) {
             row.link = value;
-          } else if (header.includes('property address') || header === 'exact location' || header === 'address') {
+          } 
+          // Photo URL
+          else if (header.includes('photo_url') || header === 'photo') {
+            row.photo_url = value;
+          }
+          // Property Address (with embedded coords and postcode)
+          else if (header.includes('property address') || header === 'exact location' || header === 'address') {
             const extracted = extractPostcodeFromAddress(value);
             row.address = extracted.cleanAddress || value;
-            if (extracted.postcode && !row.postcode) row.postcode = extracted.postcode;
-            if (extracted.town && !row.town) row.town = extracted.town;
-          } else if (header.includes('photo_url') || header === 'photo') {
-            row.photo_url = value;
-          } else if (header === 'town') {
+            if (extracted.postcode) row.postcode = extracted.postcode;
+            if (extracted.town) row.town = extracted.town;
+            if (extracted.latitude) row.latitude = extracted.latitude;
+            if (extracted.longitude) row.longitude = extracted.longitude;
+          }
+          // Town
+          else if (header === 'town') {
             row.town = value;
-          } else if (header === 'postcode') {
+          } 
+          // Postcode
+          else if (header === 'postcode') {
             row.postcode = value;
-          } else if (header === 'price') {
-            const cleanPrice = value.replace(/[€,]/g, '').trim();
+          } 
+          // Price
+          else if (header === 'price') {
+            const cleanPrice = value.replace(/[€,$,\s]/g, '').trim();
             row.price = cleanPrice ? parseFloat(cleanPrice) : undefined;
-          } else if (header.includes('type') || header === 'property_type') {
+          } 
+          // Property Type
+          else if (header.includes('type') || header === 'property_type') {
             row.property_type = value;
-          } else if (header === 'agency' || header === 'current agent' || header === 'current_agent') {
+          } 
+          // Agency
+          else if (header === 'agency' || header === 'current agent' || header === 'current_agent') {
             row.current_agent = value;
-          } else if (header.includes('owners names') || header.includes('owner name') || header === 'owner_name') {
-            row.owner_name = value;
-          } else if (header.includes('phone') || header === 'owner_phone') {
-            row.owner_phone = value;
-          } else if (header.includes('email') || header === 'owner_email') {
+          }
+          // Owner Names
+          else if (header.includes('owners names') || header.includes('owner name') || header === 'owner_name') {
+            row.owner_name = value.replace(/[\n\r]+/g, ' ').trim();
+          } 
+          // Owner Phone
+          else if (header.includes('phone') || header === 'owner_phone') {
+            row.owner_phone = cleanPhoneNumber(value);
+          } 
+          // Owner Email
+          else if (header.includes('email') || header === 'owner_email') {
             row.owner_email = value;
-          } else if (header.includes('owners actual address') || header.includes('owner address') || header === 'owner_address') {
-            row.owner_address = value;
-          } else if (header.includes('last contact') || header.includes('date first came') || header === 'last_contact_date') {
-            row.last_contact_date = value;
-          } else if (header === 'notes' || header === 'response' || header.includes('contacted')) {
+          } 
+          // Owner Address (actual address)
+          else if (header.includes('owners actual address') || header.includes('owner address') || header === 'owner_address') {
+            row.owner_address = value.replace(/[\n\r]+/g, ' ').trim();
+          } 
+          // Last Contact Date / Date first came on market
+          else if (header.includes('last contact') || header.includes('date first came') || header === 'last_contact_date') {
+            // Try to parse date formats like "02/08/2024" or "24/02/2025"
+            if (value) {
+              const dateMatch = value.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+              if (dateMatch) {
+                // Convert DD/MM/YYYY to YYYY-MM-DD
+                const [, day, month, year] = dateMatch;
+                row.last_contact_date = `${year}-${month}-${day}`;
+              } else {
+                row.last_contact_date = value;
+              }
+            }
+          } 
+          // Notes
+          else if (header === 'notes' || header === 'response' || header.includes('contacted')) {
             row.notes = value;
-          } else if (header.includes('reference') || header === 'internal reference') {
+          } 
+          // Internal Reference
+          else if (header.includes('reference') || header === 'internal reference') {
             row.reference = value;
           }
         });
   
+        // Only add row if it has meaningful data
         if (row.address || row.link || row.owner_name || row.reference) {
           row.status = 'not_contacted';
           data.push(row);
@@ -151,9 +235,10 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
       }
   
       if (data.length === 0) {
-        setError('No valid data found in CSV. Detected columns: ' + headers.join(', '));
+        setError('No valid data found. Detected columns: ' + headers.join(', '));
       } else {
         console.log('Successfully parsed', data.length, 'rows');
+        console.log('Sample row:', data[0]);
         setPreview(data);
       }
     };
@@ -199,7 +284,7 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
       <div className="bg-background-dark border-2 border-accent-yellow rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-glow-yellow">
         <div className="sticky top-0 bg-background-dark border-b-2 border-accent-yellow p-4 flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-accent-yellow">UPLOAD CSV DATA</h2>
+            <h2 className="text-2xl font-bold text-accent-yellow">UPLOAD CSV/TSV DATA</h2>
             <p className="text-text-primary/70 text-sm mt-1">Upload and send to review queue for validation</p>
           </div>
           <button onClick={onClose} className="text-accent-yellow hover:text-accent-magenta">
@@ -228,7 +313,7 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
           <div className="border-2 border-dashed border-accent-yellow rounded-lg p-8 text-center">
             <input
               type="file"
-              accept=".csv"
+              accept=".csv,.tsv,.txt"
               onChange={handleFileChange}
               className="hidden"
               id="csv-upload"
@@ -240,10 +325,10 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
               <Upload size={48} className="text-accent-yellow" />
               <div>
                 <p className="text-accent-yellow font-bold text-lg mb-2">
-                  {file ? file.name : 'Click to upload CSV file'}
+                  {file ? file.name : 'Click to upload CSV or TSV file'}
                 </p>
                 <p className="text-text-primary/60 text-sm">
-                  Supported columns: address, town, postcode, price, type, agency, owner info, etc.
+                  Supported: CSV, TSV (recommended), TXT • Columns: address, town, postcode, price, type, agency, owner info
                 </p>
               </div>
             </label>
@@ -271,11 +356,16 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
                       <div key={index} className="bg-background-light p-3 rounded border border-accent-cyan/30">
                         <p className="text-white font-semibold">{prospect.address || prospect.reference || 'No address'}</p>
                         <div className="text-sm text-text-primary/70 mt-1 flex gap-4 flex-wrap">
+                          {prospect.reference && <span className="text-accent-yellow">Ref: {prospect.reference}</span>}
                           {prospect.town && <span>Town: {prospect.town}</span>}
-                          {prospect.postcode && <span>Postcode: {prospect.postcode}</span>}
-                          {prospect.price && <span>Price: €{prospect.price.toLocaleString()}</span>}
-                          {prospect.property_type && <span>Type: {prospect.property_type}</span>}
+                          {prospect.postcode && <span>PC: {prospect.postcode}</span>}
+                          {prospect.price && <span>€{prospect.price.toLocaleString()}</span>}
+                          {prospect.current_agent && <span>Agency: {prospect.current_agent}</span>}
                           {prospect.owner_name && <span>Owner: {prospect.owner_name}</span>}
+                          {prospect.owner_phone && <span>📞 {prospect.owner_phone}</span>}
+                          {prospect.latitude && prospect.longitude && (
+                            <span className="text-accent-cyan font-bold">✓ Geocoded</span>
+                          )}
                         </div>
                       </div>
                     ))}
