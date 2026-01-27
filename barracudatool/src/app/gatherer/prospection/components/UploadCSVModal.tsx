@@ -203,20 +203,26 @@ export default function UploadCSVModal({ onClose, onRefresh }: UploadCSVModalPro
           else if (header.includes('owners actual address') || header.includes('owner address') || header === 'owner_address') {
             row.owner_address = value.replace(/[\n\r]+/g, ' ').trim();
           } 
-          // Last Contact Date / Date first came on market
-          else if (header.includes('last contact') || header.includes('date first came') || header === 'last_contact_date') {
-            // Try to parse date formats like "02/08/2024" or "24/02/2025"
-            if (value) {
-              const dateMatch = value.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-              if (dateMatch) {
-                // Convert DD/MM/YYYY to YYYY-MM-DD
-                const [, day, month, year] = dateMatch;
-                row.last_contact_date = `${year}-${month}-${day}`;
-              } else {
-                row.last_contact_date = value;
-              }
-            }
-          } 
+          // Last Contact Date only
+else if (header.includes('last contact') || header === 'last_contact_date') {
+  // Try to parse date formats like "02/08/2024" or "24/02/2025"
+  if (value) {
+    const dateMatch = value.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (dateMatch) {
+      // Convert DD/MM/YYYY to YYYY-MM-DD
+      const [, day, month, year] = dateMatch;
+      row.last_contact_date = `${year}-${month}-${day}`;
+    } else {
+      row.last_contact_date = value;
+    }
+  }
+}
+// Ignore "Date first came on market" - not in DB
+else if (header.includes('date first came')) {
+  // Skip this field - not in database
+  return;
+}
+
           // Notes
           else if (header === 'notes' || header === 'response' || header.includes('contacted')) {
             row.notes = value;
