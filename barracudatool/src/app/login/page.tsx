@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -43,6 +45,38 @@ export default function LoginPage() {
     } catch (err) {
       setError('An unexpected error occurred');
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setError('Please enter your email address first');
+      return;
+    }
+
+    setResetting(true);
+    setError('');
+    setResetSent(false);
+
+    try {
+      const supabase = createClient();
+      
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        {
+          redirectTo: `${window.location.origin}/reset-password`,
+        }
+      );
+
+      if (error) {
+        setError(error.message);
+      } else {
+        setResetSent(true);
+      }
+    } catch (err) {
+      setError('Failed to send reset email');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -123,6 +157,12 @@ export default function LoginPage() {
               </div>
             )}
 
+            {resetSent && (
+              <div className="p-3 bg-green-500/10 border border-green-500 rounded text-green-500 text-sm">
+                ✓ Password reset email sent! Check your inbox.
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -134,6 +174,15 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center space-y-3">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={resetting}
+              className="text-sm text-[#00ffff] hover:text-white transition-colors disabled:opacity-50"
+            >
+              {resetting ? 'Sending...' : 'Forgot Password?'}
+            </button>
+
             <div className="pt-4 border-t border-[#00ffff]/30">
               <p className="text-sm text-gray-400">
                 New Agent?{' '}
