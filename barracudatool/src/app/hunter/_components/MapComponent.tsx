@@ -554,7 +554,8 @@ if (communeCodes.length > 0) {
     const newMap = new maptilersdk.Map({
       container: mapContainer.current,
       style: maptilersdk.MapStyle.BASIC,
-      center: [0.4816, 44.8527], //Bergerac
+      center: [1.1915, 46.4064], //Tilly - Coulonges - Chris's house
+      //center: [0.4816, 44.8527], //Bergerac
       zoom: 10
     });
     
