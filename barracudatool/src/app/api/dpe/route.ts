@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   }
   
   try {
-    const dataset = 'dpe03existant';
+    const dataset = 'meg-83tjwtg8dyz4vv7h1dqe'; //had to change this line as the link have been changed due to dataset changes, if it changes again then ask claude code and it will be able to provide the new link and this will need to be changed again i think. 
     const queryParams = new URLSearchParams({
         qs: `code_postal_ban:"${postalCode}"`,
         size: '10000',
