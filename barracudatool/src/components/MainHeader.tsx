@@ -18,15 +18,15 @@ export default function MainHeader() {
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#171512]/85 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div className="flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-3 text-stone-100 no-underline">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+          <Link href="/" className="flex items-center gap-3 text-[#F4EEE7] no-underline">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#FF6A1A]/30 bg-[#FF6A1A]/12 text-[#FF8138] shadow-[0_8px_22px_rgba(255,106,26,0.10)]">
               <Building2 size={18} />
             </div>
             <div>
-              <div className="text-sm font-semibold tracking-[0.18em] text-stone-100 uppercase">
+              <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#F4EEE7]">
                 Barracuda
               </div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-[#867A70]">
                 Gatherer workspace
               </div>
             </div>
@@ -36,8 +36,7 @@ export default function MainHeader() {
         <nav className="flex flex-wrap items-center gap-2">
           {navItems.map((item) => {
             const Icon = item.icon
-            const isActive =
-              pathname === item.href || pathname?.startsWith(`${item.href}/`)
+            const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`)
 
             return (
               <Link
@@ -45,8 +44,8 @@ export default function MainHeader() {
                 href={item.href}
                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-200 no-underline ${
                   isActive
-                    ? 'border-amber-300/25 bg-amber-400/10 text-amber-200 shadow-[0_0_0_1px_rgba(251,191,36,0.08)]'
-                    : 'border-white/10 bg-white/[0.03] text-stone-300 hover:border-white/15 hover:bg-white/[0.05] hover:text-stone-100'
+                    ? 'border-[#FF6A1A]/30 bg-[#FF6A1A]/12 text-[#FFB58D] shadow-[0_0_0_1px_rgba(255,106,26,0.06),0_0_24px_rgba(255,106,26,0.08)]'
+                    : 'border-white/10 bg-white/[0.03] text-[#B9AEA2] hover:border-[#FF6A1A]/22 hover:bg-[#FF6A1A]/8 hover:text-[#F4EEE7]'
                 }`}
               >
                 <Icon size={15} />
@@ -57,18 +56,18 @@ export default function MainHeader() {
         </nav>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex min-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-stone-400">
-            <Search size={16} className="text-stone-500" />
+          <div className="flex min-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[#B9AEA2] transition-colors duration-200 focus-within:border-[#FF6A1A]/30 focus-within:bg-[#FF6A1A]/6">
+            <Search size={16} className="text-[#867A70]" />
             <input
               type="text"
               placeholder="Search clients or activity"
-              className="w-full bg-transparent text-sm text-stone-200 placeholder:text-stone-500 focus:outline-none"
+              className="w-full bg-transparent text-sm text-[#DDD2C8] placeholder:text-[#867A70] focus:outline-none"
             />
           </div>
 
           <Link
             href="/account"
-            className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2 text-sm font-medium text-amber-200 transition-all duration-200 no-underline hover:border-amber-300/30 hover:bg-amber-400/14"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-[#FF6A1A]/30 bg-[#FF6A1A]/12 px-4 py-2 text-sm font-medium text-[#FFB58D] transition-all duration-200 no-underline hover:border-[#FF6A1A]/38 hover:bg-[#FF6A1A]/18 hover:text-[#FFD0B4]"
           >
             <Settings size={15} />
             Account

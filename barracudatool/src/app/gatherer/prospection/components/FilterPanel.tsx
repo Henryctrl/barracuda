@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { X, RotateCcw, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { X, RotateCcw, Search, SlidersHorizontal, MapPinned } from 'lucide-react';
 import { ProspectionFilters, ProspectionStatus, STATUS_CONFIG } from '../types';
 
 interface BanFeature {
@@ -17,9 +17,14 @@ interface FilterPanelProps {
 
 export default function FilterPanel({ filters, onFiltersChange, onClose }: FilterPanelProps) {
   const [localFilters, setLocalFilters] = useState<ProspectionFilters>(filters);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(filters.town || '');
   const [suggestions, setSuggestions] = useState<BanFeature[]>([]);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setLocalFilters(filters);
+    setSearchQuery(filters.town || '');
+  }, [filters]);
 
   const handleApply = () => {
     onFiltersChange(localFilters);
@@ -36,17 +41,21 @@ export default function FilterPanel({ filters, onFiltersChange, onClose }: Filte
   const toggleStatus = (status: ProspectionStatus) => {
     const currentStatuses = localFilters.status || [];
     const newStatuses = currentStatuses.includes(status)
-      ? currentStatuses.filter((s: ProspectionStatus) => s !== status)
+      ? currentStatuses.filter((s) => s !== status)
       : [...currentStatuses, status];
-    setLocalFilters({ ...localFilters, status: newStatuses.length > 0 ? newStatuses : undefined });
+
+    setLocalFilters({
+      ...localFilters,
+      status: newStatuses.length > 0 ? newStatuses : undefined,
+    });
   };
 
-  // Fetch autocomplete suggestions
   const fetchSuggestions = async (query: string) => {
     if (query.length < 3) {
       setSuggestions([]);
       return;
     }
+
     try {
       const response = await fetch(
         `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5&type=municipality`
@@ -62,197 +71,258 @@ export default function FilterPanel({ filters, onFiltersChange, onClose }: Filte
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
-    
+
+    if (!query.trim()) {
+      setLocalFilters((prev) => ({ ...prev, town: undefined, searchCenter: undefined }));
+    }
+
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => {
       fetchSuggestions(query);
-    }, 300);
+    }, 250);
   };
 
   const handleSuggestionClick = (feature: BanFeature) => {
     const { city } = feature.properties;
     const [lon, lat] = feature.geometry.coordinates;
-    
+
     setSearchQuery(city || feature.properties.label);
     setSuggestions([]);
-    
+
     setLocalFilters({
       ...localFilters,
-      town: city,
-      searchCenter: [lon, lat]
+      town: city || feature.properties.label,
+      searchCenter: [lon, lat],
     });
   };
 
   const handleClearSearch = () => {
     setSearchQuery('');
     setSuggestions([]);
-    setLocalFilters({ ...localFilters, town: undefined });
+    setLocalFilters({
+      ...localFilters,
+      town: undefined,
+      searchCenter: undefined,
+    });
   };
 
   return (
-    <div className="bg-background-light/95 border-b-2 border-accent-magenta p-4 backdrop-blur-sm">
-      <div className="container mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-accent-magenta font-bold text-lg">FILTER OPTIONS</h3>
-          <div className="flex gap-2">
+    <div className="border-b border-white/10 bg-[#151311]/95 backdrop-blur-xl">
+      <div className="mx-auto w-full max-w-[1600px] px-4 py-4 sm:px-6">
+        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#c89b6d]">
+              <SlidersHorizontal size={14} />
+              Filter controls
+            </div>
+            <h3 className="text-lg font-semibold text-[#f4ede7]">Refine your search set</h3>
+            <p className="text-sm text-[#b7aca2]">
+              Tune price, location, distance, and status without leaving the prospection workflow.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={handleReset}
-              className="px-3 py-1 text-sm bg-transparent border border-text-primary/50 text-text-primary rounded hover:bg-text-primary/10"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#d7ccc2] transition hover:border-[#c89b6d]/35 hover:bg-[#c89b6d]/10 hover:text-[#f6ede4]"
             >
-              <RotateCcw size={16} className="inline mr-1" />
-              RESET
+              <RotateCcw size={16} />
+              Reset
             </button>
-            <button onClick={onClose} className="text-accent-magenta hover:text-accent-cyan">
-              <X size={24} />
+
+            <button
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] p-2 text-[#cdbfb3] transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+              aria-label="Close filters"
+            >
+              <X size={18} />
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Price Range */}
-          <div>
-            <label className="block text-text-primary/80 mb-2 font-semibold text-sm">PRICE RANGE (€)</label>
-            <div className="flex gap-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-[#1b1815] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#b9ada2]">
+              Price range
+            </label>
+            <div className="grid grid-cols-2 gap-2">
               <input
                 type="number"
                 placeholder="Min"
                 value={localFilters.minPrice || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, minPrice: parseFloat(e.target.value) || undefined })}
-                className="w-full px-3 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
+                onChange={(e) =>
+                  setLocalFilters({
+                    ...localFilters,
+                    minPrice: parseFloat(e.target.value) || undefined,
+                  })
+                }
+                className="w-full rounded-xl border border-white/10 bg-[#12100e] px-3 py-2.5 text-sm text-[#f3ece6] outline-none transition placeholder:text-[#796f67] focus:border-[#c89b6d]/60 focus:ring-2 focus:ring-[#c89b6d]/20"
               />
               <input
                 type="number"
                 placeholder="Max"
                 value={localFilters.maxPrice || ''}
-                onChange={(e) => setLocalFilters({ ...localFilters, maxPrice: parseFloat(e.target.value) || undefined })}
-                className="w-full px-3 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
+                onChange={(e) =>
+                  setLocalFilters({
+                    ...localFilters,
+                    maxPrice: parseFloat(e.target.value) || undefined,
+                  })
+                }
+                className="w-full rounded-xl border border-white/10 bg-[#12100e] px-3 py-2.5 text-sm text-[#f3ece6] outline-none transition placeholder:text-[#796f67] focus:border-[#c89b6d]/60 focus:ring-2 focus:ring-[#c89b6d]/20"
               />
             </div>
           </div>
 
-          {/* Town with Autocomplete */}
-          <div>
-            <label className="block text-text-primary/80 mb-2 font-semibold text-sm">TOWN / LOCATION</label>
+          <div className="rounded-2xl border border-white/10 bg-[#1b1815] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#b9ada2]">
+              Town / location
+            </label>
             <div className="relative">
-              <div className="relative flex items-center">
-                <Search className="absolute left-3 text-accent-cyan/70" size={16} />
-                <input
-                  type="text"
-                  placeholder="Search town or city..."
-                  value={searchQuery}
-                  onChange={handleSearchChange}
-                  className="w-full pl-9 pr-9 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
-                />
-                {searchQuery.length > 0 && (
-                  <button
-                    onClick={handleClearSearch}
-                    className="absolute right-3 text-accent-cyan/70 hover:text-accent-cyan"
-                  >
-                    <X size={16} />
-                  </button>
-                )}
-              </div>
-              
-              {/* Suggestions Dropdown */}
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9d8f82]" size={16} />
+              <input
+                type="text"
+                placeholder="Search town or city"
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="w-full rounded-xl border border-white/10 bg-[#12100e] py-2.5 pl-9 pr-10 text-sm text-[#f3ece6] outline-none transition placeholder:text-[#796f67] focus:border-[#c89b6d]/60 focus:ring-2 focus:ring-[#c89b6d]/20"
+              />
+              {searchQuery.length > 0 && (
+                <button
+                  onClick={handleClearSearch}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#988b7f] transition hover:text-[#f4ede7]"
+                  aria-label="Clear location search"
+                >
+                  <X size={16} />
+                </button>
+              )}
+
               {suggestions.length > 0 && (
-                <div className="absolute mt-1 w-full bg-background-dark border-2 border-accent-cyan rounded-md shadow-glow-cyan max-h-48 overflow-y-auto z-50">
+                <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-[#c89b6d]/25 bg-[#171411] shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
                   {suggestions.map((feature, index) => (
-                    <div
+                    <button
                       key={index}
+                      type="button"
                       onClick={() => handleSuggestionClick(feature)}
-                      className="px-3 py-2 text-white hover:bg-accent-cyan/20 cursor-pointer border-b border-accent-cyan/10 last:border-b-0"
+                      className="block w-full border-b border-white/5 px-3 py-3 text-left transition last:border-b-0 hover:bg-white/[0.04]"
                     >
-                      <div className="font-semibold text-sm">{feature.properties.city}</div>
+                      <div className="text-sm font-medium text-[#f5eee8]">
+                        {feature.properties.city || feature.properties.label}
+                      </div>
                       {feature.properties.postcode && (
-                        <div className="text-xs text-accent-cyan/70">
-                          {feature.properties.postcode}
-                        </div>
+                        <div className="mt-0.5 text-xs text-[#aa9c90]">{feature.properties.postcode}</div>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Sort */}
-          <div>
-            <label className="block text-text-primary/80 mb-2 font-semibold text-sm">SORT BY</label>
-            <div className="flex gap-2">
+          <div className="rounded-2xl border border-white/10 bg-[#1b1815] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#b9ada2]">
+              Sort
+            </label>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
               <select
                 value={localFilters.sortBy || 'created_at'}
-                onChange={(e) => setLocalFilters({ ...localFilters, sortBy: e.target.value as typeof localFilters.sortBy })}
-                className="flex-1 px-3 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
+                onChange={(e) =>
+                  setLocalFilters({
+                    ...localFilters,
+                    sortBy: e.target.value as typeof localFilters.sortBy,
+                  })
+                }
+                className="rounded-xl border border-white/10 bg-[#12100e] px-3 py-2.5 text-sm text-[#f3ece6] outline-none transition focus:border-[#c89b6d]/60 focus:ring-2 focus:ring-[#c89b6d]/20"
               >
                 <option value="price">Price</option>
                 <option value="town">Town</option>
                 <option value="last_contact_date">Last Contact</option>
                 <option value="created_at">Created</option>
               </select>
+
               <select
                 value={localFilters.sortOrder || 'desc'}
-                onChange={(e) => setLocalFilters({ ...localFilters, sortOrder: e.target.value as 'asc' | 'desc' })}
-                className="px-3 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
+                onChange={(e) =>
+                  setLocalFilters({
+                    ...localFilters,
+                    sortOrder: e.target.value as 'asc' | 'desc',
+                  })
+                }
+                className="rounded-xl border border-white/10 bg-[#12100e] px-3 py-2.5 text-sm text-[#f3ece6] outline-none transition focus:border-[#c89b6d]/60 focus:ring-2 focus:ring-[#c89b6d]/20"
               >
-                <option value="asc">↑ ASC</option>
-                <option value="desc">↓ DESC</option>
+                <option value="asc">Asc</option>
+                <option value="desc">Desc</option>
               </select>
             </div>
           </div>
 
-          {/* Distance */}
-          <div>
-            <label className="block text-text-primary/80 mb-2 font-semibold text-sm">DISTANCE (KM)</label>
+          <div className="rounded-2xl border border-white/10 bg-[#1b1815] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#b9ada2]">
+              Distance radius
+            </label>
             <input
               type="number"
-              placeholder="Max distance..."
+              placeholder="Max distance in km"
               value={localFilters.maxDistance || ''}
-              onChange={(e) => setLocalFilters({ ...localFilters, maxDistance: parseFloat(e.target.value) || undefined })}
-              className="w-full px-3 py-2 bg-background-dark border border-accent-cyan text-white rounded-md text-sm focus:outline-none focus:border-accent-magenta"
+              onChange={(e) =>
+                setLocalFilters({
+                  ...localFilters,
+                  maxDistance: parseFloat(e.target.value) || undefined,
+                })
+              }
+              className="w-full rounded-xl border border-white/10 bg-[#12100e] px-3 py-2.5 text-sm text-[#f3ece6] outline-none transition placeholder:text-[#796f67] focus:border-[#c89b6d]/60 focus:ring-2 focus:ring-[#c89b6d]/20"
             />
-            {localFilters.maxDistance && !localFilters.searchCenter && (
-              <p className="text-xs text-accent-yellow mt-1">Search a town above to set center</p>
-            )}
-            {localFilters.searchCenter && (
-              <p className="text-xs text-green-400 mt-1">✓ Center set to {localFilters.town || 'selected location'}</p>
-            )}
+
+            <div className="mt-2 min-h-[20px] text-xs">
+              {localFilters.maxDistance && !localFilters.searchCenter && (
+                <p className="text-[#d0ab7e]">Search a town above to set the search center.</p>
+              )}
+              {localFilters.searchCenter && (
+                <p className="inline-flex items-center gap-1 text-[#cbb39a]">
+                  <MapPinned size={12} />
+                  Center set to {localFilters.town || 'selected location'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Status Filters */}
-        <div className="mt-4">
-          <label className="block text-text-primary/80 mb-2 font-semibold text-sm">STATUS</label>
+        <div className="mt-4 rounded-2xl border border-white/10 bg-[#1b1815] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+          <label className="mb-3 block text-xs font-semibold uppercase tracking-[0.14em] text-[#b9ada2]">
+            Status
+          </label>
+
           <div className="flex flex-wrap gap-2">
             {Object.entries(STATUS_CONFIG).map(([key, config]) => {
               const isSelected = localFilters.status?.includes(key as ProspectionStatus);
+
               return (
                 <button
                   key={key}
                   onClick={() => toggleStatus(key as ProspectionStatus)}
-                  className={`px-4 py-2 rounded-md border-2 font-semibold text-sm transition-all ${
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     isSelected
-                      ? 'border-white text-white'
-                      : 'border-transparent text-text-primary/60 hover:border-white/30'
+                      ? 'border-[#c89b6d]/60 bg-[#c89b6d]/14 text-[#f8eee5] shadow-[0_0_0_1px_rgba(200,155,109,0.16),0_12px_24px_rgba(0,0,0,0.16)]'
+                      : 'border-white/10 bg-white/[0.02] text-[#cdbfb3] hover:border-white/20 hover:bg-white/[0.04] hover:text-white'
                   }`}
-                  style={{
-                    backgroundColor: isSelected ? config.dotColor : 'transparent',
-                    boxShadow: isSelected ? `0 0 12px ${config.dotColor}` : 'none'
-                  }}
                 >
+                  <span
+                    className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: config.dotColor }}
+                  />
                   {config.label}
                 </button>
               );
             })}
           </div>
-        </div>
 
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={handleApply}
-            className="px-6 py-2 bg-accent-magenta text-background-dark rounded-md font-bold hover:bg-accent-magenta/80 shadow-glow-magenta"
-          >
-            APPLY FILTERS
-          </button>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={handleApply}
+              className="rounded-xl border border-[#c89b6d]/50 bg-[#c89b6d] px-5 py-2.5 text-sm font-semibold text-[#1a1510] shadow-[0_8px_24px_rgba(200,155,109,0.24)] transition hover:bg-[#d3a778]"
+            >
+              Apply filters
+            </button>
+          </div>
         </div>
       </div>
     </div>
