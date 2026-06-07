@@ -1,87 +1,79 @@
 'use client'
 
 import Link from 'next/link'
-import { Search, Settings } from 'lucide-react'
+import { usePathname } from 'next/navigation'
+import { Building2, Search, Settings, Compass, Users, CalendarDays } from 'lucide-react'
+
+const navItems = [
+  { href: '/gatherer', label: 'Overview', icon: Building2 },
+  { href: '/gatherer/prospection', label: 'Prospection', icon: Compass },
+  { href: '/gatherer/clients', label: 'Clients', icon: Users },
+  { href: '/gatherer/visits', label: 'Visits', icon: CalendarDays },
+]
 
 export default function MainHeader() {
-  const styles = {
-    header: {
-      display: 'flex',
-      flexWrap: 'wrap' as const,
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '15px 20px',
-      backgroundColor: 'rgba(10, 10, 30, 0.85)',
-      borderBottom: '2px solid #00ffff',
-      boxShadow: '0 0 15px rgba(0, 255, 255, 0.5)',
-      gap: '15px',
-    },
-    logo: {
-      fontSize: '1.75rem',
-      fontWeight: 'bold',
-      color: '#ff00ff',
-      textShadow: '0 0 10px #ff00ff',
-    },
-    nav: {
-      display: 'flex',
-      flexWrap: 'wrap' as const,
-      alignItems: 'center',
-      gap: '20px',
-      justifyContent: 'center',
-    },
-    navLink: {
-      color: '#00ffff',
-      textDecoration: 'none',
-      fontWeight: 'bold',
-      fontSize: '1rem',
-      transition: 'text-shadow 0.3s ease',
-    },
-    searchBar: {
-      display: 'flex',
-      alignItems: 'center',
-      border: '1px solid #ff00ff',
-      borderRadius: '5px',
-      padding: '5px 10px',
-      backgroundColor: 'rgba(10, 10, 30, 0.9)',
-    },
-    searchInput: {
-      backgroundColor: 'transparent',
-      border: 'none',
-      color: '#ff00ff',
-      outline: 'none',
-      fontFamily: "'Orbitron', sans-serif",
-      '::placeholder': {
-        color: '#ff00ff',
-        opacity: 0.7,
-      },
-    },
-  };
-
-  // A simple hover effect can be managed with onMouseEnter/onMouseLeave
-  // but for maintainability, CSS classes or a styled-components approach is better.
-  // For this inline-style approach, direct manipulation is shown.
+  const pathname = usePathname()
 
   return (
-    <header style={styles.header}>
-      <Link href="/" style={styles.logo}>BARRACUDA</Link>
-      <nav style={styles.nav}>
-        <Link href="/gatherer" style={styles.navLink}>HOME</Link>
-        <Link href="/gatherer/prospection" style={styles.navLink}>PROSPECTION</Link>
-        <Link href="/gatherer/clients" style={styles.navLink}>CLIENTS</Link>
-        <Link href="/gatherer/tools" style={styles.navLink}>TOOLS</Link>
-        <Link href="/gatherer/mandates" style={styles.navLink}>MANDATES</Link>
-        <Link
-  href="/account"
-  className="px-4 py-2 border border-[#ff00ff] text-[#ff00ff] hover:bg-[#ff00ff]/10 rounded uppercase text-xs font-bold flex items-center gap-2"
->
-  <Settings size={14} />
-  Account
-</Link>
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#171512]/85 backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-3 text-stone-100 no-underline">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+              <Building2 size={18} />
+            </div>
+            <div>
+              <div className="text-sm font-semibold tracking-[0.18em] text-stone-100 uppercase">
+                Barracuda
+              </div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Gatherer workspace
+              </div>
+            </div>
+          </Link>
+        </div>
 
-      </nav>
-      <div style={styles.searchBar}>
-        <input type="text" placeholder="Search Protocol..." style={styles.searchInput} />
-        <Search size={18} color="#ff00ff" />
+        <nav className="flex flex-wrap items-center gap-2">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive =
+              pathname === item.href || pathname?.startsWith(`${item.href}/`)
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-200 no-underline ${
+                  isActive
+                    ? 'border-amber-300/25 bg-amber-400/10 text-amber-200 shadow-[0_0_0_1px_rgba(251,191,36,0.08)]'
+                    : 'border-white/10 bg-white/[0.03] text-stone-300 hover:border-white/15 hover:bg-white/[0.05] hover:text-stone-100'
+                }`}
+              >
+                <Icon size={15} />
+                {item.label}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-[220px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-stone-400">
+            <Search size={16} className="text-stone-500" />
+            <input
+              type="text"
+              placeholder="Search clients or activity"
+              className="w-full bg-transparent text-sm text-stone-200 placeholder:text-stone-500 focus:outline-none"
+            />
+          </div>
+
+          <Link
+            href="/account"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2 text-sm font-medium text-amber-200 transition-all duration-200 no-underline hover:border-amber-300/30 hover:bg-amber-400/14"
+          >
+            <Settings size={15} />
+            Account
+          </Link>
+        </div>
       </div>
     </header>
   )

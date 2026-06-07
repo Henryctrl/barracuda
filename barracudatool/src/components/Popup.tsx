@@ -1,88 +1,46 @@
-'use client';
+'use client'
 
-import React, { CSSProperties } from 'react';
-import { X } from 'lucide-react';
-
-type StyleObject = { [key: string]: CSSProperties };
+import React from 'react'
+import { X } from 'lucide-react'
 
 interface PopupProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  children: React.ReactNode
 }
 
 export default function Popup({ isOpen, onClose, title, children }: PopupProps) {
-  if (!isOpen) return null;
-
-  const styles: StyleObject = {
-    popupBackdrop: {
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      width: '100vw',
-      height: '100vh',
-      backgroundColor: 'rgba(13, 13, 33, 0.5)',
-      backdropFilter: 'blur(5px)',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 1000,
-    },
-    popupContainer: {
-      backgroundColor: '#0d0d21',
-      border: '2px solid #ff00ff',
-      borderRadius: '10px',
-      padding: '25px',
-      width: '90%',
-      maxWidth: '800px', // Increased width
-      maxHeight: '90vh', // Added max height
-      boxShadow: '0 0 25px rgba(255, 0, 255, 0.5)',
-      color: '#fff',
-      position: 'relative',
-      display: 'flex',
-      flexDirection: 'column',
-    },
-    popupHeader: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      borderBottom: '1px solid #ff00ff',
-      paddingBottom: '10px',
-      marginBottom: '20px',
-      flexShrink: 0,
-    },
-    popupTitle: {
-      fontSize: '1.5rem',
-      color: '#ff00ff',
-      textTransform: 'uppercase',
-      textShadow: '0 0 8px rgba(255, 0, 255, 0.7)',
-    },
-    closeButton: {
-      background: 'none',
-      border: 'none',
-      color: '#00ffff',
-      cursor: 'pointer',
-    },
-    contentArea: {
-      overflowY: 'auto', // Make content scrollable
-      paddingRight: '15px', // Add some padding for the scrollbar
-    },
-  };
+  if (!isOpen) return null
 
   return (
-    <div style={styles.popupBackdrop} onClick={onClose}>
-      <div style={styles.popupContainer} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.popupHeader}>
-          <h3 style={styles.popupTitle}>{title}</h3>
-          <button onClick={onClose} style={styles.closeButton}>
-            <X size={28} />
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#171512] text-stone-100 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5 sm:px-8">
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight text-stone-100">{title}</h3>
+            <p className="mt-1 text-sm text-stone-500">
+              Review and update workspace information.
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-stone-300 transition-colors duration-200 hover:bg-white/[0.08] hover:text-stone-100"
+            aria-label="Close popup"
+          >
+            <X size={18} />
           </button>
         </div>
-        <div style={styles.contentArea}>
-          {children}
-        </div>
+
+        <div className="overflow-y-auto px-6 py-6 sm:px-8 sm:py-8">{children}</div>
       </div>
     </div>
-  );
+  )
 }

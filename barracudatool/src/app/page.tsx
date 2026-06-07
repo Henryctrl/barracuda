@@ -1,146 +1,268 @@
-'use client'
-
 import Link from 'next/link'
-import Image from 'next/image' // Import Next.js Image component
-import { useEffect, useState } from 'react';
+import {
+  ArrowRight,
+  Building2,
+  Search,
+  FileSearch,
+  Users,
+  CheckSquare,
+  CalendarDays,
+  UserCog,
+  ShieldCheck,
+  Map,
+} from 'lucide-react'
 
-// --- System Ticker Component ---
-const SystemTicker = () => {
-    const messages = [
-        "// INITIATING DEEP DATA DIVE...", "// MARKET VOLATILITY: +3.14%...", "// NEW ASSET DETECTED: SECTOR 7G...",
-        "// AGENT ONLINE: CODENAME 'VIPER'...", "// SYNCHRONIZING WITH GLOBAL MATRIX...", "// AUTHENTICATION SECURE...",
-    ];
+const primaryModules = [
+  {
+    title: 'Hunter',
+    href: '/hunter',
+    description: 'Map-led parcel search, cadastral exploration, and property discovery workflows.',
+    icon: Search,
+    eyebrow: 'Discovery',
+  },
+  {
+    title: 'Gatherer',
+    href: '/gatherer',
+    description: 'Prospection workflows, lead review, uploads, and operational collection tools.',
+    icon: Building2,
+    eyebrow: 'Prospection',
+  },
+  {
+    title: 'DPE Search',
+    href: '/dpe-search',
+    description: 'Energy certificate lookup and performance-focused property review.',
+    icon: FileSearch,
+    eyebrow: 'Energy',
+  },
+]
 
-    return (
-        <div className="fixed top-0 left-0 z-10 w-full overflow-hidden whitespace-nowrap border-b border-[#00ff00] bg-black p-[5px] font-courier text-[#00ff00]" style={{ boxShadow: '0 0 10px #00ff00' }}>
-            <div className="inline-block animate-scroll-left pl-[100%]">
-                {messages.join(' ')}&nbsp;&nbsp;&nbsp;{messages.join(' ')}&nbsp;&nbsp;&nbsp;
-            </div>
-        </div>
-    );
-};
+const secondaryModules = [
+  {
+    title: 'Clients',
+    href: '/gatherer/clients',
+    description: 'Track client records, follow-up, and relationship context.',
+    icon: Users,
+  },
+  {
+    title: 'Tasks',
+    href: '/gatherer/tasks',
+    description: 'Manage operational actions, next steps, and team workflow.',
+    icon: CheckSquare,
+  },
+  {
+    title: 'Visits',
+    href: '/gatherer/visits',
+    description: 'Review scheduled viewings, appointments, and field activity.',
+    icon: CalendarDays,
+  },
+  {
+    title: 'Account',
+    href: '/account',
+    description: 'Profile, subscription, and workspace-level account settings.',
+    icon: UserCog,
+  },
+]
 
-// --- Main HomePage Component ---
+const statusItems = [
+  {
+    label: 'Data sources',
+    value: 'Cadastre, DVF, DPE',
+    tone: 'text-amber-300',
+  },
+  {
+    label: 'Workspace mode',
+    value: 'Authenticated',
+    tone: 'text-emerald-300',
+  },
+  {
+    label: 'Coverage',
+    value: 'France-focused',
+    tone: 'text-stone-200',
+  },
+]
+
 export default function HomePage() {
-  
-  const [glitch, setGlitch] = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setGlitch(true);
-      setTimeout(() => setGlitch(false), 150);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
   return (
-    <div className="min-h-screen bg-background-dark font-orbitron text-text-primary px-4" style={{
-        backgroundImage: `
-            linear-gradient(rgba(13, 13, 33, 0.95), rgba(13, 13, 33, 0.95)),
-            repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 255, 255, 0.1) 1px, rgba(0, 255, 255, 0.1) 2px),
-            repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(0, 255, 255, 0.1) 1px, rgba(0, 255, 255, 0.1) 2px)
-        `,
-        backgroundSize: '100%, 50px 50px, 50px 50px',
-        paddingTop: '110px',
-        paddingBottom: '40px',
-    }}>
+    <main className="min-h-screen bg-[#141310] text-stone-100">
+      <div
+        className="min-h-screen"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at top left, rgba(245,158,11,0.12), transparent 26%), radial-gradient(circle at bottom right, rgba(251,191,36,0.07), transparent 24%)',
+        }}
+      >
+        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8 sm:px-8 lg:px-10">
+          <header className="mb-10 flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-amber-200">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Premium property intelligence
+              </div>
 
-      <SystemTicker />
-      
-      <div className="fixed top-12 right-7 z-50 flex items-center gap-4">
-        <Link href="/signup" className="px-6 py-2.5 text-base font-bold text-background-dark bg-accent-green rounded-md shadow-glow-green transition-all hover:shadow-glow-green-hover hover:scale-105 no-underline">
-            [ SIGN UP ]
-        </Link>
-        <Link href="/login" className="px-6 py-2.5 text-base font-bold text-background-dark bg-accent-magenta rounded-md shadow-glow-magenta-hover transition-all hover:scale-105 no-underline" style={{ boxShadow: '0 0 20px #ff00ff' }}>
-            [ AGENT LOGIN ]
-        </Link>
-      </div>
+              <h1 className="text-4xl font-semibold tracking-tight text-stone-50 sm:text-5xl">
+                Barracuda
+              </h1>
 
-      <main className="max-w-7xl w-full mx-auto border-2 border-accent-magenta rounded-lg p-6 sm:p-10 bg-container-dark shadow-glow-magenta text-center">
-        
-        <h1 className="relative text-5xl sm:text-7xl font-bold text-accent-magenta tracking-wider mb-2.5" style={{ textShadow: '0 0 15px #ff00ff, 0 0 5px #ffffff' }}>
-            BARRACUDA
-            <span className={`absolute top-0 left-0 w-full h-full text-accent-cyan ${glitch ? 'animate-glitch-1' : ''}`} style={{textShadow: '-2px 0 #00ff00'}}>BARRACUDA</span>
-            <span className={`absolute top-0 left-0 w-full h-full text-accent-magenta ${glitch ? 'animate-glitch-2' : ''}`} style={{textShadow: '2px 0 #ff00ff'}}>BARRACUDA</span>
-        </h1>
-        <p className="text-lg text-accent-cyan italic mb-10" style={{ textShadow: '0 0 8px #00ffff' }}>{'// THE DEEP DATA DIVE PROTOCOL'}</p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-8 my-20">
-            <Link href="/hunter" className="w-full sm:w-auto px-10 py-4 text-2xl font-bold text-background-dark bg-accent-cyan rounded-md shadow-glow-cyan transition-all hover:shadow-glow-cyan-hover hover:scale-105 no-underline">
-              [ INITIATE HUNTER ]
-            </Link>
-            <Link href="/gatherer" className="w-full sm:w-auto px-10 py-4 text-2xl font-bold text-background-dark bg-accent-magenta rounded-md shadow-glow-magenta transition-all hover:shadow-glow-magenta-hover hover:scale-105 no-underline">
-              [ ACCESS GATHERER ]
-            </Link>
-        </div>
-
-        <div className="border-t border-dashed border-accent-cyan pt-8 mt-8">
-            <h2 className="text-3xl font-bold text-accent-magenta uppercase mb-8">{'// PRIORITY TARGETS'}</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
-                {/* Target 1 */}
-                <div className="border border-accent-cyan rounded-lg bg-accent-cyan/5 overflow-hidden shadow-inner-cyan transition-all duration-300 hover:scale-105 hover:shadow-card-hover">
-                    <div className="relative w-full h-48 border-b border-accent-cyan">
-                      <Image 
-                        src="https://via.placeholder.com/400x250/0d0d21/ff00ff?text=TARGET+IMAGE" 
-                        alt="Skybreaker Loft" 
-                        fill 
-                        className="object-cover"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                      />
-                    </div>
-                    <div className="p-5">
-                        <h3 className="text-xl font-bold text-accent-magenta mb-4">TARGET: SKYBREAKER LOFT</h3>
-                        <p className="text-sm text-text-secondary leading-relaxed">
-                            PRICE: €1,200,000<br/>
-                            LOCATION: NEO-PARIS SECTOR 7<br/>
-                            CLASS: PENTHOUSE
-                        </p>
-                    </div>
-                </div>
-                {/* Target 2 */}
-                <div className="border border-accent-cyan rounded-lg bg-accent-cyan/5 overflow-hidden shadow-inner-cyan transition-all duration-300 hover:scale-105 hover:shadow-card-hover">
-                    <div className="relative w-full h-48 border-b border-accent-cyan">
-                      <Image 
-                        src="https://via.placeholder.com/400x250/0d0d21/00ffff?text=TARGET+IMAGE" 
-                        alt="Aetherium Villa" 
-                        fill 
-                        className="object-cover"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                      />
-                    </div>
-                    <div className="p-5">
-                        <h3 className="text-xl font-bold text-accent-magenta mb-4">TARGET: AETHERIUM VILLA</h3>
-                        <p className="text-sm text-text-secondary leading-relaxed">
-                            PRICE: €3,500,000<br/>
-                            LOCATION: CYBER-MONACO<br/>
-                            CLASS: ROOFTOP ESTATE
-                        </p>
-                    </div>
-                </div>
-                {/* Target 3 */}
-                <div className="border border-accent-cyan rounded-lg bg-accent-cyan/5 overflow-hidden shadow-inner-cyan transition-all duration-300 hover:scale-105 hover:shadow-card-hover">
-                    <div className="relative w-full h-48 border-b border-accent-cyan">
-                      <Image 
-                        src="https://via.placeholder.com/400x250/1a1a3a/ff00ff?text=TARGET+IMAGE" 
-                        alt="Data Haven" 
-                        fill 
-                        className="object-cover"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                      />
-                    </div>
-                    <div className="p-5">
-                        <h3 className="text-xl font-bold text-accent-magenta mb-4">TARGET: DATA HAVEN 42</h3>
-                        <p className="text-sm text-text-secondary leading-relaxed">
-                            PRICE: €450,000<br/>
-                            LOCATION: GRID-CITY CENTRAL<br/>
-                            CLASS: SMART APARTMENT
-                        </p>
-                    </div>
-                </div>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-stone-300 sm:text-base">
+                A focused workspace for French property search, prospecting, and client operations.
+                Start with the module that matches the job at hand, then move into map-led review,
+                data enrichment, and follow-up workflows.
+              </p>
             </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto">
+              {statusItems.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm"
+                >
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    {item.label}
+                  </div>
+                  <div className={`mt-2 text-sm font-medium ${item.tone}`}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </header>
+
+          <section className="mb-10">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-stone-100">
+                  Core workflows
+                </h2>
+                <p className="mt-1 text-sm text-stone-400">
+                  Primary entry points for search, prospecting, and energy intelligence.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {primaryModules.map((module) => {
+                const Icon = module.icon
+
+                return (
+                  <Link
+                    key={module.title}
+                    href={module.href}
+                    className="group rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-300/30 hover:bg-white/[0.06]"
+                  >
+                    <div className="mb-6 flex items-start justify-between">
+                      <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <span className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                        {module.eyebrow}
+                      </span>
+                    </div>
+
+                    <h3 className="text-xl font-semibold tracking-tight text-stone-100">
+                      {module.title}
+                    </h3>
+
+                    <p className="mt-3 text-sm leading-7 text-stone-400">
+                      {module.description}
+                    </p>
+
+                    <div className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-amber-300 transition-transform duration-200 group-hover:translate-x-1">
+                      Open module
+                      <ArrowRight className="h-4 w-4" />
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_0.9fr]">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+                  <Map className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold tracking-tight text-stone-100">
+                    Workspace navigation
+                  </h2>
+                  <p className="text-sm text-stone-400">
+                    Supporting areas for account management and day-to-day operations.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {secondaryModules.map((module) => {
+                  const Icon = module.icon
+
+                  return (
+                    <Link
+                      key={module.title}
+                      href={module.href}
+                      className="group rounded-2xl border border-white/10 bg-[#1b1916] p-4 transition-all duration-200 hover:border-amber-300/25 hover:bg-[#211e1a]"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-stone-200">
+                          <Icon className="h-4.5 w-4.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-sm font-semibold text-stone-100">
+                              {module.title}
+                            </h3>
+                            <ArrowRight className="h-4 w-4 text-stone-500 transition-colors duration-200 group-hover:text-amber-300" />
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-stone-400">
+                            {module.description}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-amber-400/10 to-transparent p-6 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+              <h2 className="text-lg font-semibold tracking-tight text-stone-100">
+                How to use Barracuda
+              </h2>
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    Step 1
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-stone-300">
+                    Use Hunter when you want to search by area, inspect parcels, and start map-led exploration.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    Step 2
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-stone-300">
+                    Move into Gatherer for prospecting, lead review, uploads, and structured operational follow-up.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                    Step 3
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-stone-300">
+                    Use DPE Search, Clients, Tasks, and Visits to enrich records and move work toward conversion.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-400/8 p-4 text-sm leading-6 text-stone-300">
+                Barracuda is designed as a map-first property intelligence workspace: calm at entry, precise in workflow, and structured for professional use.
+              </div>
+            </div>
+          </section>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   )
 }

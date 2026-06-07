@@ -1,14 +1,10 @@
-//src/app/gatherer/page.tsx
+'use client'
 
-'use client';
-
-import React, { useState, useEffect, CSSProperties } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   UserPlus,
-  FilePlus,
   Bell,
-  Home,
   CalendarDays,
   Hourglass,
   CheckCircle2,
@@ -17,241 +13,168 @@ import {
   RotateCcw,
   Crown,
   ExternalLink,
-} from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
-import MainHeader from '../../components/MainHeader';
-import CreateClientPopup from '../../components/popups/CreateClientPopup';
-import CreateMandatePopup from '../../components/popups/CreateMandatePopup';
-import CreatePropertyPopup from '../../components/popups/CreatePropertyPopup';
-import CreateTaskPopup from '../../components/popups/CreateTaskPopup';
-import CreateVisitPopup from '../../components/popups/CreateVisitPopup';
-import EditVisitPopup from '../../components/popups/EditVisitPopup';
-import EditClientPopup from '../../components/popups/EditClientPopup';
+  Users,
+  CheckSquare,
+  Activity,
+  ArrowRight,
+} from 'lucide-react'
+import { createClient } from '@supabase/supabase-js'
+import MainHeader from '../../components/MainHeader'
+import CreateClientPopup from '../../components/popups/CreateClientPopup'
+import CreateMandatePopup from '../../components/popups/CreateMandatePopup'
+import CreatePropertyPopup from '../../components/popups/CreatePropertyPopup'
+import CreateTaskPopup from '../../components/popups/CreateTaskPopup'
+import CreateVisitPopup from '../../components/popups/CreateVisitPopup'
+import EditVisitPopup from '../../components/popups/EditVisitPopup'
+import EditClientPopup from '../../components/popups/EditClientPopup'
 
-// ---------- Supabase client ----------
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// ---------- Types ----------
 interface RecentlyAddedClient {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  created_at: string;
+  id: string
+  first_name: string | null
+  last_name: string | null
+  created_at: string
   client_search_criteria?: {
-    min_budget: number | null;
-    max_budget: number | null;
-    locations: string | null;
-  }[];
+    min_budget: number | null
+    max_budget: number | null
+    locations: string | null
+  }[]
 }
 
 interface VisitingSoon {
-  id: string;
-  visit_start_date: string;
-  visit_end_date: string | null;
-  notes: string | null;
-  color: string | null;
+  id: string
+  visit_start_date: string
+  visit_end_date: string | null
+  notes: string | null
+  color: string | null
   clients: {
-    id: string;
-    first_name: string | null;
-    last_name: string | null;
-  } | null;
+    id: string
+    first_name: string | null
+    last_name: string | null
+  } | null
 }
 
-type FollowUpStatus = 'pending' | 'snoozed' | 'done';
+type FollowUpStatus = 'pending' | 'snoozed' | 'done'
 
 interface FollowUpTask {
-  id: string;
-  client_id: string;
-  created_at: string;
-  task_type: string | null;
-  status: FollowUpStatus;
-  due_date: string;
-  snoozed_until: string | null;
-  notes: string | null;
+  id: string
+  client_id: string
+  created_at: string
+  task_type: string | null
+  status: FollowUpStatus
+  due_date: string
+  snoozed_until: string | null
+  notes: string | null
   clients: {
-    first_name: string | null;
-    last_name: string | null;
-  } | null;
+    first_name: string | null
+    last_name: string | null
+  } | null
 }
 
-// Utility: get all dates in a visit range
 function getDatesBetween(start: string, end: string): string[] {
-  const dates: string[] = [];
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  const current = new Date(startDate);
+  const dates: string[] = []
+  const startDate = new Date(start)
+  const endDate = new Date(end)
+  const current = new Date(startDate)
+
   while (current <= endDate) {
-    dates.push(current.toISOString().split('T')[0]);
-    current.setDate(current.getDate() + 1);
+    dates.push(current.toISOString().split('T')[0])
+    current.setDate(current.getDate() + 1)
   }
-  return dates;
+
+  return dates
 }
 
-// ---------- Styles ----------
-type StyleObject = { [key: string]: CSSProperties };
+function formatCurrencyRange(min?: number | null, max?: number | null) {
+  if (min != null || max != null) {
+    return `€${(min || 0).toLocaleString()} - €${(max || 0).toLocaleString()}`
+  }
+  return 'Budget not set'
+}
 
-const styles: StyleObject = {
-  pageContainer: {
-    minHeight: '100vh',
-    backgroundColor: '#0d0d21',
-    fontFamily: "'Orbitron', sans-serif",
-    color: '#00ffff',
-    backgroundImage:
-      `linear-gradient(rgba(13, 13, 33, 0.97), rgba(13, 13, 33, 0.97)),` +
-      `repeating-linear-gradient(45deg, rgba(255, 0, 255, 0.05), rgba(255, 0, 255, 0.05) 1px, transparent 1px, transparent 10px)`,
-  },
-  mainContent: {
-    padding: '30px 20px',
-    transition: 'filter 0.3s ease-out',
-  },
-  sectionHeader: {
-    fontSize: '1.75rem',
-    color: '#ff00ff',
-    textTransform: 'uppercase',
-    borderBottom: '2px solid #ff00ff',
-    paddingBottom: '10px',
-    marginBottom: '15px',
-    textShadow: '0 0 8px rgba(255, 0, 255, 0.7)',
-  },
-  statusBar: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '20px',
-    backgroundColor: 'rgba(10, 10, 30, 0.7)',
-    padding: '10px 15px',
-    borderRadius: '5px',
-    border: '1px solid #00ffff',
-    marginBottom: '30px',
-  },
-  statusItem: { color: '#ffffff', fontSize: '0.9rem' },
-  quickActions: { display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '30px' },
-  actionButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 15px',
-    backgroundColor: 'transparent',
-    border: '1px solid #00ffff',
-    color: '#00ffff',
-    borderRadius: '5px',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    fontSize: '0.9rem',
-    textTransform: 'uppercase',
-  },
-  contentLayout: { display: 'grid', gridTemplateColumns: '1fr', gap: '25px' },
-  contentLayoutLarge: { gridTemplateColumns: '2.2fr 1.3fr' },
-  columnStack: { display: 'flex', flexDirection: 'column', gap: '20px' },
-  panel: {
-    backgroundColor: 'rgba(0, 255, 255, 0.05)',
-    border: '1px solid #00ffff',
-    borderRadius: '8px',
-    padding: '20px',
-    boxShadow: 'inset 0 0 15px rgba(0, 255, 255, 0.2)',
-    display: 'flex',
-    flexDirection: 'column',
-    minHeight: '0',
-  },
-  panelHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #00ffff',
-    paddingBottom: '10px',
-    marginBottom: '15px',
-  },
-  panelTitle: {
-    fontSize: '1.05rem',
-    fontWeight: 'bold',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  panelAction: { fontSize: '0.8rem', color: '#ff00ff', textDecoration: 'none', cursor: 'pointer' },
-  list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' },
-  cardItem: {
-    backgroundColor: 'rgba(0, 255, 255, 0.08)',
-    padding: '10px 12px',
-    borderRadius: '6px',
-    fontSize: '0.85rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  badgeRow: { display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.7rem' },
-  badge: { padding: '2px 6px', borderRadius: '999px', border: '1px solid #00ffff', color: '#00ffff' },
-  badgePink: { padding: '2px 6px', borderRadius: '999px', border: '1px solid #ff00ff', color: '#ff00ff' },
-  smallLabel: { fontSize: '0.7rem', color: '#a0a0ff' },
-  followUpActions: { display: 'flex', gap: '8px', marginTop: '6px' },
-  followUpBtn: {
-    flex: 1,
-    fontSize: '0.7rem',
-    textTransform: 'uppercase',
-    padding: '4px 6px',
-    borderRadius: '4px',
-    border: '1px solid transparent',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '4px',
-  },
-  calendarPanel: {
-    backgroundColor: 'rgba(255, 0, 255, 0.05)',
-    border: '1px solid #ff00ff',
-    borderRadius: '8px',
-    padding: '20px',
-    boxShadow: 'inset 0 0 15px rgba(255, 0, 255, 0.3)',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  calendarGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-    gap: '4px',
-    marginTop: '10px',
-    fontSize: '0.7rem',
-  },
-  calendarCell: {
-    minHeight: '40px',
-    borderRadius: '4px',
-    border: '1px solid rgba(0, 255, 255, 0.2)',
-    padding: '4px',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-  },
-};
+function getTaskTone(status: FollowUpStatus) {
+  if (status === 'done') {
+    return {
+      container: 'border-emerald-400/20 bg-emerald-400/8',
+      badge: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300',
+      label: 'Completed',
+    }
+  }
+
+  if (status === 'snoozed') {
+    return {
+      container: 'border-amber-400/20 bg-amber-400/8',
+      badge: 'border-amber-400/25 bg-amber-400/10 text-amber-300',
+      label: 'Snoozed',
+    }
+  }
+
+  return {
+    container: 'border-white/10 bg-white/[0.03]',
+    badge: 'border-white/10 bg-white/[0.04] text-stone-300',
+    label: 'Pending',
+  }
+}
+
+function Panel({
+  title,
+  icon,
+  action,
+  children,
+}: {
+  title: string
+  icon: React.ReactNode
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-[28px] border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)] sm:p-6">
+      <div className="mb-5 flex items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+            {icon}
+          </div>
+          <div>
+            <h3 className="text-base font-semibold tracking-tight text-stone-100">{title}</h3>
+          </div>
+        </div>
+        {action}
+      </div>
+
+      {children}
+    </section>
+  )
+}
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-8 text-center text-sm text-stone-500">
+      {children}
+    </div>
+  )
+}
 
 export default function GathererPage() {
   const [activePopup, setActivePopup] =
-    useState<'client' | 'mandate' | 'property' | 'task' | 'visit' | null>(null);
-  const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
-  const [editingClientId, setEditingClientId] = useState<string | null>(null);
-  const [isLargeScreen, setIsLargeScreen] = useState(false);
+    useState<'client' | 'mandate' | 'property' | 'task' | 'visit' | null>(null)
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null)
+  const [editingClientId, setEditingClientId] = useState<string | null>(null)
 
-  const [recentClients, setRecentClients] = useState<RecentlyAddedClient[]>([]);
-  const [visitingSoon, setVisitingSoon] = useState<VisitingSoon[]>([]);
-  const [followUps, setFollowUps] = useState<FollowUpTask[]>([]);
-  const [totalClients, setTotalClients] = useState(0);
+  const [recentClients, setRecentClients] = useState<RecentlyAddedClient[]>([])
+  const [visitingSoon, setVisitingSoon] = useState<VisitingSoon[]>([])
+  const [followUps, setFollowUps] = useState<FollowUpTask[]>([])
+  const [totalClients, setTotalClients] = useState(0)
 
-  const [loadingRecent, setLoadingRecent] = useState(true);
-  const [loadingVisits, setLoadingVisits] = useState(true);
-  const [loadingTasks, setLoadingTasks] = useState(true);
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingRecent, setLoadingRecent] = useState(true)
+  const [loadingVisits, setLoadingVisits] = useState(true)
+  const [loadingTasks, setLoadingTasks] = useState(true)
+  const [loadingStats, setLoadingStats] = useState(true)
 
-  useEffect(() => {
-    const handleResize = () => setIsLargeScreen(window.innerWidth >= 1200);
-    window.addEventListener('resize', handleResize);
-    handleResize();
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // ---------- Fetchers ----------
   const fetchRecentClients = async () => {
-    setLoadingRecent(true);
+    setLoadingRecent(true)
     const { data, error } = await supabase
       .from('clients')
       .select(`
@@ -266,27 +189,27 @@ export default function GathererPage() {
         )
       `)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(5)
 
-    if (!error && data) setRecentClients(data as RecentlyAddedClient[]);
-    setLoadingRecent(false);
-  };
+    if (!error && data) setRecentClients(data as RecentlyAddedClient[])
+    setLoadingRecent(false)
+  }
 
   const fetchTotalClients = async () => {
-    setLoadingStats(true);
+    setLoadingStats(true)
     const { count, error } = await supabase
       .from('clients')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
 
-    if (!error && count !== null) setTotalClients(count);
-    setLoadingStats(false);
-  };
+    if (!error && count !== null) setTotalClients(count)
+    setLoadingStats(false)
+  }
 
   const fetchVisitingSoon = async () => {
-    setLoadingVisits(true);
-    const today = new Date();
-    const plus30 = new Date();
-    plus30.setDate(today.getDate() + 30);
+    setLoadingVisits(true)
+    const today = new Date()
+    const plus30 = new Date()
+    plus30.setDate(today.getDate() + 30)
 
     const { data, error } = await supabase
       .from('client_visits')
@@ -306,14 +229,14 @@ export default function GathererPage() {
       )
       .gte('visit_start_date', today.toISOString().split('T')[0])
       .lte('visit_start_date', plus30.toISOString().split('T')[0])
-      .order('visit_start_date', { ascending: true });
+      .order('visit_start_date', { ascending: true })
 
-    if (!error && data) setVisitingSoon(data as unknown as VisitingSoon[]);
-    setLoadingVisits(false);
-  };
+    if (!error && data) setVisitingSoon(data as unknown as VisitingSoon[])
+    setLoadingVisits(false)
+  }
 
   const fetchFollowUps = async () => {
-    setLoadingTasks(true);
+    setLoadingTasks(true)
     const { data, error } = await supabase
       .from('client_tasks')
       .select(
@@ -332,764 +255,637 @@ export default function GathererPage() {
         )
       `
       )
-      .order('due_date', { ascending: true });
+      .order('due_date', { ascending: true })
 
-    if (!error && data) setFollowUps(data as unknown as FollowUpTask[]);
-    setLoadingTasks(false);
-  };
+    if (!error && data) setFollowUps(data as unknown as FollowUpTask[])
+    setLoadingTasks(false)
+  }
 
   useEffect(() => {
-    fetchRecentClients();
-    fetchVisitingSoon();
-    fetchFollowUps();
-    fetchTotalClients();
-  }, []);
+    fetchRecentClients()
+    fetchVisitingSoon()
+    fetchFollowUps()
+    fetchTotalClients()
+  }, [])
 
-  // ---------- Task actions with Undo ----------
   const updateLocalTaskStatus = (id: string, status: FollowUpStatus) => {
-    setFollowUps(prev => prev.map(t => (t.id === id ? { ...t, status } : t)));
-  };
+    setFollowUps((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)))
+  }
 
   const handleSnooze = async (taskId: string) => {
-    const snoozeDate = new Date();
-    snoozeDate.setDate(snoozeDate.getDate() + 7);
-    const snoozeStr = snoozeDate.toISOString().split('T')[0];
+    const snoozeDate = new Date()
+    snoozeDate.setDate(snoozeDate.getDate() + 7)
+    const snoozeStr = snoozeDate.toISOString().split('T')[0]
 
-    updateLocalTaskStatus(taskId, 'snoozed'); // optimistic
+    updateLocalTaskStatus(taskId, 'snoozed')
     await supabase
       .from('client_tasks')
       .update({ status: 'snoozed', snoozed_until: snoozeStr })
-      .eq('id', taskId);
-  };
+      .eq('id', taskId)
+  }
 
   const handleDone = async (taskId: string) => {
-    updateLocalTaskStatus(taskId, 'done');
-    await supabase.from('client_tasks').update({ status: 'done' }).eq('id', taskId);
-  };
+    updateLocalTaskStatus(taskId, 'done')
+    await supabase.from('client_tasks').update({ status: 'done' }).eq('id', taskId)
+  }
 
   const handleUndo = async (taskId: string) => {
-    updateLocalTaskStatus(taskId, 'pending');
-    await supabase.from('client_tasks').update({ status: 'pending' }).eq('id', taskId);
-  };
+    updateLocalTaskStatus(taskId, 'pending')
+    await supabase.from('client_tasks').update({ status: 'pending' }).eq('id', taskId)
+  }
 
-    // ---------- Calendar logic with TASKS ----------
-  const today = new Date();
-  const [calendarMonth] = useState(today.getMonth());
-  const [calendarYear] = useState(today.getFullYear());
+  const today = new Date()
+  const calendarMonth = today.getMonth()
+  const calendarYear = today.getFullYear()
 
-  const firstOfMonth = new Date(calendarYear, calendarMonth, 1);
-  const firstDayIndex = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
-  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const firstOfMonth = new Date(calendarYear, calendarMonth, 1)
+  const firstDayIndex = (firstOfMonth.getDay() + 6) % 7
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate()
 
-  // Map visit dates to colors
-  const visitDateColors = new Map<string, string>();
-  visitingSoon.forEach(v => {
-    const start = v.visit_start_date;
-    const end = v.visit_end_date || v.visit_start_date;
-    const color = v.color || '#ff00ff';
-    getDatesBetween(start, end).forEach(d => {
-      if (!visitDateColors.has(d)) visitDateColors.set(d, color);
-    });
-  });
+  const visitDateColors = useMemo(() => {
+    const map = new Map<string, string>()
+    visitingSoon.forEach((visit) => {
+      const start = visit.visit_start_date
+      const end = visit.visit_end_date || visit.visit_start_date
+      const color = visit.color || '#f59e0b'
+      getDatesBetween(start, end).forEach((date) => {
+        if (!map.has(date)) map.set(date, color)
+      })
+    })
+    return map
+  }, [visitingSoon])
 
-  // Map task dates to counts
-  const taskDateCounts = new Map<string, number>();
-  followUps.forEach(task => {
-    const dateStr = task.due_date;
-    taskDateCounts.set(dateStr, (taskDateCounts.get(dateStr) || 0) + 1);
-  });
+  const taskDateCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    followUps.forEach((task) => {
+      const dateStr = task.due_date
+      map.set(dateStr, (map.get(dateStr) || 0) + 1)
+    })
+    return map
+  }, [followUps])
 
-  const calendarCells: Array<{ 
-    day: number | null; 
-    color: string | null; 
-    taskCount: number;
-  }> = [];
-  
+  const calendarCells: Array<{
+    day: number | null
+    color: string | null
+    taskCount: number
+  }> = []
+
   for (let i = 0; i < firstDayIndex; i++) {
-    calendarCells.push({ day: null, color: null, taskCount: 0 });
+    calendarCells.push({ day: null, color: null, taskCount: 0 })
   }
-  
+
   for (let d = 1; d <= daysInMonth; d++) {
-    const monthStr = String(calendarMonth + 1).padStart(2, '0');
-    const dayStr = String(d).padStart(2, '0');
-    const key = `${calendarYear}-${monthStr}-${dayStr}`;
-    const color = visitDateColors.get(key) || null;
-    const taskCount = taskDateCounts.get(key) || 0;
-    calendarCells.push({ day: d, color, taskCount });
+    const monthStr = String(calendarMonth + 1).padStart(2, '0')
+    const dayStr = String(d).padStart(2, '0')
+    const key = `${calendarYear}-${monthStr}-${dayStr}`
+    const color = visitDateColors.get(key) || null
+    const taskCount = taskDateCounts.get(key) || 0
+    calendarCells.push({ day: d, color, taskCount })
   }
 
-  const pendingTasksCount = followUps.filter(t => t.status !== 'done').length;
+  const pendingTasksCount = followUps.filter((t) => t.status !== 'done').length
 
+  const isOverlayOpen = activePopup || editingVisitId || editingClientId
 
   return (
-    <div style={styles.pageContainer}>
-      <MainHeader />
-      <main
+    <div className="min-h-screen bg-[#141310] text-stone-100">
+      <div
+        className="min-h-screen"
         style={{
-          ...styles.mainContent,
-          filter: activePopup || editingVisitId || editingClientId ? 'blur(5px)' : 'none',
+          backgroundImage:
+            'radial-gradient(circle at top left, rgba(245,158,11,0.10), transparent 24%), radial-gradient(circle at bottom right, rgba(251,191,36,0.06), transparent 24%)',
         }}
       >
-        <h2 style={styles.sectionHeader}>{'// BUYER CONTROL HUB'}</h2>
+        <MainHeader />
 
-        {/* Status bar */}
-        <div style={styles.statusBar}>
-          <span style={styles.statusItem}>
-            ACTIVE BUYERS: <strong>{loadingStats ? '...' : totalClients}</strong>
-          </span>
-          <span style={styles.statusItem}>
-            VISITS NEXT 30 DAYS: <strong>{visitingSoon.length}</strong>
-          </span>
-          <span style={styles.statusItem}>
-            PENDING TASKS: <strong>{pendingTasksCount}</strong>
-          </span>
-          <span style={styles.statusItem}>
-            SYSTEM STATUS: <strong style={{ color: '#00ff00' }}>NOMINAL</strong>
-          </span>
-        </div>
-
-        {/* Subscription Status Badge */}
-<div className="mb-6 p-4 bg-[#00ff00]/10 border border-[#00ff00] rounded-lg flex items-center justify-between">
-  <div className="flex items-center gap-3">
-    <Crown className="text-[#00ff00]" size={24} />
-    <div>
-      <p className="text-white font-bold">Barracuda Pro Active</p>
-      <p className="text-sm text-gray-400">Full access to all features</p>
-    </div>
-  </div>
-  <Link
-    href="/account"
-    className="px-4 py-2 border border-[#00ff00] text-[#00ff00] hover:bg-[#00ff00]/10 rounded uppercase text-xs font-bold"
-  >
-    Manage
-  </Link>
-</div>
-
-
-        {/* Quick actions */}
-        <div style={styles.quickActions}>
-          <button style={styles.actionButton} onClick={() => setActivePopup('client')}>
-            <UserPlus size={16} />
-            <span>Add New Client</span>
-          </button>
-          {/* <button style={styles.actionButton} onClick={() => setActivePopup('mandate')}>
-            <FilePlus size={16} />
-            <span>Create New Mandate</span>
-          </button> */}
-          {/* <button style={styles.actionButton} onClick={() => setActivePopup('property')}>
-            <Home size={16} />
-            <span>Add New Property</span>
-          </button> */}
-        </div>
-
-        {/* Main layout */}
-        <div
-          style={{ ...styles.contentLayout, ...(isLargeScreen ? styles.contentLayoutLarge : {}) }}
+        <main
+          className={`mx-auto w-full max-w-[1600px] px-5 py-8 transition-all duration-300 sm:px-8 ${
+            isOverlayOpen ? 'blur-[4px]' : ''
+          }`}
         >
-          {/* LEFT COLUMN */}
-          <div style={styles.columnStack}>
-            {/* Recently added clients */}
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <h3 style={styles.panelTitle}>
-                  <UserPlus size={18} /> Recently Added Clients
-                </h3>
-                <Link href="/gatherer/clients" style={styles.panelAction}>
-                  View All
+          <section className="mb-8 flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-amber-200">
+                <Activity size={14} />
+                Buyer operations
+              </div>
+
+              <h1 className="text-3xl font-semibold tracking-tight text-stone-50 sm:text-4xl">
+                Gatherer workspace
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-400 sm:text-base">
+                Manage client intake, visits, and follow-up operations from one structured
+                workspace designed for day-to-day execution.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-4">
+              <div className="flex items-center gap-3">
+                <Crown className="text-emerald-300" size={20} />
+                <div>
+                  <p className="text-sm font-semibold text-stone-100">Barracuda Pro active</p>
+                  <p className="text-xs text-stone-400">Full access to Gatherer workflows</p>
+                </div>
+                <Link
+                  href="/account"
+                  className="ml-3 inline-flex items-center rounded-full border border-emerald-400/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors duration-200 hover:bg-emerald-400/10"
+                >
+                  Manage
                 </Link>
               </div>
-              {loadingRecent ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
-                  <Loader2 className="animate-spin" size={20} />
-                </div>
-              ) : (
-                <ul style={styles.list}>
-                  {recentClients.map(client => {
-                    const crit = client.client_search_criteria?.[0];
-                    const name =
-                      `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
-                      'Unnamed Client';
+            </div>
+          </section>
 
-                    const minB = crit?.min_budget;
-                    const maxB = crit?.max_budget;
-                    const budgetLabel =
-                      minB != null || maxB != null
-                        ? `€${(minB || 0).toLocaleString()} - €${(maxB || 0).toLocaleString()}`
-                        : 'Budget Not Set';
-
-                    const areas = crit?.locations || 'No areas set';
-                    const created = new Date(client.created_at).toLocaleDateString('en-GB');
-
-                    return (
-                      <li
-  key={client.id}
-  style={{
-    ...styles.cardItem,
-    padding: '15px',
-    borderLeft: '4px solid #00ffff',
-  }}
->
-  <div
-    style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '8px',
-    }}
-  >
-    <div>
-      <div
-        style={{
-          fontSize: '1.1rem',
-          fontWeight: 'bold',
-          color: '#fff',
-        }}
-      >
-        {name}
-      </div>
-      <div style={{ fontSize: '0.7rem', color: '#a0a0ff' }}>
-        ID: {client.id.slice(0, 8)}
-      </div>
-    </div>
-
-    {/* Button container with both buttons side-by-side */}
-    <div style={{ display: 'flex', gap: '8px' }}>
-      <button
-        onClick={() => setEditingClientId(client.id)}
-        style={{
-          background: 'transparent',
-          border: '1px solid #00ffff',
-          color: '#00ffff',
-          borderRadius: '4px',
-          padding: '5px 10px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '5px',
-          fontSize: '0.75rem',
-        }}
-      >
-        <Edit size={14} /> Edit File
-      </button>
-
-      <Link 
-        href={`/gatherer/clients/${client.id}`} 
-        style={{ textDecoration: 'none' }}
-      >
-        <button
-          style={{
-            background: 'transparent',
-            border: '1px solid #ff00ff',
-            color: '#ff00ff',
-            borderRadius: '4px',
-            padding: '5px 10px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            fontSize: '0.75rem',
-          }}
-        >
-          <ExternalLink size={14} /> Scanner
-        </button>
-      </Link>
-    </div>
-  </div>
-
-  <div
-    style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '5px',
-      fontSize: '0.9rem',
-    }}
-  >
-    <div style={{ color: '#e0e0ff' }}>
-      <strong>Budget:</strong>{' '}
-      <span style={{ color: '#00ff00' }}>{budgetLabel}</span>
-    </div>
-    <div style={{ color: '#e0e0ff' }}>
-      <strong>Looking in:</strong>{' '}
-      <span style={{ color: '#ff00ff' }}>{areas}</span>
-    </div>
-    <div
-      style={{
-        fontSize: '0.75rem',
-        color: '#888',
-        marginTop: '5px',
-      }}
-    >
-      Added: {created}
-    </div>
-  </div>
-</li>
-
-                    );
-                  })}
-                  {recentClients.length === 0 && (
-                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>No clients yet.</li>
-                  )}
-                </ul>
-              )}
-            </section>
-
-            {/* People visiting soon */}
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <h3 style={styles.panelTitle}>
-                  <CalendarDays size={18} /> People Visiting Soon
-                </h3>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <span
-                    style={{ ...styles.panelAction, cursor: 'pointer' }}
-                    onClick={() => setActivePopup('visit')}
-                  >
-                    + Log Visit
-                  </span>
-                  <Link href="/gatherer/visits" style={styles.panelAction}>
-                    See all visits
-                  </Link>
-                </div>
+          <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Active buyers
               </div>
-              {loadingVisits ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
-                  <Loader2 className="animate-spin" size={20} />
-                </div>
-              ) : (
-                <ul style={styles.list}>
-                  {visitingSoon.map(v => {
-                    const name = v.clients
-                      ? `${v.clients.first_name || ''} ${v.clients.last_name || ''}`.trim()
-                      : 'Unknown client';
-                    const fromLabel = new Date(v.visit_start_date).toLocaleDateString('en-GB');
-                    const toLabel = new Date(
-                      v.visit_end_date || v.visit_start_date,
-                    ).toLocaleDateString('en-GB');
-                    const visitColor = v.color || '#ff00ff';
-
-                    return (
-                      <li
-                        key={v.id}
-                        style={{
-                          ...styles.cardItem,
-                          borderLeft: `4px solid ${visitColor}`,
-                          paddingLeft: '16px',
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '6px',
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: '1rem',
-                              fontWeight: 'bold',
-                              color: '#fff',
-                            }}
-                          >
-                            {name}
-                          </span>
-                          <span
-                            style={{ ...styles.smallLabel, fontSize: '0.65rem' }}
-                          >
-                            ({v.id.slice(0, 8)})
-                          </span>
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: '1.1rem',
-                            fontWeight: 'bold',
-                            color: visitColor,
-                            marginBottom: '6px',
-                            textShadow: `0 0 4px ${visitColor}`,
-                          }}
-                        >
-                          📅 {fromLabel} → {toLabel}
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: '0.95rem',
-                            color: '#e0e0ff',
-                            fontWeight: 600,
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                            padding: '8px',
-                            borderRadius: '4px',
-                            marginBottom: '10px',
-                            border: `1px solid ${visitColor}40`,
-                          }}
-                        >
-                          {v.notes || 'No visit notes recorded'}
-                        </div>
-
-                        <button
-                          type="button"
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            backgroundColor: `${visitColor}20`,
-                            border: `1px solid ${visitColor}`,
-                            borderRadius: '4px',
-                            color: visitColor,
-                            fontSize: '0.8rem',
-                            fontWeight: 'bold',
-                            textTransform: 'uppercase',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                          }}
-                          onClick={() => setEditingVisitId(v.id)}
-                        >
-                          <Edit size={14} /> Edit Visit
-                        </button>
-                      </li>
-                    );
-                  })}
-                  {visitingSoon.length === 0 && (
-                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>No visits planned.</li>
-                  )}
-                </ul>
-              )}
-            </section>
-
-            {/* Follow-ups & Tasks with Undo */}
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <h3 style={styles.panelTitle}>
-                  <Bell size={18} /> Follow-ups & Tasks
-                </h3>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <span
-                    style={{ ...styles.panelAction, cursor: 'pointer' }}
-                    onClick={() => setActivePopup('task')}
-                  >
-                    + Create Task
-                  </span>
-                  <Link href="/gatherer/tasks" style={styles.panelAction}>
-                    See all tasks
-                  </Link>
-                </div>
+              <div className="mt-3 text-3xl font-semibold tracking-tight text-stone-100">
+                {loadingStats ? '...' : totalClients}
               </div>
-              {loadingTasks ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
-                  <Loader2 className="animate-spin" size={20} />
-                </div>
-              ) : (
-                <ul style={styles.list}>
-                  {followUps.map(task => {
-                    const isDone = task.status === 'done';
-                    const isSnoozed = task.status === 'snoozed';
-                    const name = task.clients
-                      ? `${task.clients.first_name || ''} ${
-                          task.clients.last_name || ''
-                        }`.trim()
-                      : 'Unknown client';
-                    const dueLabel = new Date(task.due_date).toLocaleDateString('en-GB');
+              <p className="mt-2 text-sm text-stone-400">Total active client records in workspace.</p>
+            </div>
 
-                    const bgColor = isDone
-                      ? 'rgba(0, 255, 0, 0.08)'
-                      : isSnoozed
-                      ? 'rgba(255, 255, 0, 0.08)'
-                      : 'rgba(0, 255, 255, 0.08)';
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Visits next 30 days
+              </div>
+              <div className="mt-3 text-3xl font-semibold tracking-tight text-amber-300">
+                {visitingSoon.length}
+              </div>
+              <p className="mt-2 text-sm text-stone-400">Upcoming booked activity and field planning.</p>
+            </div>
 
-                    return (
-                      <li
-                        key={task.id}
-                        style={{
-                          ...styles.cardItem,
-                          backgroundColor: bgColor,
-                          opacity: isDone ? 0.7 : 1,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>
-                            <strong>{name}</strong>{' '}
-                            <span style={styles.smallLabel}>
-                              ({task.client_id.slice(0, 8)})
-                            </span>
-                          </span>
-                          <span style={styles.smallLabel}>{dueLabel}</span>
-                        </div>
-                        <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>
-                          {task.notes || 'Follow up with this client.'}
-                        </div>
-                        <div style={styles.badgeRow}>
-                          {isSnoozed && <span style={styles.badge}>Snoozed</span>}
-                          {isDone && (
-                            <span
-                              style={{
-                                ...styles.badge,
-                                borderColor: '#00ff00',
-                                color: '#00ff00',
-                              }}
-                            >
-                              Completed
-                            </span>
-                          )}
-                          <span style={styles.badgePink}>
-                            {task.task_type === 'follow_up' ? 'Call' : 'Task'}
-                          </span>
-                        </div>
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Pending tasks
+              </div>
+              <div className="mt-3 text-3xl font-semibold tracking-tight text-stone-100">
+                {pendingTasksCount}
+              </div>
+              <p className="mt-2 text-sm text-stone-400">Open follow-ups still requiring action.</p>
+            </div>
 
-                        <div style={styles.followUpActions}>
-                          {!isDone ? (
-                            <>
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Workspace status
+              </div>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-sm font-medium text-emerald-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                Operational
+              </div>
+              <p className="mt-3 text-sm text-stone-400">Core client operations running normally.</p>
+            </div>
+          </section>
+
+          <section className="mb-8 flex flex-wrap gap-3">
+            <button
+              onClick={() => setActivePopup('client')}
+              className="inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2.5 text-sm font-medium text-amber-200 transition-colors duration-200 hover:bg-amber-400/15"
+            >
+              <UserPlus size={16} />
+              Add client
+            </button>
+
+            <button
+              onClick={() => setActivePopup('visit')}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-stone-200 transition-colors duration-200 hover:bg-white/[0.07]"
+            >
+              <CalendarDays size={16} />
+              Log visit
+            </button>
+
+            <button
+              onClick={() => setActivePopup('task')}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-stone-200 transition-colors duration-200 hover:bg-white/[0.07]"
+            >
+              <CheckSquare size={16} />
+              Create task
+            </button>
+          </section>
+
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.8fr_1fr]">
+            <div className="flex flex-col gap-5">
+              <Panel
+                title="Recently added clients"
+                icon={<Users size={18} />}
+                action={
+                  <Link
+                    href="/gatherer/clients"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-amber-300 transition-colors duration-200 hover:text-amber-200"
+                  >
+                    View all
+                    <ArrowRight size={15} />
+                  </Link>
+                }
+              >
+                {loadingRecent ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="animate-spin text-stone-400" size={22} />
+                  </div>
+                ) : recentClients.length === 0 ? (
+                  <EmptyState>No clients have been added yet.</EmptyState>
+                ) : (
+                  <div className="space-y-3">
+                    {recentClients.map((client) => {
+                      const criteria = client.client_search_criteria?.[0]
+                      const name =
+                        `${client.first_name || ''} ${client.last_name || ''}`.trim() ||
+                        'Unnamed client'
+                      const budgetLabel = formatCurrencyRange(
+                        criteria?.min_budget,
+                        criteria?.max_budget,
+                      )
+                      const areas = criteria?.locations || 'No areas set'
+                      const created = new Date(client.created_at).toLocaleDateString('en-GB')
+
+                      return (
+                        <div
+                          key={client.id}
+                          className="rounded-2xl border border-white/10 bg-[#1b1916] p-4 transition-colors duration-200 hover:bg-[#211e1a]"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <h4 className="text-base font-semibold text-stone-100">{name}</h4>
+                                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                                  {client.id.slice(0, 8)}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 grid gap-2 text-sm text-stone-400 sm:grid-cols-2">
+                                <div>
+                                  <span className="text-stone-500">Budget</span>
+                                  <div className="mt-1 font-medium text-emerald-300">
+                                    {budgetLabel}
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-stone-500">Target areas</span>
+                                  <div className="mt-1 text-stone-200">{areas}</div>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 text-xs text-stone-500">Added {created}</div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
                               <button
-                                type="button"
-                                style={{
-                                  ...styles.followUpBtn,
-                                  borderColor: '#ff00ff',
-                                  backgroundColor: 'rgba(255, 0, 255, 0.1)',
-                                  color: '#ff00ff',
-                                }}
-                                onClick={() => handleSnooze(task.id)}
+                                onClick={() => setEditingClientId(client.id)}
+                                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-stone-200 transition-colors duration-200 hover:bg-white/[0.08]"
                               >
-                                <Hourglass size={12} /> Snooze 7d
+                                <Edit size={14} />
+                                Edit
                               </button>
-                              <button
-                                type="button"
-                                style={{
-                                  ...styles.followUpBtn,
-                                  borderColor: '#00ff00',
-                                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                                  color: '#00ff00',
-                                }}
-                                onClick={() => handleDone(task.id)}
+
+                              <Link
+                                href={`/gatherer/clients/${client.id}`}
+                                className="inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-200 transition-colors duration-200 hover:bg-amber-400/15"
                               >
-                                <CheckCircle2 size={12} /> Done
-                              </button>
-                            </>
-                          ) : (
+                                <ExternalLink size={14} />
+                                Open file
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
+                title="Upcoming visits"
+                icon={<CalendarDays size={18} />}
+                action={
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setActivePopup('visit')}
+                      className="text-sm font-medium text-stone-400 transition-colors duration-200 hover:text-stone-200"
+                    >
+                      Log visit
+                    </button>
+                    <Link
+                      href="/gatherer/visits"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-amber-300 transition-colors duration-200 hover:text-amber-200"
+                    >
+                      See all
+                      <ArrowRight size={15} />
+                    </Link>
+                  </div>
+                }
+              >
+                {loadingVisits ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="animate-spin text-stone-400" size={22} />
+                  </div>
+                ) : visitingSoon.length === 0 ? (
+                  <EmptyState>No visits are scheduled in the next 30 days.</EmptyState>
+                ) : (
+                  <div className="space-y-3">
+                    {visitingSoon.map((visit) => {
+                      const name = visit.clients
+                        ? `${visit.clients.first_name || ''} ${visit.clients.last_name || ''}`.trim()
+                        : 'Unknown client'
+                      const fromLabel = new Date(visit.visit_start_date).toLocaleDateString('en-GB')
+                      const toLabel = new Date(
+                        visit.visit_end_date || visit.visit_start_date,
+                      ).toLocaleDateString('en-GB')
+                      const visitColor = visit.color || '#f59e0b'
+
+                      return (
+                        <div
+                          key={visit.id}
+                          className="rounded-2xl border border-white/10 bg-[#1b1916] p-4"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <h4 className="text-base font-semibold text-stone-100">{name}</h4>
+                                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                                  {visit.id.slice(0, 8)}
+                                </span>
+                              </div>
+
+                              <div
+                                className="mt-3 inline-flex items-center rounded-full px-3 py-1 text-sm font-medium"
+                                style={{
+                                  border: `1px solid ${visitColor}40`,
+                                  backgroundColor: `${visitColor}18`,
+                                  color: visitColor,
+                                }}
+                              >
+                                {fromLabel} → {toLabel}
+                              </div>
+
+                              <div className="mt-3 rounded-2xl border border-white/10 bg-black/10 p-3 text-sm leading-6 text-stone-300">
+                                {visit.notes || 'No visit notes recorded.'}
+                              </div>
+                            </div>
+
                             <button
                               type="button"
-                              style={{
-                                ...styles.followUpBtn,
-                                borderColor: '#ff00ff',
-                                backgroundColor: 'rgba(255, 0, 255, 0.1)',
-                                color: '#ff00ff',
-                              }}
-                              onClick={() => handleUndo(task.id)}
+                              onClick={() => setEditingVisitId(visit.id)}
+                              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-medium text-stone-200 transition-colors duration-200 hover:bg-white/[0.08]"
                             >
-                              <RotateCcw size={12} /> Undo
+                              <Edit size={14} />
+                              Edit visit
                             </button>
-                          )}
+                          </div>
                         </div>
-                      </li>
-                    );
-                  })}
-                  {followUps.length === 0 && (
-                    <li style={{ ...styles.cardItem, opacity: 0.6 }}>
-                      No tasks yet.
-                    </li>
-                  )}
-                </ul>
-              )}
-            </section>
-          </div>
-
-          {/* RIGHT COLUMN */}
-          <div style={styles.columnStack}>
-            {/* Mini Calendar */}
-            <section style={styles.calendarPanel}>
-              <div style={styles.panelHeader}>
-                <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
-                  <CalendarDays size={18} /> Visit Calendar
-                </h3>
-                <Link href="/gatherer/calendar" style={styles.panelAction}>
-                  View Calendar
-                </Link>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#e0e0ff' }}>
-                {today.toLocaleString('default', { month: 'long' }).toUpperCase()}{' '}
-                {calendarYear}
-              </div>
-                            <div style={styles.calendarGrid}>
-                {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      textAlign: 'center',
-                      fontSize: '0.65rem',
-                      color: '#a0a0ff',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    {d}
+                      )
+                    })}
                   </div>
-                ))}
-                {calendarCells.map((cell, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      ...styles.calendarCell,
-                      backgroundColor: cell.color ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
-                      borderColor: cell.color || 'rgba(0, 255, 255, 0.2)',
-                      position: 'relative',
-                    }}
-                  >
-                    <span style={{ fontSize: '0.7rem', color: '#ffffff' }}>
-                      {cell.day ?? ''}
-                    </span>
-                    
-                    <div style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'flex-end', 
-                      gap: '2px',
-                      position: 'absolute',
-                      bottom: '2px',
-                      right: '2px',
-                    }}>
-                      {/* Visit indicator dot */}
-                      {cell.color && (
-                        <span
-                          style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '999px',
-                            backgroundColor: cell.color,
-                            boxShadow: `0 0 6px ${cell.color}`,
-                          }}
-                        />
-                      )}
-                      
-                      {/* Task count badge */}
-                      {cell.taskCount > 0 && (
-                        <span
-                          style={{
-                            fontSize: '0.55rem',
-                            fontWeight: 'bold',
-                            color: '#000',
-                            backgroundColor: '#ffff00',
-                            borderRadius: '999px',
-                            padding: '1px 3px',
-                            lineHeight: '1',
-                            boxShadow: '0 0 4px rgba(255, 255, 0, 0.8)',
-                            minWidth: '12px',
-                            textAlign: 'center',
-                          }}
+                )}
+              </Panel>
+
+              <Panel
+                title="Follow-ups and tasks"
+                icon={<Bell size={18} />}
+                action={
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setActivePopup('task')}
+                      className="text-sm font-medium text-stone-400 transition-colors duration-200 hover:text-stone-200"
+                    >
+                      Create task
+                    </button>
+                    <Link
+                      href="/gatherer/tasks"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-amber-300 transition-colors duration-200 hover:text-amber-200"
+                    >
+                      See all
+                      <ArrowRight size={15} />
+                    </Link>
+                  </div>
+                }
+              >
+                {loadingTasks ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="animate-spin text-stone-400" size={22} />
+                  </div>
+                ) : followUps.length === 0 ? (
+                  <EmptyState>No tasks have been created yet.</EmptyState>
+                ) : (
+                  <div className="space-y-3">
+                    {followUps.map((task) => {
+                      const name = task.clients
+                        ? `${task.clients.first_name || ''} ${task.clients.last_name || ''}`.trim()
+                        : 'Unknown client'
+                      const dueLabel = new Date(task.due_date).toLocaleDateString('en-GB')
+                      const isDone = task.status === 'done'
+                      const tone = getTaskTone(task.status)
+
+                      return (
+                        <div
+                          key={task.id}
+                          className={`rounded-2xl border p-4 ${tone.container} ${
+                            isDone ? 'opacity-75' : ''
+                          }`}
                         >
-                          {cell.taskCount}
-                        </span>
-                      )}
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <h4 className="text-base font-semibold text-stone-100">{name}</h4>
+                                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                                  {task.client_id.slice(0, 8)}
+                                </span>
+                                <span
+                                  className={`rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] ${tone.badge}`}
+                                >
+                                  {tone.label}
+                                </span>
+                                <span className="rounded-full border border-amber-300/15 bg-amber-400/8 px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-amber-200">
+                                  {task.task_type === 'follow_up' ? 'Call' : 'Task'}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 text-sm text-stone-500">Due {dueLabel}</div>
+
+                              <div className="mt-3 text-sm leading-6 text-stone-300">
+                                {task.notes || 'Follow up with this client.'}
+                              </div>
+                            </div>
+
+                            <div className="flex w-full flex-wrap gap-2 lg:w-auto">
+                              {!isDone ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSnooze(task.id)}
+                                    className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2 text-xs font-medium text-amber-200 transition-colors duration-200 hover:bg-amber-400/15"
+                                  >
+                                    <Hourglass size={13} />
+                                    Snooze 7d
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDone(task.id)}
+                                    className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-medium text-emerald-300 transition-colors duration-200 hover:bg-emerald-400/15"
+                                  >
+                                    <CheckCircle2 size={13} />
+                                    Mark done
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUndo(task.id)}
+                                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium text-stone-200 transition-colors duration-200 hover:bg-white/[0.08]"
+                                >
+                                  <RotateCcw size={13} />
+                                  Undo
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </Panel>
+            </div>
+
+            <div className="flex flex-col gap-5">
+              <Panel
+                title="Visit calendar"
+                icon={<CalendarDays size={18} />}
+                action={
+                  <Link
+                    href="/gatherer/calendar"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-amber-300 transition-colors duration-200 hover:text-amber-200"
+                  >
+                    View calendar
+                    <ArrowRight size={15} />
+                  </Link>
+                }
+              >
+                <div className="mb-4 text-sm text-stone-400">
+                  {today.toLocaleString('default', { month: 'long' })} {calendarYear}
+                </div>
+
+                <div className="grid grid-cols-7 gap-2 text-center text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                    <div key={day}>{day}</div>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid grid-cols-7 gap-2">
+                  {calendarCells.map((cell, idx) => (
+                    <div
+                      key={idx}
+                      className="relative min-h-[56px] rounded-xl border border-white/10 bg-black/10 p-2"
+                      style={{
+                        borderColor: cell.color ? `${cell.color}45` : undefined,
+                        backgroundColor: cell.color ? `${cell.color}12` : undefined,
+                      }}
+                    >
+                      <span className="text-xs text-stone-200">{cell.day ?? ''}</span>
+
+                      <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+                        {cell.color && (
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: cell.color }}
+                          />
+                        )}
+
+                        {cell.taskCount > 0 && (
+                          <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-[#171512]">
+                            {cell.taskCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex flex-col gap-2 text-xs text-stone-500">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                    Visit scheduled
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-semibold text-[#171512]">
+                      #
+                    </span>
+                    Task count
+                  </div>
+                </div>
+              </Panel>
+
+              <Panel title="Priority alerts" icon={<Bell size={18} />}>
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-white/10 bg-[#1b1916] p-4">
+                    <div className="text-sm leading-6 text-stone-300">
+                      High-budget client arriving next week. Refresh available stock in target zones before outreach.
                     </div>
                   </div>
-                ))}
-              </div>
-              <div
-                style={{
-                  marginTop: '12px',
-                  fontSize: '0.75rem',
-                  color: '#a0a0ff',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ 
-                    width: '8px', 
-                    height: '8px', 
-                    borderRadius: '50%', 
-                    backgroundColor: '#ff00ff',
-                    boxShadow: '0 0 6px #ff00ff',
-                  }} />
-                  <span>Visit scheduled</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ 
-                    fontSize: '0.6rem',
-                    fontWeight: 'bold',
-                    color: '#000',
-                    backgroundColor: '#ffff00',
-                    borderRadius: '999px',
-                    padding: '1px 4px',
-                    boxShadow: '0 0 4px rgba(255, 255, 0, 0.8)',
-                  }}>
-                    #
-                  </span>
-                  <span>Task count</span>
-                </div>
-              </div>
 
-            </section>
-
-            {/* Priority Alerts */}
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <h3 style={{ ...styles.panelTitle, color: '#ff00ff' }}>
-                  <Bell size={18} /> Priority Alerts
-                </h3>
-              </div>
-              <ul style={styles.list}>
-                <li style={styles.cardItem}>
-                  <div style={{ fontSize: '0.85rem' }}>
-                    High-budget client arriving next week – ensure fresh stock in key areas.
+                  <div className="rounded-2xl border border-white/10 bg-[#1b1916] p-4">
+                    <div className="text-sm leading-6 text-stone-300">
+                      Several buyers have not updated search criteria in the last 90 days. Schedule review calls.
+                    </div>
                   </div>
-                </li>
-                <li style={styles.cardItem}>
-                  <div style={{ fontSize: '0.85rem' }}>
-                    Several buyers have no updated criteria in the last 90 days – schedule strategy
-                    calls.
-                  </div>
-                </li>
-              </ul>
-            </section>
-          </div>
-        </div>
-      </main>
+                </div>
+              </Panel>
+            </div>
+          </section>
+        </main>
 
-      {/* Popups */}
-      <CreateClientPopup
-        isOpen={activePopup === 'client'}
-        onClose={() => {
-          setActivePopup(null);
-          fetchRecentClients();
-          fetchTotalClients();
-        }}
-      />
-      <CreateMandatePopup
-        isOpen={activePopup === 'mandate'}
-        onClose={() => setActivePopup(null)}
-      />
-      <CreatePropertyPopup
-        isOpen={activePopup === 'property'}
-        onClose={() => setActivePopup(null)}
-      />
-      <CreateTaskPopup
-        isOpen={activePopup === 'task'}
-        onClose={() => setActivePopup(null)}
-        onTaskCreated={fetchFollowUps}
-      />
-      <CreateVisitPopup
-        isOpen={activePopup === 'visit'}
-        onClose={() => setActivePopup(null)}
-        onVisitCreated={fetchVisitingSoon}
-      />
-      <EditVisitPopup
-        isOpen={!!editingVisitId}
-        visitId={editingVisitId}
-        onClose={() => setEditingVisitId(null)}
-        onVisitUpdated={fetchVisitingSoon}
-      />
-      {editingClientId && (
-        <EditClientPopup
-          isOpen={!!editingClientId}
+        <CreateClientPopup
+          isOpen={activePopup === 'client'}
           onClose={() => {
-            setEditingClientId(null);
-            fetchRecentClients();
+            setActivePopup(null)
+            fetchRecentClients()
+            fetchTotalClients()
           }}
-          clientId={editingClientId}
         />
-      )}
+
+        <CreateMandatePopup
+          isOpen={activePopup === 'mandate'}
+          onClose={() => setActivePopup(null)}
+        />
+
+        <CreatePropertyPopup
+          isOpen={activePopup === 'property'}
+          onClose={() => setActivePopup(null)}
+        />
+
+        <CreateTaskPopup
+          isOpen={activePopup === 'task'}
+          onClose={() => setActivePopup(null)}
+          onTaskCreated={fetchFollowUps}
+        />
+
+        <CreateVisitPopup
+          isOpen={activePopup === 'visit'}
+          onClose={() => setActivePopup(null)}
+          onVisitCreated={fetchVisitingSoon}
+        />
+
+        <EditVisitPopup
+          isOpen={!!editingVisitId}
+          visitId={editingVisitId}
+          onClose={() => setEditingVisitId(null)}
+          onVisitUpdated={fetchVisitingSoon}
+        />
+
+        {editingClientId && (
+          <EditClientPopup
+            isOpen={!!editingClientId}
+            onClose={() => {
+              setEditingClientId(null)
+              fetchRecentClients()
+            }}
+            clientId={editingClientId}
+          />
+        )}
+      </div>
     </div>
-  );
+  )
 }
