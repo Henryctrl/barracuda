@@ -1,351 +1,326 @@
-'use client';
+//src/app/gatherer/clients/page.tsx
 
-import React, { useState, useEffect, CSSProperties } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import { Search, Edit, Trash2, Loader2, User, MapPin, TrendingUp, ExternalLink, UserPlus } from 'lucide-react';
-import MainHeader from '../../../components/MainHeader';
-import EditClientPopup from '../../../components/popups/EditClientPopup';
-import CreateClientPopup from '../../../components/popups/CreateClientPopup'; // ✅ ADD THIS
-import Link from 'next/link';
+'use client'
 
-// Initialize Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import React, { useEffect, useMemo, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import {
+  Search,
+  Edit,
+  Trash2,
+  Loader2,
+  User,
+  MapPin,
+  TrendingUp,
+  ExternalLink,
+  UserPlus,
+  Users,
+} from 'lucide-react'
+import MainHeader from '../../../components/MainHeader'
+import EditClientPopup from '../../../components/popups/EditClientPopup'
+import CreateClientPopup from '../../../components/popups/CreateClientPopup'
+import Link from 'next/link'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 interface ClientSummary {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  mobile: string;
+  id: string
+  first_name: string
+  last_name: string
+  email: string
+  mobile: string
   client_search_criteria: {
-    min_budget: number;
-    max_budget: number;
-    locations: string;
-  }[];
+    min_budget: number
+    max_budget: number
+    locations: string
+  }[]
+}
+
+function formatBudget(min?: number, max?: number) {
+  const minLabel = min ? `€${(min / 1000).toFixed(0)}k` : '€0'
+  const maxLabel = max ? `€${(max / 1000).toFixed(0)}k` : 'Open'
+  return `${minLabel} - ${maxLabel}`
 }
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [editingClientId, setEditingClientId] = useState<string | null>(null);
-  const [showCreatePopup, setShowCreatePopup] = useState(false); // ✅ ADD THIS
+  const [clients, setClients] = useState<ClientSummary[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [editingClientId, setEditingClientId] = useState<string | null>(null)
+  const [showCreatePopup, setShowCreatePopup] = useState(false)
 
   const fetchClients = async () => {
-    setIsLoading(true);
+    setIsLoading(true)
+
     const { data, error } = await supabase
       .from('clients')
       .select(`
         id, first_name, last_name, email, mobile,
         client_search_criteria (min_budget, max_budget, locations)
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
 
-    if (error) console.error('Error fetching clients:', error);
-    else setClients((data as unknown as ClientSummary[]) || []);
-    setIsLoading(false);
-  };
+    if (error) {
+      console.error('Error fetching clients:', error)
+    } else {
+      setClients((data as unknown as ClientSummary[]) || [])
+    }
+
+    setIsLoading(false)
+  }
 
   useEffect(() => {
-    fetchClients();
-  }, []);
+    fetchClients()
+  }, [])
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this client and all associated data?')) return;
-    
-    const { error } = await supabase.from('clients').delete().eq('id', id);
+    if (!confirm('Are you sure you want to delete this client and all associated data?')) return
+
+    const { error } = await supabase.from('clients').delete().eq('id', id)
+
     if (error) {
-      alert('Error deleting client');
+      alert('Error deleting client')
     } else {
-      setClients(prev => prev.filter(c => c.id !== id));
+      setClients((prev) => prev.filter((client) => client.id !== id))
     }
-  };
+  }
 
-  // Filter clients based on search
-  const filteredClients = clients.filter(c => 
-    `${c.first_name} ${c.last_name} ${c.email}`.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredClients = useMemo(() => {
+    return clients.filter((client) =>
+      `${client.first_name} ${client.last_name} ${client.email}`
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()),
+    )
+  }, [clients, searchTerm])
 
-  // --- STYLES ---
-  const styles: { [key: string]: CSSProperties } = {
-    pageContainer: {
-      minHeight: '100vh',
-      backgroundColor: '#0d0d21',
-      fontFamily: "'Orbitron', sans-serif",
-      color: '#00ffff',
-      backgroundImage: `linear-gradient(rgba(13, 13, 33, 0.97), rgba(13, 13, 33, 0.97)), repeating-linear-gradient(45deg, rgba(255, 0, 255, 0.05), rgba(255, 0, 255, 0.05) 1px, transparent 1px, transparent 10px)`,
-    },
-    mainContent: { padding: '30px 20px' },
-    header: { 
-      display: 'flex', 
-      justifyContent: 'space-between', 
-      alignItems: 'center', 
-      marginBottom: '30px', 
-      borderBottom: '2px solid #ff00ff', 
-      paddingBottom: '15px',
-      flexWrap: 'wrap', // ✅ ADD for responsive
-      gap: '15px' // ✅ ADD for spacing
-    },
-    title: { 
-      fontSize: '1.8rem', 
-      color: '#ff00ff', 
-      textTransform: 'uppercase', 
-      textShadow: '0 0 8px rgba(255, 0, 255, 0.7)' 
-    },
-    headerActions: { // ✅ ADD THIS
-      display: 'flex',
-      alignItems: 'center',
-      gap: '15px'
-    },
-    searchContainer: { position: 'relative', width: '300px' },
-    searchInput: { 
-      width: '100%', 
-      padding: '10px 10px 10px 40px', 
-      backgroundColor: 'rgba(0, 255, 255, 0.1)', 
-      border: '1px solid #00ffff', 
-      borderRadius: '5px', 
-      color: '#fff', 
-      outline: 'none' 
-    },
-    searchIcon: { 
-      position: 'absolute', 
-      left: '10px', 
-      top: '50%', 
-      transform: 'translateY(-50%)', 
-      color: '#00ffff' 
-    },
-    addClientBtn: { // ✅ ADD THIS
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '10px 20px',
-      backgroundColor: '#ff00ff',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '5px',
-      cursor: 'pointer',
-      fontWeight: 'bold',
-      fontSize: '0.9rem',
-      textTransform: 'uppercase',
-      boxShadow: '0 0 10px rgba(255, 0, 255, 0.5)',
-      transition: 'all 0.3s ease',
-      whiteSpace: 'nowrap'
-    },
-    grid: { 
-      display: 'grid', 
-      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
-      gap: '20px' 
-    },
-    card: { 
-      backgroundColor: 'rgba(0, 255, 255, 0.05)', 
-      border: '1px solid #00ffff', 
-      borderRadius: '8px', 
-      padding: '20px', 
-      transition: 'all 0.3s ease', 
-      position: 'relative', 
-      overflow: 'hidden', 
-      display: 'flex', 
-      flexDirection: 'column' 
-    },
-    cardHeader: { 
-      display: 'flex', 
-      justifyContent: 'space-between', 
-      alignItems: 'flex-start', 
-      marginBottom: '15px' 
-    },
-    clientName: { 
-      fontSize: '1.2rem', 
-      fontWeight: 'bold', 
-      color: '#fff', 
-      cursor: 'pointer', 
-      textDecoration: 'underline', 
-      textDecorationColor: 'rgba(255,255,255,0.3)' 
-    },
-    clientEmail: { 
-      fontSize: '0.85rem', 
-      color: '#00ffff', 
-      opacity: 0.8 
-    },
-    cardBody: { 
-      display: 'flex', 
-      flexDirection: 'column', 
-      gap: '10px', 
-      fontSize: '0.9rem', 
-      flex: 1 
-    },
-    infoRow: { 
-      display: 'flex', 
-      alignItems: 'center', 
-      gap: '8px', 
-      color: '#ccc' 
-    },
-    budget: { 
-      color: '#ff00ff', 
-      fontWeight: 'bold' 
-    },
-    actions: { 
-      display: 'grid', 
-      gridTemplateColumns: '1fr 1fr', 
-      gap: '10px', 
-      marginTop: '20px', 
-      paddingTop: '15px', 
-      borderTop: '1px dashed rgba(0, 255, 255, 0.3)' 
-    },
-    actionBtn: { 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      gap: '5px', 
-      padding: '8px', 
-      borderRadius: '4px', 
-      cursor: 'pointer', 
-      border: 'none', 
-      fontWeight: 'bold', 
-      fontSize: '0.8rem' 
-    },
-    editBtn: { 
-      backgroundColor: 'rgba(0, 255, 255, 0.2)', 
-      color: '#00ffff', 
-      border: '1px solid #00ffff' 
-    },
-    deleteBtn: { 
-      backgroundColor: 'rgba(255, 0, 80, 0.2)', 
-      color: '#ff4545', 
-      border: '1px solid #ff4545' 
-    },
-    dashboardBtn: { 
-      gridColumn: '1 / -1', 
-      backgroundColor: '#ff00ff', 
-      color: '#fff', 
-      border: 'none', 
-      textTransform: 'uppercase', 
-      marginBottom: '5px' 
-    }
-  };
+  const isOverlayOpen = showCreatePopup || editingClientId
 
   return (
-    <div style={styles.pageContainer}>
-      <MainHeader />
-      <main style={styles.mainContent}>
-        <div style={styles.header}>
-          <h1 style={styles.title}>{'// CLIENT DATABASE'}</h1>
-          
-          {/* ✅ NEW: Header Actions Container */}
-          <div style={styles.headerActions}>
-            <div style={styles.searchContainer}>
-              <Search size={18} style={styles.searchIcon} />
-              <input 
-                style={styles.searchInput} 
-                placeholder="Search clients..." 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+    <div className="min-h-screen bg-[#141310] text-stone-100">
+      <div
+        className="min-h-screen"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at top left, rgba(245,158,11,0.10), transparent 24%), radial-gradient(circle at bottom right, rgba(251,191,36,0.06), transparent 24%)',
+        }}
+      >
+        <MainHeader />
+
+        <main
+          className={`mx-auto w-full max-w-[1600px] px-5 py-8 transition-all duration-300 sm:px-8 ${
+            isOverlayOpen ? 'blur-[4px]' : ''
+          }`}
+        >
+          <section className="mb-8 flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-amber-200">
+                <Users size={14} />
+                Client operations
+              </div>
+
+              <h1 className="text-3xl font-semibold tracking-tight text-stone-50 sm:text-4xl">
+                Client database
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-400 sm:text-base">
+                Review client records, search criteria, and next-step actions from one structured
+                workspace designed for prospect follow-up and market matching.
+              </p>
             </div>
-            
-            {/* ✅ ADD NEW CLIENT BUTTON */}
-            <button 
-              style={styles.addClientBtn}
-              onClick={() => setShowCreatePopup(true)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#cc00cc';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 0 20px rgba(255, 0, 255, 0.8)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#ff00ff';
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 0 10px rgba(255, 0, 255, 0.5)';
-              }}
-            >
-              <UserPlus size={16} />
-              <span>Add New Client</span>
-            </button>
-          </div>
-        </div>
 
-        {isLoading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '50px', color: '#00ffff' }}>
-            <Loader2 className="animate-spin" size={40} />
-          </div>
-        ) : (
-          <div style={styles.grid}>
-            {filteredClients.map(client => {
-              const criteria = client.client_search_criteria?.[0];
-              const minB = criteria?.min_budget ? (criteria.min_budget/1000).toFixed(0) + 'k' : '0';
-              const maxB = criteria?.max_budget ? (criteria.max_budget/1000).toFixed(0) + 'k' : '∞';
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative min-w-[280px]">
+                <Search
+                  size={18}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-stone-500"
+                />
+                <input
+                  className="w-full rounded-full border border-white/10 bg-white/[0.04] py-3 pl-11 pr-4 text-sm text-stone-100 placeholder:text-stone-500 focus:border-amber-300/25 focus:outline-none focus:ring-0"
+                  placeholder="Search clients"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
 
-              return (
-                <div key={client.id} style={styles.card}>
-                  <div style={styles.cardHeader}>
-                    <div>
-                      {/* Link to Dashboard */}
-                      <Link href={`/gatherer/clients/${client.id}`} style={{textDecoration: 'none'}}>
-                        <div style={styles.clientName} className="hover:text-[#ff00ff] transition-colors">
-                            {client.first_name} {client.last_name}
+              <button
+                onClick={() => setShowCreatePopup(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-200 transition-colors duration-200 hover:bg-amber-400/15"
+              >
+                <UserPlus size={16} />
+                Add client
+              </button>
+            </div>
+          </section>
+
+          <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Total clients
+              </div>
+              <div className="mt-3 text-3xl font-semibold tracking-tight text-stone-100">
+                {isLoading ? '...' : clients.length}
+              </div>
+              <p className="mt-2 text-sm text-stone-400">All current client records in the workspace.</p>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Matching results
+              </div>
+              <div className="mt-3 text-3xl font-semibold tracking-tight text-amber-300">
+                {isLoading ? '...' : filteredClients.length}
+              </div>
+              <p className="mt-2 text-sm text-stone-400">Clients currently matching the active search.</p>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                Search state
+              </div>
+              <div className="mt-3 text-sm font-medium text-stone-200">
+                {searchTerm ? `Filtering by “${searchTerm}”` : 'Showing all clients'}
+              </div>
+              <p className="mt-2 text-sm text-stone-400">
+                Use search to narrow by name or email.
+              </p>
+            </div>
+          </section>
+
+          {isLoading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="animate-spin text-stone-400" size={36} />
+            </div>
+          ) : filteredClients.length === 0 ? (
+            <div className="rounded-[28px] border border-dashed border-white/10 bg-black/10 px-6 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+                <Users size={24} />
+              </div>
+              <h2 className="text-lg font-semibold text-stone-100">
+                {searchTerm ? 'No matching clients found' : 'No clients yet'}
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-stone-400">
+                {searchTerm
+                  ? 'Try a different search term or clear the filter to see all client records.'
+                  : 'Create your first client record to begin tracking search criteria, activity, and market opportunities.'}
+              </p>
+
+              {!searchTerm && (
+                <button
+                  onClick={() => setShowCreatePopup(true)}
+                  className="mt-6 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2.5 text-sm font-medium text-amber-200 transition-colors duration-200 hover:bg-amber-400/15"
+                >
+                  <UserPlus size={16} />
+                  Add first client
+                </button>
+              )}
+            </div>
+          ) : (
+            <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {filteredClients.map((client) => {
+                const criteria = client.client_search_criteria?.[0]
+                const fullName = `${client.first_name || ''} ${client.last_name || ''}`.trim()
+                const email = client.email || 'No email recorded'
+                const locations = criteria?.locations || 'No locations set'
+                const budget = formatBudget(criteria?.min_budget, criteria?.max_budget)
+
+                return (
+                  <article
+                    key={client.id}
+                    className="rounded-[28px] border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-300/20 hover:bg-white/[0.045]"
+                  >
+                    <div className="mb-5 flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <Link
+                          href={`/gatherer/clients/${client.id}`}
+                          className="block text-lg font-semibold tracking-tight text-stone-100 transition-colors duration-200 hover:text-amber-200"
+                        >
+                          {fullName || 'Unnamed client'}
+                        </Link>
+                        <div className="mt-1 text-sm text-stone-500">{email}</div>
+                      </div>
+
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-300">
+                        <User size={18} />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#1b1916] px-4 py-3">
+                        <MapPin size={16} className="mt-0.5 text-stone-500" />
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                            Target areas
+                          </div>
+                          <div className="mt-1 text-stone-200">{locations}</div>
                         </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#1b1916] px-4 py-3">
+                        <TrendingUp size={16} className="mt-0.5 text-stone-500" />
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                            Budget range
+                          </div>
+                          <div className="mt-1 font-medium text-emerald-300">{budget}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 border-t border-white/10 pt-5">
+                      <Link
+                        href={`/gatherer/clients/${client.id}`}
+                        className="col-span-2 inline-flex items-center justify-center gap-2 rounded-full border border-amber-300/20 bg-amber-400/10 px-4 py-2.5 text-sm font-medium text-amber-200 transition-colors duration-200 hover:bg-amber-400/15"
+                      >
+                        <ExternalLink size={16} />
+                        Open market scanner
                       </Link>
-                      <div style={styles.clientEmail}>{client.email}</div>
-                    </div>
-                    <User size={20} color="#ff00ff" />
-                  </div>
-                  
-                  <div style={styles.cardBody}>
-                    <div style={styles.infoRow}>
-                      <MapPin size={14} />
-                      <span>{criteria?.locations || 'No location set'}</span>
-                    </div>
-                    <div style={styles.infoRow}>
-                      <TrendingUp size={14} />
-                      <span>Budget: <span style={styles.budget}>€{minB} - €{maxB}</span></span>
-                    </div>
-                  </div>
 
-                  <div style={styles.actions}>
-                    {/* DASHBOARD BUTTON */}
-                    <Link href={`/gatherer/clients/${client.id}`} style={{textDecoration: 'none', display: 'contents'}}>
-                        <button style={{...styles.actionBtn, ...styles.dashboardBtn}}>
-                            <ExternalLink size={16}/> Open Market Scanner
-                        </button>
-                    </Link>
+                      <button
+                        onClick={() => setEditingClientId(client.id)}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-stone-200 transition-colors duration-200 hover:bg-white/[0.08]"
+                      >
+                        <Edit size={14} />
+                        Edit
+                      </button>
 
-                    <button style={{...styles.actionBtn, ...styles.editBtn}} onClick={() => setEditingClientId(client.id)}>
-                      <Edit size={14} /> Edit
-                    </button>
-                    <button style={{...styles.actionBtn, ...styles.deleteBtn}} onClick={() => handleDelete(client.id)}>
-                      <Trash2 size={14} /> Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <button
+                        onClick={() => handleDelete(client.id)}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm font-medium text-red-300 transition-colors duration-200 hover:bg-red-400/15"
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </section>
+          )}
+        </main>
+
+        {showCreatePopup && (
+          <CreateClientPopup
+            isOpen={showCreatePopup}
+            onClose={() => {
+              setShowCreatePopup(false)
+              fetchClients()
+            }}
+          />
         )}
-      </main>
 
-      {/* ✅ CREATE CLIENT POPUP */}
-      {showCreatePopup && (
-        <CreateClientPopup 
-          isOpen={showCreatePopup} 
-          onClose={() => {
-            setShowCreatePopup(false);
-            fetchClients(); // Refresh list after creation
-          }} 
-        />
-      )}
-
-      {/* EDIT CLIENT POPUP */}
-      {editingClientId && (
-        <EditClientPopup 
-          isOpen={!!editingClientId} 
-          onClose={() => {
-            setEditingClientId(null);
-            fetchClients(); // Refresh list after edit
-          }} 
-          clientId={editingClientId}
-        />
-      )}
+        {editingClientId && (
+          <EditClientPopup
+            isOpen={!!editingClientId}
+            onClose={() => {
+              setEditingClientId(null)
+              fetchClients()
+            }}
+            clientId={editingClientId}
+          />
+        )}
+      </div>
     </div>
-  );
+  )
 }
