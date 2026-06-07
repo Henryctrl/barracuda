@@ -176,30 +176,28 @@ export default function ProspectionPage() {
   return (
     <div className="min-h-screen bg-[#12110F] text-[#F4EEE7]">
       <div className="border-b border-white/10 bg-[#171512]/90 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-3 px-4 py-3 sm:px-6">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Link href="/gatherer">
-                  <button className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#DDD2C8] transition hover:border-[#FF6A1A]/22 hover:bg-[#FF6A1A]/8 hover:text-[#F4EEE7]">
-                    <Home size={16} />
-                    <span className="hidden sm:inline">Home</span>
-                  </button>
-                </Link>
+        <div className="mx-auto w-full max-w-[1800px] px-3 py-2.5 sm:px-6 sm:py-3">
+          <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-max items-center gap-2">
+              <Link href="/gatherer" className="shrink-0">
+                <button className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#DDD2C8] transition hover:border-[#FF6A1A]/22 hover:bg-[#FF6A1A]/8 hover:text-[#F4EEE7]">
+                  <Home size={16} />
+                  <span className="hidden sm:inline">Home</span>
+                </button>
+              </Link>
 
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#FF9A5C]">
-                    Prospection
-                  </div>
-                  <h1 className="truncate text-lg font-semibold tracking-tight text-[#F8F3EE] sm:text-xl">
-                    Map workspace
-                  </h1>
+              <div className="shrink-0 pr-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#FF9A5C] sm:text-[11px]">
+                  Prospection
                 </div>
+                <h1 className="text-sm font-semibold tracking-tight text-[#F8F3EE] sm:text-xl">
+                  Map workspace
+                </h1>
               </div>
-            </div>
 
-            <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
-              <div className="flex overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+              <div className="h-8 w-px shrink-0 bg-white/10 sm:h-9" />
+
+              <div className="flex shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
                 <button
                   onClick={() => setViewMode('map')}
                   className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium transition ${
@@ -228,7 +226,7 @@ export default function ProspectionPage() {
               {failedEntriesCount > 0 && (
                 <button
                   onClick={() => setShowFailedEntries(true)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/14"
+                  className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/14"
                 >
                   <AlertTriangle size={16} />
                   {failedEntriesCount}
@@ -237,7 +235,7 @@ export default function ProspectionPage() {
 
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#DDD2C8] transition hover:border-[#FF6A1A]/25 hover:bg-[#FF6A1A]/08 hover:text-[#F4EEE7]"
+                className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#DDD2C8] transition hover:border-[#FF6A1A]/25 hover:bg-[#FF6A1A]/08 hover:text-[#F4EEE7]"
                 title="Filter"
               >
                 <Filter size={16} />
@@ -246,7 +244,7 @@ export default function ProspectionPage() {
 
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#DDD2C8] transition hover:border-[#FF6A1A]/25 hover:bg-[#FF6A1A]/08 hover:text-[#F4EEE7]"
+                className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-[#DDD2C8] transition hover:border-[#FF6A1A]/25 hover:bg-[#FF6A1A]/08 hover:text-[#F4EEE7]"
                 title="Upload CSV"
               >
                 <Upload size={16} />
@@ -255,7 +253,7 @@ export default function ProspectionPage() {
 
               <button
                 onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-[#FF6A1A]/32 bg-[#FF6A1A]/12 px-3 py-2 text-sm font-semibold text-[#FFB58D] shadow-[0_10px_24px_rgba(255,106,26,0.18)] transition hover:border-[#FF6A1A]/40 hover:bg-[#FF6A1A]/18 hover:text-[#FFD0B4]"
+                className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-[#FF6A1A]/32 bg-[#FF6A1A]/12 px-3 py-2 text-sm font-semibold text-[#FFB58D] shadow-[0_10px_24px_rgba(255,106,26,0.18)] transition hover:border-[#FF6A1A]/40 hover:bg-[#FF6A1A]/18 hover:text-[#FFD0B4]"
                 title="Add Prospect"
               >
                 <Plus size={16} />
@@ -264,7 +262,7 @@ export default function ProspectionPage() {
             </div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-1 text-xs [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5">
               <span className="text-[#867A70]">Total:</span>{' '}
               <span className="font-semibold text-[#F4EEE7]">{totalCount}</span>
@@ -302,7 +300,7 @@ export default function ProspectionPage() {
         />
       )}
 
-      <div className="h-[calc(100vh-132px)] sm:h-[calc(100vh-140px)]">
+      <div className="h-[calc(100vh-112px)] sm:h-[calc(100vh-140px)]">
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-[#171512]/88 px-5 py-4 text-sm font-medium text-[#DDD2C8] shadow-[0_20px_60px_rgba(0,0,0,0.24)] backdrop-blur-xl sm:text-base">
