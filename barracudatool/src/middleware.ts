@@ -1,7 +1,11 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+const PUBLIC_ROUTES = ['/login', '/signup', '/auth/callback'];
+
 export async function middleware(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -38,22 +42,31 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // If user is not logged in, redirect to login
-  if (!user && request.nextUrl.pathname.startsWith('/gatherer')) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  const isPublicRoute = PUBLIC_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
+  if (!user && !isPublicRoute) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('redirectedFrom', `${pathname}${search}`);
+    return NextResponse.redirect(loginUrl);
   }
 
-  // If user is logged in but trying to access /gatherer, check subscription
-  if (user && request.nextUrl.pathname.startsWith('/gatherer')) {
+  if (user && (pathname === '/login' || pathname === '/signup')) {
+    return NextResponse.redirect(new URL('/main', request.url));
+  }
+
+  if (user && pathname.startsWith('/gatherer')) {
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('subscription_status')
       .eq('id', user.id)
       .single();
 
-    // If no active subscription, redirect to subscribe page
     if (!profile || profile.subscription_status !== 'active') {
       return NextResponse.redirect(new URL('/subscribe', request.url));
     }
@@ -64,6 +77,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|manifest.json|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };
