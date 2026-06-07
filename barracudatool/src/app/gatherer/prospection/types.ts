@@ -46,11 +46,38 @@ export interface ProspectionFilters {
   maxDistance?: number; // in km
 }
 
-export const STATUS_CONFIG: Record<ProspectionStatus, { label: string; color: string; dotColor: string }> = {
-  not_contacted: { label: 'Not Contacted', color: '#808080', dotColor: '#808080' },
-  contacted: { label: 'Contacted', color: '#00ffff', dotColor: '#00ffff' },
-  follow_up_needed: { label: 'Follow-up Needed', color: '#ffff00', dotColor: '#ffff00' },
-  callback_scheduled: { label: 'Callback Scheduled', color: '#ffa500', dotColor: '#ffa500' },
-  positive_response: { label: 'Positive Response', color: '#00ff00', dotColor: '#00ff00' },
-  not_interested: { label: 'Not Interested', color: '#ff0000', dotColor: '#ff0000' }
+export const STATUS_CONFIG: Record<
+  ProspectionStatus,
+  { label: string; color: string; dotColor: string }
+> = {
+  not_contacted: {
+    label: 'Not Contacted',
+    color: '#8D857D',
+    dotColor: '#8D857D',
+  },
+  contacted: {
+    label: 'Contacted',
+    color: '#3BA7FF',
+    dotColor: '#3BA7FF',
+  },
+  follow_up_needed: {
+    label: 'Follow-up Needed',
+    color: '#F2C94C',
+    dotColor: '#F2C94C',
+  },
+  callback_scheduled: {
+    label: 'Callback Scheduled',
+    color: '#FF8A3D',
+    dotColor: '#FF8A3D',
+  },
+  positive_response: {
+    label: 'Positive Response',
+    color: '#57C084',
+    dotColor: '#57C084',
+  },
+  not_interested: {
+    label: 'Not Interested',
+    color: '#E06A6A',
+    dotColor: '#E06A6A',
+  },
 };
